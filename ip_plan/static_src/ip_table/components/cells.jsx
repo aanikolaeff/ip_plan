@@ -27,7 +27,12 @@ export function CopyButton({ value }) {
 }
 
 export function StatusBadge({ status }) {
-  return <span className="badge-status" data-status={status?.value}>{status?.label || status?.value}</span>;
+  return (
+    <span className="status-chip" data-status={status?.value}>
+      <span className="status-dot" aria-hidden="true" />
+      {status?.label || status?.value}
+    </span>
+  );
 }
 
 export function RoleBadge({ role }) {

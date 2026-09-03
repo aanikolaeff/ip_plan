@@ -92,7 +92,7 @@ export const columns = [
     header: 'DNS записи',
     size: 150,
     minSize: 100,
-    cell: ({ getValue }) => <span className="cell-value" title={getValue()}>{getValue() || '—'}</span>,
+    cell: ({ getValue }) => <span className="cell-value ip-mono" title={getValue()}>{getValue() || '—'}</span>,
   }),
 
   columnHelper.accessor('assignment', {
@@ -151,28 +151,28 @@ export const columns = [
     header: 'CPE',
     size: 121,
     minSize: 90,
-    cell: ({ getValue }) => <span className="cell-value" title={getValue()}>{getValue() || '—'}</span>,
+    cell: ({ getValue }) => <span className="cell-value ip-mono" title={getValue()}>{getValue() || '—'}</span>,
   }),
 
   columnHelper.accessor('open_ports', {
     header: 'Open Ports',
     size: 156,
     minSize: 100,
-    cell: ({ getValue }) => <span className="cell-value" title={getValue()}>{getValue() || '—'}</span>,
+    cell: ({ getValue }) => <span className="cell-value ip-mono" title={getValue()}>{getValue() || '—'}</span>,
   }),
 
   columnHelper.accessor('guest_os', {
     header: 'Guest OS',
     size: 140,
     minSize: 100,
-    cell: ({ getValue }) => <span className="cell-value" title={getValue()}>{getValue() || '—'}</span>,
+    cell: ({ getValue }) => <span className="cell-value ip-mono" title={getValue()}>{getValue() || '—'}</span>,
   }),
 
   columnHelper.accessor('os_guess', {
     header: 'OS Guess',
     size: 506,
     minSize: 200,
-    cell: ({ getValue }) => <span className="cell-value" title={getValue()}>{getValue() || '—'}</span>,
+    cell: ({ getValue }) => <span className="cell-value ip-mono" title={getValue()}>{getValue() || '—'}</span>,
   }),
 
   columnHelper.accessor('os_installed', {

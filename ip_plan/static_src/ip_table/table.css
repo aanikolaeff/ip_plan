@@ -1,20 +1,38 @@
-/* Стили, специфичные для React/TanStack-таблицы — то, чего не было у
- * DataTables-версии (см. ip_plan/static/ip_plan/css/style.css для общих
- * токенов/классов ячеек-бейджей-тулбара, которые переиспользуются как
- * есть). ВАЖНО: .dtfc-fixed-left из style.css сюда специально НЕ взят —
- * та CSS-позиция задавалась инлайн-стилями плагина FixedColumns (JS),
- * самого правила position:sticky в стилях не было вообще — здесь это
- * заведено заново, самодостаточно, без зависимости от DataTables-плагина. */
+/* ==========================================================================
+   IP-таблица — «патч-панель»
+   ==========================================================================
+   Дизайн-язык этой React/TanStack-таблицы (см. docs/plans/ дизайн-док) —
+   поверх общих токенов style.css (Inter/JetBrains Mono, --accent, --bg-*),
+   их не переопределяем: остальная страница (hero/тулбар/модалки) — общая с
+   HTMX-частью приложения, трогать незачем и рискованно.
 
-/* Без table-layout:fixed браузер игнорирует наши inline-ширины <th>/<td>
- * (TanStack column sizing) и раскладывает колонки по контенту — то же
- * самое поведение спецификации CSS Tables, что заставляло старую
- * DataTables-версию пересчитывать ВСЕ колонки на каждое изменение (см.
- * комментарий у applyColumnWidths() в js/app.js). table.getTotalSize()
- * на самой <table> (см. TableRoot.jsx) даёт браузеру точную сумму, под
- * которую раскладывать фиксированные ширины колонок. */
+   Идея: каждая строка — порт коммутатора. Слева на закреплённом крае —
+   тонкая цветная "лампа" статуса (rail), видна всегда, даже когда широкая
+   таблица прокручена по горизонтали и текстовый бейдж уже уехал за экран.
+   Статус ещё раз — тихим dot+label чипом в самой колонке "Статус" (не
+   сплошной цветной пилюлей — это данные, а не кнопка). IP/порты/CPE/OS —
+   моноширинным JetBrains Mono (уже есть класс .ip-mono в style.css),
+   остальной текст — Inter. Ничего из этого не трогает JS-логику
+   (resize/pin/sort/filter/inline-edit) — только классы/атрибуты. */
+
+:root {
+  /* "Сигнальная" палитра статусов — не дефолтный Bootstrap-набор,
+     подобрана отдельно от --accent (синий, используется для интерактива:
+     ссылки, фокус, ресайз), чтобы статус и "это можно нажать" не путались
+     визуально. */
+  --status-active: #16a34a;
+  --status-reserved: #d97706;
+  --status-deprecated: #94a3b8;
+  --status-dhcp: #0ea5e9;
+  --status-slaac: #8b5cf6;
+}
+
+/* ---------- Таблица: layout ---------- */
+
 #ip-table {
   table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 #ip-table td {
   overflow: hidden;
@@ -22,53 +40,175 @@
   white-space: nowrap;
 }
 
+/* ---------- Заголовок: тихая "control strip" ---------- */
+
+#ip-table thead th {
+  position: relative;
+  text-align: left;
+  padding: .5rem .65rem;
+  font-size: .6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+  background: var(--bg-page);
+  border-bottom: 1px solid var(--border-soft-strong);
+  cursor: default;
+}
+.th-label {
+  display: inline-flex;
+  align-items: center;
+  gap: .3em;
+}
+.sort-indicator {
+  font-size: .6em;
+  color: var(--text-faint);
+  opacity: .5;
+  transition: opacity .12s ease, color .12s ease;
+}
+.sort-indicator.active {
+  color: var(--accent);
+  opacity: 1;
+}
+
+/* ---------- Ячейки данных ---------- */
+
+#ip-table tbody td {
+  padding: .5rem .65rem;
+  font-size: .8125rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+#ip-table .cell-value { color: var(--text-main); }
+#ip-table .cell-muted { color: var(--text-muted); }
+#ip-table .ip-mono { font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+
+/* ---------- Статус-рейка на закреплённом крае ("лампа порта") ---------- */
+
+#ip-table tbody tr td.col-pinned:first-child {
+  position: relative;
+}
+#ip-table tbody tr td.col-pinned:first-child::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--border-soft-strong);
+}
+#ip-table tbody tr[data-status="active"] td.col-pinned:first-child::before { background: var(--status-active); }
+#ip-table tbody tr[data-status="reserved"] td.col-pinned:first-child::before { background: var(--status-reserved); }
+#ip-table tbody tr[data-status="deprecated"] td.col-pinned:first-child::before { background: var(--status-deprecated); }
+#ip-table tbody tr[data-status="dhcp"] td.col-pinned:first-child::before { background: var(--status-dhcp); }
+#ip-table tbody tr[data-status="slaac"] td.col-pinned:first-child::before { background: var(--status-slaac); }
+
+/* ---------- Статус-чип (тихий dot+label, не пилюля-кнопка) ---------- */
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .4em;
+  font-size: .8125rem;
+  color: var(--text-main);
+}
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--border-soft-strong);
+}
+.status-chip[data-status="active"] .status-dot { background: var(--status-active); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-active) 18%, transparent); }
+.status-chip[data-status="reserved"] .status-dot { background: var(--status-reserved); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-reserved) 18%, transparent); }
+.status-chip[data-status="deprecated"] .status-dot { background: var(--status-deprecated); }
+.status-chip[data-status="dhcp"] .status-dot { background: var(--status-dhcp); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-dhcp) 18%, transparent); }
+.status-chip[data-status="slaac"] .status-dot { background: var(--status-slaac); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-slaac) 18%, transparent); }
+
+/* ---------- Строки: зебра тише, hairline вместо чистой заливки ---------- */
+
+#ip-table tbody tr:nth-child(odd) td { background: var(--bg-row-odd); }
+#ip-table tbody tr:nth-child(even) td { background: var(--bg-row-even); }
+#ip-table tbody tr:hover td { background: var(--bg-row-hover); }
+#ip-table tbody tr.row-selected td { background: color-mix(in srgb, var(--accent) 10%, var(--bg-row-odd)); }
+
+/* ---------- Закреплённые колонки (select + address) ---------- */
+
 #ip-table-root .col-pinned {
-  background: var(--bg-row-odd, #fff);
+  background: var(--bg-row-odd);
 }
-#ip-table-root tbody tr:nth-child(even) .col-pinned {
-  background: var(--bg-row-even, #fafafa);
-}
-#ip-table-root thead .col-pinned {
-  background: var(--bg-header, #f5f5f5);
+#ip-table tbody tr:nth-child(even) .col-pinned { background: var(--bg-row-even); }
+#ip-table tbody tr:hover .col-pinned { background: var(--bg-row-hover); }
+#ip-table tbody tr.row-selected .col-pinned { background: color-mix(in srgb, var(--accent) 10%, var(--bg-row-odd)); }
+#ip-table thead th.col-pinned {
+  background: var(--bg-page);
   z-index: 4 !important;
 }
+/* Тень-градиент справа от последней закреплённой колонки — сигнал границы
+   при горизонтальном скролле широкой таблицы (адрес — 2-й <td>/<th>: 1-й
+   всегда чекбокс, порядок закреплённых колонок пользователь не меняет). */
+#ip-table td.col-pinned:nth-child(2),
+#ip-table th.col-pinned:nth-child(2) {
+  box-shadow: 4px 0 6px -4px rgba(24, 33, 47, .18);
+}
+
+/* ---------- Ресайз-хэндл: волосяная линия по умолчанию, акцент на hover
+   (открывает возможность взгляду — раньше не было видно вообще, что можно
+   тянуть) ---------- */
 
 .column-resizer {
   position: absolute;
-  right: 0;
+  right: -3px;
   top: 0;
   height: 100%;
-  width: 6px;
+  width: 7px;
   cursor: col-resize;
   user-select: none;
   touch-action: none;
   background: transparent;
 }
-.column-resizer:hover,
-.column-resizer.resizing {
-  background: var(--accent, #6366f1);
-  opacity: 0.5;
+.column-resizer::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  top: .35rem;
+  bottom: .35rem;
+  width: 1px;
+  background: var(--border-soft-strong);
+  transition: background .12s ease, width .12s ease, right .12s ease;
 }
+.column-resizer:hover::after,
+.column-resizer.resizing::after {
+  background: var(--accent);
+  width: 2px;
+  right: 2.5px;
+}
+
+/* ---------- Пагинация ---------- */
 
 .pagination-bar {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: .75rem;
   justify-content: center;
-  padding: 0.5rem;
+  padding: .65rem 0 0;
+  font-size: .8125rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 .pagination-bar button {
-  border: 1px solid var(--border-color, #ddd);
-  background: transparent;
-  border-radius: 4px;
-  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--border-soft-strong);
+  background: var(--bg-row-odd);
+  color: var(--text-main);
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  line-height: 1;
   cursor: pointer;
+  transition: border-color .12s ease, color .12s ease;
+}
+.pagination-bar button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .pagination-bar button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-#ip-table thead th {
+  opacity: .35;
   cursor: default;
 }

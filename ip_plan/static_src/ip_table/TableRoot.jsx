@@ -243,11 +243,16 @@ export default function TableRoot() {
                     }}
                   >
                     <span
+                      className="th-label"
                       onClick={header.column.getCanSort() ? header.column.getToggleSortingHandler() : undefined}
                       style={{ cursor: header.column.getCanSort() ? 'pointer' : 'default' }}
                     >
                       {flexRender(header.column.columnDef.header, header.getContext())}
-                      {{ asc: ' ▲', desc: ' ▼' }[header.column.getIsSorted()] ?? ''}
+                      {header.column.getCanSort() && (
+                        <span className={`sort-indicator${header.column.getIsSorted() ? ' active' : ''}`} data-dir={header.column.getIsSorted() || undefined}>
+                          {header.column.getIsSorted() === 'desc' ? '▼' : '▲'}
+                        </span>
+                      )}
                     </span>
                     {header.column.getCanResize() && (
                       <div
@@ -265,7 +270,11 @@ export default function TableRoot() {
           </thead>
           <tbody>
             {table.getRowModel().rows.map((row) => (
-              <tr key={row.id} className={row.getIsSelected() ? 'row-selected' : undefined}>
+              <tr
+                key={row.id}
+                className={row.getIsSelected() ? 'row-selected' : undefined}
+                data-status={row.original.status?.value}
+              >
                 {row.getVisibleCells().map((cell) => (
                   <td
                     key={cell.id}
