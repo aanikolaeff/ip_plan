@@ -6,3 +6,10 @@ data/
 .venv/
 staticfiles/
 .DS_Store
+
+# React-таблица (docs/plans/2026-09-03-ip-table-react-design.md): node_modules
+# ставится через package-lock.json, dist/ собирается заново на каждой сборке
+# Docker-образа (см. Dockerfile, стадия frontend-build) — коммитить нечего,
+# как и .venv/staticfiles/ выше.
+node_modules/
+ip_plan/static/ip_plan/dist/

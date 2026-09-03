@@ -415,28 +415,16 @@ def csrf_refresh(request):
 
 @ensure_csrf_cookie
 def ip_list(request):
-    """Главная страница со списком IP-адресов из NetBox."""
-    error = None
-    ip_addresses = []
-    prefixes = []
-    try:
-        client = NetBoxClient()
-        ip_addresses = client.list_ip_addresses()
-        prefixes = client.list_prefixes()
-        _attach_roles_bulk(client, ip_addresses)
-    except NetBoxAPIError as exc:
-        logger.error("Не удалось получить список IP-адресов/подсетей: %s", exc)
-        error = str(exc)
-
+    """Главная страница — только оболочка (hero/тулбар-root/модалки).
+    Сам список IP-адресов больше не запрашивается тут: React дёргает
+    /ip/list.json (ip_list_json) сам при монтировании, поэтому запрос к
+    NetBox здесь был бы лишним двойным походом на каждую загрузку
+    страницы. Ошибки недоступности NetBox теперь показываются внутри
+    #ip-table-root (см. TableRoot.jsx), не на уровне этой view."""
     return render(
         request,
         "ip_plan/ip_table.html",
         {
-            "ip_addresses": ip_addresses,
-            "error": error,
-            "status_choices": STATUS_CHOICES,
-            "prefixes": _sorted_prefixes(prefixes),
-            "role_choices": _distinct_roles(ip_addresses),
             "os_catalog_json": os_catalog.catalog_json(os_catalog.grouped_entries()),
             "column_info_json": COLUMN_INFO_JSON,
         },

@@ -1,0 +1,74 @@
+/* Стили, специфичные для React/TanStack-таблицы — то, чего не было у
+ * DataTables-версии (см. ip_plan/static/ip_plan/css/style.css для общих
+ * токенов/классов ячеек-бейджей-тулбара, которые переиспользуются как
+ * есть). ВАЖНО: .dtfc-fixed-left из style.css сюда специально НЕ взят —
+ * та CSS-позиция задавалась инлайн-стилями плагина FixedColumns (JS),
+ * самого правила position:sticky в стилях не было вообще — здесь это
+ * заведено заново, самодостаточно, без зависимости от DataTables-плагина. */
+
+/* Без table-layout:fixed браузер игнорирует наши inline-ширины <th>/<td>
+ * (TanStack column sizing) и раскладывает колонки по контенту — то же
+ * самое поведение спецификации CSS Tables, что заставляло старую
+ * DataTables-версию пересчитывать ВСЕ колонки на каждое изменение (см.
+ * комментарий у applyColumnWidths() в js/app.js). table.getTotalSize()
+ * на самой <table> (см. TableRoot.jsx) даёт браузеру точную сумму, под
+ * которую раскладывать фиксированные ширины колонок. */
+#ip-table {
+  table-layout: fixed;
+}
+#ip-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#ip-table-root .col-pinned {
+  background: var(--bg-row-odd, #fff);
+}
+#ip-table-root tbody tr:nth-child(even) .col-pinned {
+  background: var(--bg-row-even, #fafafa);
+}
+#ip-table-root thead .col-pinned {
+  background: var(--bg-header, #f5f5f5);
+  z-index: 4 !important;
+}
+
+.column-resizer {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: 6px;
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+  background: transparent;
+}
+.column-resizer:hover,
+.column-resizer.resizing {
+  background: var(--accent, #6366f1);
+  opacity: 0.5;
+}
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  justify-content: center;
+  padding: 0.5rem;
+}
+.pagination-bar button {
+  border: 1px solid var(--border-color, #ddd);
+  background: transparent;
+  border-radius: 4px;
+  padding: 0.25rem 0.75rem;
+  cursor: pointer;
+}
+.pagination-bar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#ip-table thead th {
+  cursor: default;
+}

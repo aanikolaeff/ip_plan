@@ -1,3 +1,16 @@
+# React-таблица (см. docs/plans/2026-09-03-ip-table-react-design.md) —
+# собирается отдельной стадией, в финальный образ попадает только
+# ip_plan/static/ip_plan/dist/ (без node_modules/исходников). package*.json
+# копируются отдельно от остального дерева — кэш `npm ci` не сбрасывается
+# правкой .py/.html файлов, только правкой самих зависимостей.
+FROM node:20-alpine AS frontend-build
+WORKDIR /frontend
+COPY package.json package-lock.json* ./
+RUN npm install
+COPY vite.config.js ./
+COPY ip_plan/static_src ./ip_plan/static_src
+RUN npm run build
+
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -15,6 +28,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+COPY --from=frontend-build /frontend/ip_plan/static/ip_plan/dist ./ip_plan/static/ip_plan/dist
 RUN chmod +x entrypoint.sh
 
 EXPOSE 8000

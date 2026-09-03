@@ -1,7 +1,37 @@
+import json
+from pathlib import Path
+
 from django import template
 from django.conf import settings
+from django.templatetags.static import static as static_url
+from django.utils.safestring import mark_safe
 
 register = template.Library()
+
+_VITE_MANIFEST_PATH = Path(__file__).resolve().parent.parent / "static" / "ip_plan" / "dist" / ".vite" / "manifest.json"
+
+
+@register.simple_tag
+def vite_asset(entry):
+    """<script type="module">/<link> для собранного Vite-бандла (см.
+    docs/plans/2026-09-03-ip-table-react-design.md, раздел "Сборка и
+    деплой"). Читает manifest.json заново на каждый вызов (не кэшируется в
+    памяти процесса, в отличие от COLUMN_INFO_JSON в views.py) — это
+    крошечный файл, а не кэшировать удобнее в активной разработке: правки
+    после `npm run build` подхватываются без перезапуска контейнера.
+    Отсутствие файла (сборка ещё не запускалась) — не 500, а комментарий в
+    HTML, чтобы страница не падала целиком."""
+    try:
+        manifest = json.loads(_VITE_MANIFEST_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return mark_safe(f"<!-- vite manifest not found/invalid — run `npm run build` ({entry}) -->")
+    chunk = manifest.get(entry)
+    if not chunk:
+        return mark_safe(f"<!-- vite entry '{entry}' not in manifest — run `npm run build` -->")
+    tags = [f'<script type="module" src="{static_url("ip_plan/dist/" + chunk["file"])}"></script>']
+    for css_file in chunk.get("css", []):
+        tags.append(f'<link rel="stylesheet" href="{static_url("ip_plan/dist/" + css_file)}">')
+    return mark_safe("\n".join(tags))
 
 
 @register.simple_tag

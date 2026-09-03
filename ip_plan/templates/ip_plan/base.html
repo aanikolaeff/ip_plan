@@ -18,6 +18,7 @@
   <link href="{% static 'ip_plan/vendor/datatables/fixedColumns.bootstrap5.min.css' %}" rel="stylesheet">
 
   <link rel="stylesheet" href="{% static 'ip_plan/css/style.css' %}">
+  {% block extra_head %}{% endblock %}
 </head>
 <body>
   <!-- x-data="" — без хотя бы одного предка с x-data Alpine не навешивает
@@ -94,5 +95,6 @@
     window.COLUMN_INFO = {{ column_info_json|default:"{}"|safe }};
   </script>
   <script src="{% static 'ip_plan/js/app.js' %}"></script>
+  {% block extra_scripts %}{% endblock %}
 </body>
 </html>

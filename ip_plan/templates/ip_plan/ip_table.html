@@ -1,4 +1,9 @@
 {% extends "ip_plan/base.html" %}
+{% load ip_plan_extras %}
+
+{% block extra_scripts %}
+  {% vite_asset "ip_plan/static_src/ip_table/main.jsx" %}
+{% endblock %}
 
 {% block content %}
   <!-- До завершения инициализации DataTables сервер показывал бы все
@@ -56,128 +61,11 @@
     </div>
   </section>
 
-  <div class="page-toolbar">
-    <div class="toolbar-left">
-      <div class="toolbar-input-wrap">
-        <input id="search-input" class="toolbar-input" type="text" placeholder="🔍 Поиск...">
-        <button type="button" class="toolbar-clear-btn" id="search-clear-btn"
-                aria-label="Очистить поиск" title="Очистить поиск" style="display:none">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="2.5"
-               stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 6L6 18M6 6l12 12"/>
-          </svg>
-        </button>
-      </div>
-      <select id="status-filter" class="toolbar-select">
-        <option value="">Статус: все</option>
-        {% for value, label in status_choices %}
-          <option value="{{ value }}">{{ label }}</option>
-        {% endfor %}
-      </select>
-      <select id="prefix-filter" class="toolbar-select">
-        <option value="">Подсеть: все</option>
-        {% for prefix in prefixes %}
-          <option value="{{ prefix.prefix }}">{{ prefix.prefix }}</option>
-        {% endfor %}
-      </select>
-      <select id="role-filter" class="toolbar-select">
-        <option value="">Роль: все</option>
-        <option value="__none__">Нет роли</option>
-        {% for slug, name in role_choices %}
-          <option value="{{ slug }}">{{ name }}</option>
-        {% endfor %}
-      </select>
-
-      <div class="columns-dropdown-wrap">
-        <button type="button" class="btn-modal-secondary" id="columns-toggle-btn">⚙ Столбцы</button>
-        <div class="columns-dropdown" id="columns-dropdown">
-          <div class="columns-dropdown-title">Видимые столбцы</div>
-          <div class="columns-checklist">
-            <label class="column-check"><input type="checkbox" data-column-index="2" checked> Статус</label>
-            <label class="column-check"><input type="checkbox" data-column-index="3" checked> DNS-имя</label>
-            <label class="column-check"><input type="checkbox" data-column-index="4"> DNS записи</label>
-            <label class="column-check"><input type="checkbox" data-column-index="5" checked> Принадлежность</label>
-            <label class="column-check"><input type="checkbox" data-column-index="6" checked> Роль</label>
-            <label class="column-check"><input type="checkbox" data-column-index="7" checked> Описание</label>
-            <label class="column-check"><input type="checkbox" data-column-index="8"> Тэги</label>
-            <label class="column-check"><input type="checkbox" data-column-index="9"> CPE</label>
-            <label class="column-check"><input type="checkbox" data-column-index="10" checked> Open Ports</label>
-            <label class="column-check"><input type="checkbox" data-column-index="11"> Guest OS</label>
-            <label class="column-check"><input type="checkbox" data-column-index="12"> OS Guess</label>
-            <label class="column-check"><input type="checkbox" data-column-index="13" checked> Операционная система</label>
-            <label class="column-check"><input type="checkbox" data-column-index="14" checked> Назначение</label>
-            <label class="column-check"><input type="checkbox" data-column-index="15" checked> Комментарии</label>
-          </div>
-          <div class="columns-dropdown-footer">
-            <button type="button" class="columns-reset-btn" id="columns-reset-btn">Сбросить по умолчанию</button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="toolbar-right">
-      <div class="records-counter">
-        Показано <span id="dt-count-shown">{{ ip_addresses|length }}</span>
-        из <span id="dt-count-total">{{ ip_addresses|length }}</span> записей
-      </div>
-    </div>
-  </div>
-
-  {% if error %}
-    <div class="alert-modal-error">{{ error }}</div>
-  {% endif %}
-
-  <div class="table-wrapper">
-    <table id="ip-table" class="table w-100">
-      <thead>
-        <tr>
-          <th style="width:48px" class="th-select-all">
-            <input type="checkbox" id="select-all-checkbox" title="Выбрать все на странице">
-          </th>
-          <th style="width:220px" data-field="address" data-col-key="address">Адрес (IP)</th>
-          <th style="width:120px" data-col-key="status">Статус</th>
-          <th style="width:11.68%" data-field="dns_name" data-col-key="dns_name">DNS-имя</th>
-          <th style="width:150px" data-col-key="dns_records">DNS записи</th>
-          <th style="width:200px" data-col-key="assignment">Принадлежность</th>
-          <th style="width:100px" data-field="role" data-col-key="role">Роль</th>
-          <th style="width:11.68%" data-field="description" data-col-key="description">Описание</th>
-          <th style="width:86px" data-col-key="tags">Тэги</th>
-          <th style="width:121px" data-col-key="cpe">CPE</th>
-          <th style="width:156px" data-col-key="open_ports">Open Ports</th>
-          <th style="width:140px" data-col-key="guest_os">Guest OS</th>
-          <th style="width:506px" data-col-key="os_guess">OS Guess</th>
-          <th style="width:11.68%" data-field="os_installed" data-col-key="os_installed">Операционная система</th>
-          <th style="width:11.68%" data-field="purpose" data-col-key="purpose">Назначение</th>
-          <th style="width:11.68%" data-field="comments" data-col-key="comments">Комментарии</th>
-        </tr>
-      </thead>
-      <tbody id="ip-table-body">
-        {% for ip in ip_addresses %}
-          {% include "ip_plan/ip_row.html" with ip=ip %}
-        {% endfor %}
-      </tbody>
-    </table>
-    <div class="panel-note">
-      <span>Чередование строк помогает быстрее вести взгляд по широкой таблице.</span>
-      <span>Двойной клик по ячейке — для быстрого редактирования, кнопка «Открыть» — для полной формы.</span>
-    </div>
-  </div>
-
-  <!-- Подтверждение массового удаления — отдельный лёгкий диалог, без HTMX
-       (текст целиком формируется на клиенте по числу выбранных строк). -->
-  <div class="modal-overlay" id="bulk-delete-overlay" style="display:none;">
-    <div class="modal-box" style="width:420px;">
-      <div class="modal-title-bar">
-        <h5>Удаление записей</h5>
-        <button type="button" class="modal-close-btn" id="bulk-delete-close-btn">✕</button>
-      </div>
-      <div class="modal-body-pad">
-        <p id="bulk-delete-text" style="margin:0; color:var(--text-main);"></p>
-      </div>
-      <div class="modal-footer-bar">
-        <button type="button" class="btn-modal-secondary" id="bulk-delete-cancel-btn">Отмена</button>
-        <button type="button" class="btn-danger" id="bulk-delete-confirm-btn">Удалить</button>
-      </div>
-    </div>
-  </div>
+  <!-- Тулбар + таблица + пагинация — React/TanStack Table (см.
+       docs/plans/2026-09-03-ip-table-react-design.md). Данные — fetch к
+       /ip/list.json (views.ip_list_json), а не серверный рендер: сервер
+       эту часть страницы больше не готовит вообще, только hero-секцию
+       выше и модалки (ip_add_modal.html и т.д., по-прежнему HTMX, не
+       связаны с этим root'ом). -->
+  <div id="ip-table-root"></div>
 {% endblock %}
