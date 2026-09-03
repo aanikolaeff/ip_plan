@@ -76,7 +76,7 @@
   width: 30px; height: 30px;
   border-radius: 50%;
   border: 1px solid var(--border-soft-strong);
-  background: rgba(255, 255, 255, .9);
+  background: var(--bg-surface-soft);
   color: var(--text-muted);
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
@@ -84,11 +84,53 @@
 }
 .nav-icon:hover { color: var(--accent); border-color: var(--accent); background: rgba(31, 111, 235, .05); }
 
+/* --- Настройки (шестерёнка) --- */
+.nav-settings-wrap { position: relative; }
+.nav-settings-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-soft-strong);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(22, 29, 37, .14);
+  min-width: 200px;
+  z-index: 30;
+  padding: .85rem;
+}
+.nav-settings-title {
+  font-size: .72rem; color: var(--text-muted); font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em; margin-bottom: .55rem;
+}
+.nav-theme-toggle {
+  display: flex;
+  border: 1px solid var(--border-soft-strong);
+  border-radius: 999px;
+  padding: 2px;
+  gap: 2px;
+}
+.nav-theme-toggle button {
+  flex: 1;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: .8125rem;
+  font-weight: 600;
+  padding: .35rem .5rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+.nav-theme-toggle button.active { background: var(--accent); color: #fff; }
+.nav-theme-toggle button:not(.active):hover { background: rgba(24, 33, 47, .05); color: var(--text-main); }
+
 .nav-sep { width: 1px; height: 20px; background: var(--border-soft-strong); margin: 0 .35rem; flex: none; }
 
 .nav-user { font-size: .8rem; color: var(--text-muted); }
 .nav-logout {
-  background: rgba(255, 255, 255, .9);
+  background: var(--bg-surface-soft);
   color: var(--text-main);
   border: 1px solid var(--border-soft-strong);
   border-radius: 999px;

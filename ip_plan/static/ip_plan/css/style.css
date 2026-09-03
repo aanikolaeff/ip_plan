@@ -4,6 +4,18 @@
       --bg-row-odd: #fcfdff;
       --bg-row-even: #f3f7fb;
       --bg-row-hover: #d0e4ff;
+      /* --bg-surface — непрозрачные "плавающие" поверхности (модалки,
+         дропдауны, кебаб/ОС-меню): раньше эти карточки были захардкожены
+         как #fff/#ffffff в каждом правиле по отдельности — на тёмной теме
+         это давало бы яркие белые прямоугольники поверх тёмной страницы.
+         --bg-surface-soft — то же самое, но полупрозрачное, для pill-
+         контролов (инпуты/кнопки в тулбаре и шапке), которым не нужна
+         полная непрозрачность. --bg-surface-muted — чуть более приглушённая
+         сплошная подложка (шапка таблицы). */
+      --bg-surface: #ffffff;
+      --bg-surface-soft: rgba(255, 255, 255, 0.9);
+      --bg-surface-muted: #f8fafc;
+      --border-surface: rgba(255, 255, 255, 0.75);
       --border-soft: rgba(24, 33, 47, 0.08);
       --border-soft-strong: rgba(24, 33, 47, 0.16);
       --accent: #1f6feb;
@@ -13,10 +25,52 @@
       --text-faint: #92a0b5;
       --color-danger: #dc2626;
       --color-danger-strong: #b91c1c;
+      --body-gradient-from: #f8fbff;
+      --body-gradient-to: #f4f7fb;
+    }
+
+    /* --- Тёмная тема — переключается кнопкой "Настройки" в шапке
+       (base.html: setIpPlanTheme(), localStorage). Переопределяет только
+       переменные — почти вся остальная вёрстка уже читает цвета через
+       var(...), поэтому этого блока (плюс пары точечных мест ниже, где
+       раньше был буквальный #fff/пастельный hex вместо переменной)
+       достаточно для перекраски всего приложения, а не только этой
+       страницы. Бейджи статусов/ролей/тэгов/ACL перекрашены отдельно,
+       через color-mix(currentColor) на их существующем text-color — см.
+       блок в конце файла — так не пришлось заводить по паре тёмных
+       токенов на каждый статус/тип. */
+    :root[data-theme="dark"] {
+      --bg-page: #10141d;
+      --bg-table: rgba(19, 24, 34, 0.85);
+      --bg-row-odd: #151b26;
+      --bg-row-even: #11151e;
+      --bg-row-hover: #1d2a42;
+      --bg-surface: #161c28;
+      --bg-surface-soft: rgba(22, 28, 40, 0.92);
+      --bg-surface-muted: #131822;
+      --border-surface: rgba(255, 255, 255, 0.06);
+      --border-soft: rgba(255, 255, 255, 0.06);
+      --border-soft-strong: rgba(255, 255, 255, 0.13);
+      --accent: #4c8dff;
+      --accent-strong: #7aabff;
+      --text-main: #e7ecf5;
+      --text-muted: #98a4ba;
+      --text-faint: #67728a;
+      --color-danger: #f0574f;
+      --color-danger-strong: #ff7d76;
+      --body-gradient-from: #0b0e15;
+      --body-gradient-to: #10141d;
+      /* Токены статус-рейки/dot-чипов React-таблицы (table.css) — ярче
+         дефолта, тёмный фон "съедает" насыщенность иначе неразличимо. */
+      --status-active: #22c55e;
+      --status-reserved: #f59e0b;
+      --status-deprecated: #94a3b8;
+      --status-dhcp: #38bdf8;
+      --status-slaac: #a78bfa;
     }
 
     body {
-      background: linear-gradient(180deg, #f8fbff 0%, #f4f7fb 100%);
+      background: linear-gradient(180deg, var(--body-gradient-from) 0%, var(--body-gradient-to) 100%);
       color: var(--text-main);
       font-family: 'Inter', sans-serif;
     }
@@ -74,7 +128,7 @@
       height: 42px;
       border-radius: 999px;
       border: 1px solid var(--border-soft);
-      background: rgba(255, 255, 255, 0.9);
+      background: var(--bg-surface-soft);
       color: var(--text-main);
       padding: 0 1rem;
       font-family: inherit;
@@ -83,7 +137,7 @@
       transition: all .15s ease;
     }
     .field-control {
-      background: #fbfdff;
+      background: var(--bg-surface-soft);
       border: 1px solid var(--border-soft-strong);
       color: var(--text-main);
       border-radius: 10px;
@@ -164,7 +218,7 @@
        maket/README.md про критику emoji-иконок без подписи вне навигации. */
 
     .btn-modal-secondary {
-      background: rgba(255, 255, 255, 0.9);
+      background: var(--bg-surface-soft);
       color: var(--text-main);
       border: 1px solid var(--border-soft-strong);
       border-radius: 999px;
@@ -182,7 +236,7 @@
     .table-wrapper {
       position: relative;
       background: var(--bg-table);
-      border: 1px solid rgba(255, 255, 255, 0.7);
+      border: 1px solid var(--border-surface);
       border-radius: 24px;
       box-shadow: 0 8px 30px rgba(22, 29, 37, .08), 0 2px 8px rgba(22, 29, 37, .05);
       /* overflow:hidden тут сделал бы .table-wrapper "контейнером скролла"
@@ -263,7 +317,7 @@
     table.dataTable thead th {
       /* Сплошной (без alpha) — шапка теперь sticky и должна перекрывать
          строки под собой при скролле, а не давать им просвечивать. */
-      background: #f8fafc !important;
+      background: var(--bg-surface-muted) !important;
       color: var(--text-muted);
       border-bottom: 1px solid var(--border-soft) !important;
       font-weight: 600;
@@ -322,7 +376,7 @@
       justify-content: space-between;
       flex-wrap: wrap;
       gap: .75rem 1.5rem;
-      background: rgba(248, 250, 252, 0.97);
+      background: var(--bg-surface-muted);
       backdrop-filter: blur(6px);
       border-top: 1px solid var(--border-soft);
       padding: .55rem 1rem;
@@ -344,7 +398,7 @@
       padding: .25rem .5rem;
       font-size: .8rem;
       color: var(--text-main);
-      background: #fff;
+      background: var(--bg-surface);
       cursor: pointer;
     }
 
@@ -409,7 +463,7 @@
       top: 100%;
       left: 0;
       margin-top: 6px;
-      background: #fff;
+      background: var(--bg-surface);
       border: 1px solid var(--border-soft-strong);
       border-radius: 14px;
       box-shadow: 0 8px 24px rgba(22, 29, 37, .14);
@@ -698,7 +752,7 @@
        визуально перекрывается sticky-ячейкой следующей строки. */
     td.kebab-td-active { z-index: 25 !important; }
     .btn-kebab {
-      background: rgba(255, 255, 255, 0.9);
+      background: var(--bg-surface-soft);
       color: var(--text-muted);
       border: 1px solid var(--border-soft);
       border-radius: 10px;
@@ -706,14 +760,14 @@
       cursor: pointer;
       font-size: .9rem;
     }
-    .btn-kebab:hover { background: #fff; color: var(--text-main); border-color: var(--text-faint); }
+    .btn-kebab:hover { background: var(--bg-surface); color: var(--text-main); border-color: var(--text-faint); }
     .kebab-menu {
       display: none;
       position: absolute;
       right: 0;
       top: 100%;
       margin-top: 4px;
-      background: #fff;
+      background: var(--bg-surface);
       border: 1px solid var(--border-soft-strong);
       border-radius: 10px;
       box-shadow: 0 8px 24px rgba(22, 29, 37, .14);
@@ -749,7 +803,7 @@
        горизонтальным скроллом DataTables (.dt-scroll-body). */
     .os-menu {
       position: fixed;
-      background: #fff;
+      background: var(--bg-surface);
       border: 1px solid var(--border-soft-strong);
       border-radius: 10px;
       box-shadow: 0 8px 24px rgba(22, 29, 37, .14);
@@ -794,7 +848,7 @@
     .os-menu-submenu {
       position: fixed;
       display: none;
-      background: #fff;
+      background: var(--bg-surface);
       border: 1px solid var(--border-soft-strong);
       border-radius: 10px;
       box-shadow: 0 8px 24px rgba(22, 29, 37, .14);
@@ -815,8 +869,8 @@
       z-index: 1000;
     }
     .modal-box {
-      background: #ffffff;
-      border: 1px solid rgba(255, 255, 255, 0.8);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-surface);
       border-radius: 24px;
       width: 600px; max-width: 95vw;
       max-height: 85vh;
@@ -831,7 +885,7 @@
       position: sticky; top: 0; z-index: 2;
       display: flex; align-items: center; justify-content: space-between;
       padding: 1.1rem 1.3rem; border-bottom: 1px solid var(--border-soft);
-      background: #fff;
+      background: var(--bg-surface);
     }
     .modal-title-bar h5 { margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-main); letter-spacing: -.01em; }
     .modal-close-btn {
@@ -844,7 +898,7 @@
       position: sticky; bottom: 0; z-index: 2;
       display: flex; justify-content: flex-end; gap: .6rem;
       padding: .85rem 1.1rem; border-top: 1px solid var(--border-soft);
-      background: #fff;
+      background: var(--bg-surface);
     }
     .field-group { border: 1px solid var(--border-soft); border-radius: 14px; padding: .75rem .9rem; margin-bottom: .65rem; }
     .field-group-title { font-size: .72rem; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin-bottom: .55rem; }
@@ -1115,7 +1169,7 @@ tr:hover .cell-clear-btn { opacity: 1; }
   padding: 0 .85rem;
   border-radius: 999px;
   border: 1px solid var(--border-soft-strong);
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--bg-surface-soft);
   color: var(--text-muted);
   font-size: .8125rem;
   font-weight: 600;
@@ -1152,7 +1206,7 @@ tr:hover .cell-clear-btn { opacity: 1; }
   height: 38px;
   border-radius: 999px;
   border: 1px solid var(--border-soft);
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--bg-surface-soft);
   color: var(--text-main);
   padding: 0 1rem;
   font-family: inherit;
@@ -1176,4 +1230,51 @@ tr:hover .cell-clear-btn { opacity: 1; }
 .dt-container.dt-bootstrap5 .dt-paging-button.active .page-link {
   background: var(--accent);
   border-color: var(--accent);
+}
+
+/* ==========================================================================
+   Тёмная тема — точечные места, которые НЕ решаются переопределением
+   переменных выше (:root[data-theme="dark"]).
+
+   Пастельные бейджи (статус/роль/тэг/ACL) в светлой теме заданы парой
+   "светлый фон + насыщенный текст" (напр. .badge-status[data-status="active"]
+   { background:#e7f7f0; color:#0f9d6c }) — насыщенный текст сам по себе
+   отлично читается и на тёмном фоне, менять его не нужно. Меняется только
+   фон: color-mix(in srgb, currentColor N%, transparent) берёт ЦВЕТ ТЕКСТА
+   этого же элемента (уже заданный правилом выше) и делает из него
+   полупрозрачную подложку — не пришлось заводить отдельную пару тёмных
+   hex на каждый статус/тип, один общий приём на всех. Специфичность выше,
+   чем у "[data-status=\"active\"]" (root+класс+атрибут против просто
+   класс+атрибут) — переопределяет независимо от порядка объявления. */
+:root[data-theme="dark"] .badge-status[data-status],
+:root[data-theme="dark"] .badge-role,
+:root[data-theme="dark"] .tag-chip,
+:root[data-theme="dark"] .badge-acl-type,
+:root[data-theme="dark"] .badge-acl-log,
+:root[data-theme="dark"] .alert-modal-error,
+:root[data-theme="dark"] .kebab-menu .kebab-delete-ip {
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+:root[data-theme="dark"] .kebab-menu .kebab-delete-ip:hover {
+  background: color-mix(in srgb, currentColor 26%, transparent);
+}
+
+/* Свободные диапазоны (гэп-строки) — не завязаны на currentColor паттерн
+   (цвет фона задан на <td>, а не на элементе с тем же color, что у текста
+   лейбла), поэтому переопределяются явно, но тем же приёмом "тот же hue,
+   меньше непрозрачности". */
+:root[data-theme="dark"] tr.free-range-row td {
+  background: rgba(34, 197, 94, .12) !important;
+  border-left-color: #22c55e;
+}
+:root[data-theme="dark"] .free-range-add-btn:hover { color: #0b1220; }
+
+/* Выбранная строка (легаси-селектор для #ip-table — см. комментарий у
+   правила выше в файле; сейчас его использует ACL-таблица DataTables,
+   IP-таблица подсвечивает выбор иначе, через токены в table.css). */
+:root[data-theme="dark"] #ip-table tbody tr:has(.row-select-checkbox:checked) td {
+  background: color-mix(in srgb, var(--color-danger) 12%, var(--bg-row-odd)) !important;
+}
+:root[data-theme="dark"] #ip-table tbody tr:has(.row-select-checkbox:checked):hover td {
+  background: color-mix(in srgb, var(--color-danger) 20%, var(--bg-row-odd)) !important;
 }

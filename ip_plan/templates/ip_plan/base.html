@@ -6,6 +6,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>IP Plan — Список сетевых активов СИЦ</title>
 
+  <!-- Тема (светлая/тёмная) — САМЫЙ первый скрипт в <head>, ещё до
+       стилей: ставит data-theme на <html> синхронно, до первой отрисовки,
+       иначе страница на долю секунды мелькала бы светлой и тут же
+       перекрашивалась (FOUC). Хранится в localStorage — per-browser, не
+       per-пользователь (тот же компромисс, что и localStorage для
+       ширин/видимости колонок таблицы, см. design doc React-таблицы).
+       Дефолт — светлая, если ничего не сохранено (текущее поведение без
+       переключателя). -->
+  <script>
+    (function () {
+      var KEY = 'ip_plan_theme';
+      var saved = localStorage.getItem(KEY);
+      if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+      window.setIpPlanTheme = function (mode) {
+        localStorage.setItem(KEY, mode);
+        if (mode === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+        else document.documentElement.removeAttribute('data-theme');
+      };
+    })();
+  </script>
+
   <!-- Шрифты/Bootstrap/DataTables — завендорены в static/ip_plan/vendor/:
        приложение работает на внутренней сети, где внешний интернет/CDN
        могут быть недоступны без VPN. -->
@@ -78,6 +99,34 @@
               <path d="M4 19h16"></path>
             </svg>
           </a>
+
+          <!-- Настройки — пока только тема, но отдельная кнопка (не сразу
+               toggle по клику), чтобы было куда добавить остальные
+               клиентские настройки позже, не меняя место в шапке.
+               theme в x-data читается один раз при монтировании Alpine —
+               достаточно, потому что переключить тему можно только отсюда
+               же (никакой другой вкладки/потока, которые могли бы её
+               поменять параллельно, у этой настройки нет). -->
+          <div class="nav-settings-wrap"
+               x-data="{ open: false, theme: (localStorage.getItem('ip_plan_theme') === 'dark' ? 'dark' : 'light') }"
+               @click.outside="open = false" @keydown.escape.window="open = false">
+            <button type="button" class="nav-icon" title="Настройки" @click="open = !open">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+            </button>
+            <div class="nav-settings-dropdown" x-show="open" x-cloak x-transition.duration.120ms>
+              <div class="nav-settings-title">Тема</div>
+              <div class="nav-theme-toggle">
+                <button type="button" :class="{ active: theme === 'light' }"
+                        @click="theme = 'light'; setIpPlanTheme('light')">Светлая</button>
+                <button type="button" :class="{ active: theme === 'dark' }"
+                        @click="theme = 'dark'; setIpPlanTheme('dark')">Тёмная</button>
+              </div>
+            </div>
+          </div>
+
           <div class="nav-sep"></div>
           <span class="nav-user">{{ user.get_full_name|default:user.username }}</span>
           <form method="post" action="{% url 'ip_plan:logout' %}">

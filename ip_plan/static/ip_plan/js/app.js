@@ -1351,6 +1351,16 @@
     // Инициализация DataTables: фиксация первых 2 колонок, ColVis, своя пагинация/поиск.
     let ipTable;
     function initIpTable() {
+      // Страница IP-плана теперь React/TanStack (ip_plan_docker_react/
+      // static_src/ip_table/TableRoot.jsx) — #ip-table в её разметке тот
+      // же id, что и у старой DataTables-таблицы (переиспользован ради
+      // общих CSS-правил), но это уже не DataTables и вообще не тот DOM,
+      // который эта функция ожидает. Без этого guard'а DataTable()
+      // пыталась бы взять React-узел под свой контроль (и на resize падала
+      // с "Cannot read properties of undefined (reading 'page')", т.к.
+      // инициализация не проходит до конца на чужой разметке) — #ip-table-
+      // root в DOM есть только на этой, React-версии страницы.
+      if (document.getElementById('ip-table-root')) return;
       if ($.fn.DataTable.isDataTable('#ip-table')) {
         // .destroy() сам сбрасывает видимость ВСЕХ колонок как часть
         // очистки и стреляет 'column-visibility.dt' на старом инстансе —
