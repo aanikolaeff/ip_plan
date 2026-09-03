@@ -1,0 +1,281 @@
+{
+  "os_directory": {
+    "categories": {
+      "windows": {
+        "desktop": [
+          {
+            "id": "7e08a2030978",
+            "name": "Windows 10",
+            "versions": [
+              "Home",
+              "Pro",
+              "Enterprise",
+              "Education",
+              "LTSC"
+            ],
+            "certification": ""
+          },
+          {
+            "id": "ffafaf35f8e9",
+            "name": "Windows 11",
+            "versions": [
+              "Home",
+              "Pro",
+              "Enterprise",
+              "Education"
+            ],
+            "certification": ""
+          }
+        ],
+        "server": [
+          {
+            "id": "ff4742124100",
+            "name": "Windows Server 2008",
+            "versions": [
+              "Standard",
+              "Enterprise",
+              "Datacenter"
+            ],
+            "certification": ""
+          },
+          {
+            "id": "97e8d811943e",
+            "name": "Windows Server 2008 R2",
+            "versions": [
+              "Standard",
+              "Enterprise",
+              "Datacenter"
+            ],
+            "certification": ""
+          },
+          {
+            "id": "74d96e0a4b7e",
+            "name": "Windows Server 2012",
+            "versions": [
+              "Standard",
+              "Datacenter",
+              "Essentials"
+            ],
+            "certification": ""
+          },
+          {
+            "id": "b629ca797516",
+            "name": "Windows Server 2012 R2",
+            "versions": [
+              "Standard",
+              "Datacenter",
+              "Essentials"
+            ],
+            "certification": ""
+          },
+          {
+            "id": "e17b5b36675c",
+            "name": "Windows Server 2016",
+            "versions": [
+              "Standard",
+              "Datacenter",
+              "Essentials"
+            ],
+            "certification": ""
+          },
+          {
+            "id": "0c7eae41ba95",
+            "name": "Windows Server 2019",
+            "versions": [
+              "Standard",
+              "Datacenter",
+              "Essentials"
+            ],
+            "certification": ""
+          },
+          {
+            "id": "a3badb5c3abd",
+            "name": "Windows Server 2022",
+            "versions": [
+              "Standard",
+              "Datacenter",
+              "Essentials"
+            ],
+            "certification": ""
+          }
+        ]
+      },
+      "linux_western": {
+        "desktop": [
+          {
+            "id": "0a1f669cec34",
+            "name": "Debian GNU/Linux",
+            "versions": [
+              "Buster 10 (2019)",
+              "Bullseye 11 (2021)",
+              "Bookworm 12 (2023)"
+            ],
+            "certification": ""
+          },
+          {
+            "id": "c905bf338907",
+            "name": "Ubuntu Desktop",
+            "versions": [
+              "18.04 LTS Bionic (2018)",
+              "20.04 LTS Focal (2020)",
+              "22.04 LTS Jammy (2022)",
+              "24.04 LTS Noble (2024)"
+            ],
+            "certification": ""
+          },
+          {
+            "id": "290062867cf8",
+            "name": "Fedora Workstation",
+            "versions": [
+              "35 (2021)",
+              "38 (2023)",
+              "39 (2023)",
+              "40 (2024)",
+              "41 (2024)",
+              "42 (2025)"
+            ],
+            "certification": ""
+          }
+        ],
+        "server": [
+          {
+            "id": "87ce1f2c03a0",
+            "name": "Red Hat Enterprise Linux (RHEL)",
+            "versions": [
+              "RHEL 8 (2019)",
+              "RHEL 9 (2022)"
+            ],
+            "certification": ""
+          },
+          {
+            "id": "d24e2f1db42f",
+            "name": "CentOS",
+            "versions": [
+              "8 (2019)",
+              "CentOS Stream 9 (2021)"
+            ],
+            "certification": ""
+          },
+          {
+            "id": "4b419fa09025",
+            "name": "Ubuntu Server",
+            "versions": [
+              "22.04 LTS (2022)",
+              "24.04 LTS (2024)",
+              "26.04 LTS (2026)"
+            ],
+            "certification": ""
+          },
+          {
+            "id": "797ee486f6a0",
+            "name": "Debian GNU/Linux (Server)",
+            "versions": [
+              "Buster 10 (2019)",
+              "Bullseye 11 (2021)",
+              "Bookworm 12 (2023)"
+            ],
+            "certification": ""
+          }
+        ]
+      },
+      "linux_russian": {
+        "desktop": [
+          {
+            "id": "745471e5949e",
+            "name": "ALT Рабочая станция",
+            "versions": [
+              "ALT Рабочая станция 10.0 (2022)",
+              "ALT Рабочая станция 10.1 (2023)",
+              "ALT Рабочая станция 10.2 (2024)",
+              "ALT Рабочая станция К 11.0 (платформа p11 Salvia) (2025)",
+              "ALT Рабочая станция К 11.1 (2025)",
+              "ALT Рабочая станция К 11.2 (2025)"
+            ],
+            "certification": "ФСТЭК"
+          },
+          {
+            "id": "817ff7dee774",
+            "name": "Astra Linux Common Edition",
+            "versions": [
+              "Astra Linux CE 1.10 Orel (2016)",
+              "Astra Linux CE 1.11 Orel (2017)",
+              "Astra Linux CE 2.12 Orel (2019)",
+              "Astra Linux CE 3.0 Leningrad (2023)"
+            ],
+            "certification": ""
+          },
+          {
+            "id": "b79a4250f14b",
+            "name": "RED OS Рабочая станция",
+            "versions": [
+              "RED OS 7.1 (2017)",
+              "RED OS 7.2 (2019)",
+              "RED OS 7.3 (2021)",
+              "RED OS 7.3.2 (2022)",
+              "RED OS 7.3.5 (2024)",
+              "RED OS 8.0 (2024)",
+              "RED OS 8.0.2 (ядро 6.12, PostgreSQL 17.5, GCC 13) (2025)"
+            ],
+            "certification": "ФСТЭК"
+          }
+        ],
+        "server": [
+          {
+            "id": "f4f8fb8cd08c",
+            "name": "ALT Сервер",
+            "versions": [
+              "ALT Сервер 10.0 (2022)",
+              "ALT Сервер 11.0"
+            ],
+            "certification": "ФСТЭК"
+          },
+          {
+            "id": "d7ebb58757dd",
+            "name": "ALT 8 СП (с защитой информации)",
+            "versions": [
+              "ALT 8 СП (2016)",
+              "ALT 8 СП Update 1 (2017)",
+              "ALT 8 СП Update 2 (2018)",
+              "ALT 8 СП Update 3 (2019)",
+              "ALT 8 СП Update 4 (2020)"
+            ],
+            "certification": "ФСТЭК 1 класс, ФСБ"
+          },
+          {
+            "id": "5a012be5e268",
+            "name": "Astra Linux Special Edition",
+            "versions": [
+              "Astra Linux SE 1.2 Smolensk (2012)",
+              "Astra Linux SE 1.3 Smolensk (2014)",
+              "Astra Linux SE 1.4 Smolensk (2016)",
+              "Astra Linux SE 1.5 Smolensk (2017)",
+              "Astra Linux SE 1.6 Smolensk (2019)",
+              "Astra Linux SE 1.7 Smolensk (2021)",
+              "Astra Linux SE 1.7.1 Smolensk (2022)",
+              "Astra Linux SE 1.7.2 Smolensk (2023)",
+              "Astra Linux SE 1.8 (новое поколение) (2024)",
+              "Astra Linux SE 1.8.3 (поддержка SPARC, автодеплой по сети) (2025)",
+              "Astra Linux SE 1.8.4 (2026)"
+            ],
+            "certification": "ФСТЭК 1В, ФСБ ГТ"
+          },
+          {
+            "id": "3c635d089fef",
+            "name": "RED OS Server",
+            "versions": [
+              "RED OS Server 7.1 (2017)",
+              "RED OS Server 7.2 (2019)",
+              "RED OS Server 7.3 (2021)",
+              "RED OS Server 7.3.2 (2022)",
+              "RED OS Server 7.3.5 (2024)",
+              "RED OS Server 7.3.6 (ядро 6.12) (2025)",
+              "RED OS Server 8.0 (2024)",
+              "RED OS Server 8.0.2 (ядро 6.12, PostgreSQL 17.5, GCC 13) (2025)"
+            ],
+            "certification": "ФСТЭК"
+          }
+        ]
+      }
+    }
+  }
+}

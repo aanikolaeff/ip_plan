@@ -1,0 +1,45 @@
+services:
+  web:
+    build: .
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 60
+    ports:
+      - "8050:8000"
+    env_file:
+      - .env
+    restart: unless-stopped
+    # host.docker.internal на Docker Desktop работает "из коробки", на
+    # обычном Linux Docker Engine — только с этой записью (Docker 20.10+).
+    # mdc-ipa-* — статически, чтобы login занимал миллисекунды, а не ~4с:
+    # glibc getaddrinfo() по умолчанию спрашивает И A, И AAAA, а корпоративный
+    # DNS на AAAA-запрос для этих хостов не отвечает (не NXDOMAIN, а просто
+    # тишина) — getaddrinfo ждёт таймаут (~4с) и только потом отдаёт A-запись.
+    # /etc/hosts проверяется раньше DNS и отдаёт адрес мгновенно, минуя это
+    # ожидание целиком. Если IP сменится на стороне FreeIPA — обновить тут.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "mdc-ipa-1.sicmt.local:10.1.113.1"
+      - "mdc-ipa-2.sicmt.local:10.1.113.2"
+    # С LDAP-логином (django-auth-ldap) тут реально хранятся сессии и
+    # зеркало User из LDAP — без volume'а они терялись бы при каждой
+    # пересборке контейнера (`up -d --build`).
+    #
+    # ./admin — bind mount (не named volume), специально для файлов
+    # справочников/настроек, которые правит человек напрямую на хосте
+    # (например ip_plan/services/os_catalog.py: admin/os_catalog.json).
+    # В отличие от sqlite_data, эта папка видна и редактируема прямо в
+    # файловой системе проекта, не только изнутри контейнера.
+    volumes:
+      - sqlite_data:/app/data
+      - ./admin:/app/admin
+      # Страница "ACL" (ip_plan/services/acl_store.py) читает running-config
+      # бэкапы, которые netbox-sync/netbox_config_backup.py пишет туда при
+      # каждом full_sync.sh — read-only, этот контейнер туда никогда не
+      # пишет. Предполагает, что netbox-sync и ip_plan_docker запущены на
+      # одном хосте (соседние директории) — так и есть на проде (cron
+      # full_sync.sh на том же хосте). Если это когда-нибудь изменится —
+      # либо перенести volume на путь, куда файлы доставляются (rsync/scp),
+      # либо переопределить ACL_CONFIG_BACKUPS_DIR на свою схему доставки.
+      - ../netbox-sync/config_backups:/app/config_backups:ro
+
+volumes:
+  sqlite_data:

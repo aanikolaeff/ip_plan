@@ -1,0 +1,10 @@
+.env
+.git
+.gitignore
+__pycache__
+*.pyc
+db.sqlite3
+data/
+.venv
+staticfiles/
+tokens.txt

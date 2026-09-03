@@ -1,0 +1,75 @@
+<div class="modal-title-bar">
+  <h5>Добавить IP-адрес</h5>
+  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть">✕</button>
+</div>
+<form hx-post="{% url 'ip_plan:ip_add' %}" hx-target="#modal-content" hx-swap="innerHTML" hx-indicator="#modal-spinner">
+  {% csrf_token %}
+  <div class="modal-body-pad">
+    {% if form.non_field_errors %}
+      <div class="alert-modal-error">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <div class="field-group">
+      <div class="field-group-title">Основные поля</div>
+      <div class="ip-form-row">
+        <div class="ip-form-field-address">
+          <label class="field-label">{{ form.address.label }}</label>
+          {{ form.address }}
+          {{ form.address.errors }}
+        </div>
+        <div class="ip-form-field-status">
+          <label class="field-label">{{ form.status.label }}</label>
+          {{ form.status }}
+        </div>
+        <div class="ip-form-field-dns">
+          <label class="field-label">{{ form.dns_name.label }}</label>
+          {{ form.dns_name }}
+        </div>
+      </div>
+      <div class="row g-2">
+        <div class="col-12">
+          <label class="field-label">{{ form.description.label }}</label>
+          {{ form.description }}
+        </div>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <div class="field-group-title">Кастомные поля</div>
+      <div class="row g-2">
+        <div class="col-md-4">
+          <label class="field-label">{{ form.cpe.label }}</label>
+          {{ form.cpe }}
+        </div>
+        <div class="col-md-4">
+          <label class="field-label">{{ form.open_ports.label }}</label>
+          {{ form.open_ports }}
+        </div>
+        <div class="col-md-4">
+          <label class="field-label">{{ form.os_guess.label }}</label>
+          {{ form.os_guess }}
+        </div>
+        <div class="col-md-4">
+          <label class="field-label">{{ form.os_installed.label }}</label>
+          {{ form.os_installed }}
+        </div>
+        <div class="col-md-8">
+          <label class="field-label">{{ form.purpose.label }}</label>
+          {{ form.purpose }}
+        </div>
+        <div class="col-12">
+          <label class="field-label">{{ form.comments.label }}</label>
+          {{ form.comments }}
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-2">
+      {% include "ip_plan/_tag_input.html" %}
+    </div>
+  </div>
+  <div class="modal-footer-bar">
+    <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Отмена</button>
+    <button type="submit" class="btn-modal-primary">Добавить</button>
+  </div>
+</form>

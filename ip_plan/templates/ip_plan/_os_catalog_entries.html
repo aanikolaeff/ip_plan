@@ -1,0 +1,46 @@
+<div id="os-catalog-entries-pane">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.75rem;">
+    <h5 style="margin:0;">{{ label }}</h5>
+    <button type="button" class="btn-modal-primary"
+            hx-get="{% url 'ip_plan:os_catalog_entry_add_form' category type %}"
+            hx-target="#os-catalog-entry-form-slot" hx-swap="innerHTML">
+      + Добавить
+    </button>
+  </div>
+
+  <div id="os-catalog-entry-form-slot"></div>
+
+  {% for entry in entries %}
+    <div class="field-group" id="os-catalog-entry-{{ entry.id }}">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:.75rem;">
+        <div style="min-width:0;">
+          <strong>{{ entry.name }}</strong>
+          {% if entry.certification %}
+            <span class="badge-role" data-role="vm" style="margin-left:.5rem;">{{ entry.certification }}</span>
+          {% endif %}
+          <div class="d-flex flex-wrap" style="margin-top:.5rem;">
+            {% for v in entry.versions %}
+              <span class="tag-chip"><span>{{ v }}</span></span>
+            {% empty %}
+              <span class="cell-muted">версии не указаны</span>
+            {% endfor %}
+          </div>
+        </div>
+        <div style="display:flex; gap:.4rem; flex-shrink:0;">
+          <button type="button" class="btn-modal-secondary"
+                  hx-get="{% url 'ip_plan:os_catalog_entry_edit_form' category type entry.id %}"
+                  hx-target="#os-catalog-entry-form-slot" hx-swap="innerHTML"
+                  title="Редактировать">✎</button>
+          <form hx-post="{% url 'ip_plan:os_catalog_entry_delete' category type entry.id %}"
+                hx-target="#os-catalog-entries-pane" hx-swap="outerHTML"
+                hx-confirm="Удалить «{{ entry.name }}»?">
+            {% csrf_token %}
+            <button type="submit" class="btn-danger" title="Удалить">✕</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  {% empty %}
+    <p class="cell-muted">Пока пусто — добавьте первую запись.</p>
+  {% endfor %}
+</div>

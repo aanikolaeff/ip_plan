@@ -1,0 +1,26 @@
+<div class="modal-title-bar">
+  <h5>Справочник «Операционная система»</h5>
+  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть">✕</button>
+</div>
+<div class="modal-body-pad"
+     x-init="$el.closest('.modal-box').style.cssText += '; width: 820px; max-width: 96vw;'">
+  <p style="margin: 0 0 1rem; font-size: .85rem; color: var(--text-main);">
+    Записи предлагаются в выпадающем списке колонки «Операционная система» — группами по категории.
+    Версии и сертификация здесь для справки, в выпадающий список не попадают.
+  </p>
+  <div style="display: flex; gap: 1.25rem; align-items: flex-start;">
+    <nav style="min-width: 210px; flex-shrink: 0; display: flex; flex-direction: column; gap: .4rem;">
+      {% for item in nav_items %}
+        <button type="button" class="btn-modal-secondary os-catalog-nav-btn"
+                style="text-align: left;"
+                hx-get="{% url 'ip_plan:os_catalog_entries' item.category item.type %}"
+                hx-target="#os-catalog-entries-pane" hx-swap="innerHTML">
+          {{ item.label }} ({{ item.count }})
+        </button>
+      {% endfor %}
+    </nav>
+    <div id="os-catalog-entries-pane" style="flex: 1; min-width: 0;">
+      <p class="cell-muted">Выберите категорию слева.</p>
+    </div>
+  </div>
+</div>

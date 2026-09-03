@@ -1,0 +1,1190 @@
+    :root {
+      --bg-page: #f6f8fb;
+      --bg-table: rgba(255, 255, 255, 0.8);
+      --bg-row-odd: #fcfdff;
+      --bg-row-even: #f3f7fb;
+      --bg-row-hover: #d0e4ff;
+      --border-soft: rgba(24, 33, 47, 0.08);
+      --border-soft-strong: rgba(24, 33, 47, 0.16);
+      --accent: #1f6feb;
+      --accent-strong: #1558c4;
+      --text-main: #18212f;
+      --text-muted: #657287;
+      --text-faint: #92a0b5;
+      --color-danger: #dc2626;
+      --color-danger-strong: #b91c1c;
+    }
+
+    body {
+      background: linear-gradient(180deg, #f8fbff 0%, #f4f7fb 100%);
+      color: var(--text-main);
+      font-family: 'Inter', sans-serif;
+    }
+
+    .ip-mono { font-family: 'JetBrains Mono', monospace; }
+
+    a { color: var(--accent); }
+
+    /* --- Текущий пользователь / выход (base.html, на любой странице) --- */
+    .user-bar {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: .55rem;
+      margin-bottom: .65rem;
+    }
+    .user-bar-name { font-size: .8rem; color: var(--text-muted); }
+    .user-bar-btn { font-size: .8rem; padding: .3rem .8rem; }
+
+    /* --- Шапка страницы --- */
+    .hero { margin-bottom: 1.25rem; }
+    .hero-title-row { display: flex; align-items: center; gap: 1.25rem; }
+    .hero .title { font-size: 1.875rem; line-height: 1.1; font-weight: 700; margin: 0; letter-spacing: -.02em; }
+    .hero .subtitle { margin: .5rem 0 0; max-width: 70ch; color: var(--text-muted); font-size: .9375rem; }
+
+    .hero-stats { display: flex; align-items: baseline; gap: .9rem; margin-top: .65rem; }
+    .hero-stat { color: var(--text-muted); font-size: .85rem; }
+    .hero-stat strong { color: var(--text-main); font-size: 1.2rem; font-weight: 700; margin-right: .35rem; }
+    .hero-stat-sep { width: 1px; height: 1rem; background: var(--border-soft-strong); }
+
+    /* --- Тулбар --- */
+    .page-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .6rem;
+      margin-bottom: 1.1rem;
+    }
+    .toolbar-left { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
+    .toolbar-right { display: flex; flex-direction: column; align-items: flex-end; gap: .35rem; margin-left: auto; }
+
+    .toolbar-input, .toolbar-select {
+      height: 42px;
+      border-radius: 999px;
+      border: 1px solid var(--border-soft);
+      background: rgba(255, 255, 255, 0.9);
+      color: var(--text-main);
+      padding: 0 1rem;
+      font-family: inherit;
+      font-size: .875rem;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset;
+      transition: all .15s ease;
+    }
+    .field-control {
+      background: #fbfdff;
+      border: 1px solid var(--border-soft-strong);
+      color: var(--text-main);
+      border-radius: 10px;
+      padding: .4rem .7rem;
+      font-family: inherit;
+      font-size: .8125rem;
+      transition: all .15s ease;
+      /* Без этого textarea (Описание/Комментарии) рендерится дефолтной
+         ширины браузера (~20 символов), а не на всю ширину своей колонки —
+         не было ни одного width-правила для .field-control вообще. */
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .toolbar-input:focus, .toolbar-select:focus, .field-control:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(31, 111, 235, .15);
+    }
+    .toolbar-input { min-width: 286px; }
+    /* Нативная стрелка <select> рендерится поверх правого padding, который
+       у нас одинаковый (1rem) с обеих сторон — на длинных пунктах (статусах,
+       подсетях) она наезжала на текст. Берём отрисовку стрелки на себя и
+       резервируем под неё отдельное место справа; flex-shrink:0, чтобы
+       тулбар не сжимал select уже мельче своего контента при недостатке
+       места в строке. */
+    .toolbar-select {
+      flex-shrink: 0;
+      min-width: 150px;
+      padding-right: 2.4rem;
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23657287' d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 1rem center;
+      background-size: 11px;
+    }
+    .field-control[disabled] { color: var(--text-faint); background: var(--bg-page); cursor: not-allowed; }
+    .field-control[readonly] {
+      color: var(--text-faint);
+      background: var(--bg-page);
+      cursor: not-allowed;
+    }
+    .field-control[readonly]:focus { box-shadow: none; border-color: var(--border-soft-strong); }
+    /* Адрес — никогда не нужно больше места, чем "255.255.255.255/24" */
+    .field-control-ip { max-width: 200px; font-family: 'JetBrains Mono', monospace; }
+
+    .btn-modal-primary {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      padding: .6rem 1.3rem;
+      font-weight: 600;
+      font-size: .875rem;
+      cursor: pointer;
+      transition: all .15s ease;
+    }
+    .btn-modal-primary:hover { background: var(--accent-strong); transform: translateY(-1px); }
+
+    /* --- "Добавить IP": ghost-кнопка, без тяжёлой заливки --- */
+    .btn-add {
+      background: rgba(31, 111, 235, .04);
+      color: var(--accent);
+      border: 1.5px solid var(--accent);
+      border-radius: 999px;
+      padding: .6rem 1.3rem;
+      font-weight: 600;
+      font-size: .875rem;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: all .15s ease;
+    }
+    .btn-add:hover { background: rgba(31, 111, 235, .1); color: var(--accent-strong); border-color: var(--accent-strong); transform: translateY(-1px); }
+
+    /* --- "?" Справка / экспорт — в одной строке со сводкой (.hero-stats) --- */
+    .hero-actions-row {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      /* .hero-stats — align-items:baseline (для чисел статистики); круглые
+         кнопки по тексту-baseline не выровнялись бы вменяемо, центрируем
+         их саму группу относительно остальных элементов строки отдельно. */
+      align-self: center;
+    }
+    .btn-help {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: 1px solid var(--border-soft-strong);
+      background: rgba(255, 255, 255, 0.9);
+      color: var(--text-muted);
+      font-size: .85rem;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all .15s ease;
+    }
+    .btn-help:hover { color: var(--accent); border-color: var(--accent); background: rgba(31, 111, 235, .04); transform: translateY(-1px); }
+
+    .btn-modal-secondary {
+      background: rgba(255, 255, 255, 0.9);
+      color: var(--text-main);
+      border: 1px solid var(--border-soft-strong);
+      border-radius: 999px;
+      padding: .6rem 1.3rem;
+      font-weight: 600;
+      font-size: .875rem;
+      cursor: pointer;
+      transition: all .15s ease;
+    }
+    .btn-modal-secondary:hover { border-color: var(--text-faint); transform: translateY(-1px); }
+
+    .records-counter { color: var(--text-muted); font-size: .8rem; }
+
+    /* --- Таблица --- */
+    .table-wrapper {
+      position: relative;
+      background: var(--bg-table);
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      border-radius: 24px;
+      box-shadow: 0 8px 30px rgba(22, 29, 37, .08), 0 2px 8px rgba(22, 29, 37, .05);
+      /* overflow:hidden тут сделал бы .table-wrapper "контейнером скролла"
+         для sticky-футера (.table-footer-bar) вместо вьюпорта — футер
+         перестал бы прилипать при скролле страницы. Скругление нижних
+         углов клипуется отдельно — у .panel-note. */
+      overflow: visible;
+      backdrop-filter: blur(10px);
+    }
+    /* БЕЗ overflow:hidden — иначе .dt-scroll становится "nearest scrolling
+       ancestor" для position:sticky у .dt-scroll-head (см. ниже), и шапка
+       просто укатывается со страницей вместо прилипания (проверено
+       эмпирически: top уезжал в -1275px при скролле). Верхние углы
+       скругляем не клипом контейнера, а напрямую на крайних <th>. */
+    #ip-table_wrapper .dt-scroll { border-radius: 24px 24px 0 0; }
+    /* Заголовок таблицы — sticky (см. ip_table.html). z-index:15, как у
+       sticky-футера ниже — оба должны перекрывать обычные строки, но не
+       друг друга (они на разных краях и не пересекаются одновременно).
+       Фон непрозрачный (без alpha) — иначе строки просвечивали бы сквозь
+       прилипшую шапку при скролле. */
+    .dt-scroll-head {
+      /* !important — DataTables сам проставляет этому элементу инлайн-style
+         "position: relative" (через JS, при инициализации scrollX), а
+         инлайн-стиль без !important перебивает любое внешнее правило. */
+      position: sticky !important;
+      top: 0 !important;
+      z-index: 15;
+    }
+    .dt-scroll-head thead tr th:first-child { border-top-left-radius: 24px; }
+    .dt-scroll-head thead tr th:last-child { border-top-right-radius: 24px; }
+    /* Спиннер на время инициализации DataTables (см. revealTableAfterFirstLoad
+       в app.js) — закрывает "сырую" вёрстку сервера до того, как JS приведёт
+       страницу к финальному виду (видимость/ширина колонок, сортировка,
+       статистика в шапке — она тоже считается в JS и до первого draw()
+       показывает нули). position:fixed на весь экран, а не absolute внутри
+       .table-wrapper — пагинация DataTables клиентская, сервер рисует ВСЕ
+       строки сразу, и до инициализации .table-wrapper может быть огромной
+       высоты (тысячи строк) — abs-оверлей внутри неё растянулся бы на всю
+       эту высоту, и спиннер оказался бы далеко за пределами видимой area. */
+    .table-loading-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: .75rem;
+      background: var(--bg-page);
+      color: var(--text-muted);
+      font-size: .85rem;
+    }
+    .table-loading-overlay .spinner-ring { width: 28px; height: 28px; }
+    table.dataTable {
+      background: transparent;
+      color: var(--text-main);
+      border-collapse: separate !important;
+      /* scrollX в DataTables меряет реальную отрисованную ширину колонок и
+         синхронизирует её с "плывущей" шапкой — при table-layout:auto эта
+         ширина зависит от контента ВИДИМЫХ строк и гуляет между фильтрами.
+         С table-layout:fixed браузер всегда раскладывает колонки по ширине
+         из <th style="width:...">, независимо от того, что сейчас отфильтровано. */
+      table-layout: fixed !important;
+      /* "Резиновые" колонки (DNS-имя/Описание/OS Installed/Назначение/
+         Комментарии) заданы в % — таблица растягивается на всю доступную
+         ширину контейнера, но не сжимается ниже суммы min-width всех
+         колонок (см. colgroup col[...] ниже, и STRETCHY_MIN_WIDTHS в
+         app.js) — при более узком окне .dt-scroll-body (overflow-x:auto)
+         включает горизонтальный скролл вместо сдавливания контента.
+         !important нужен, чтобы перебить инлайн-style="width:...px",
+         который scrollX/DataTables выставляет сам себе при инициализации.
+         min-width тут — просто подстраховка на случай, если сумма
+         колоночных min-width почему-то не сработает как ожидается;
+         реальный (больший) пол и так обеспечивается ими. */
+      width: 100% !important;
+      min-width: 1024px;
+    }
+    table.dataTable thead th {
+      /* Сплошной (без alpha) — шапка теперь sticky и должна перекрывать
+         строки под собой при скролле, а не давать им просвечивать. */
+      background: #f8fafc !important;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border-soft) !important;
+      font-weight: 600;
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      padding: .85rem .9rem;
+      vertical-align: middle;
+    }
+    /* DataTables сам определяет колонку с IP-адресами как "числовую" и
+       навешивает класс dt-type-numeric, у которого в dataTables.bootstrap5.css
+       правило "table.dataTable th.dt-type-numeric{text-align:right}" цепляет
+       и заголовок. Возвращаем его влево точечно, не трогая саму колонку
+       (там влияет не text-align, а flex-разметка .ip-cell-row внутри td).
+       Без #ip-table: при scrollX DataTables клонирует ВИДИМЫЙ заголовок в
+       отдельную <table> внутри div.dt-scroll-head, у которой нет
+       id="ip-table" — этот id остаётся только на исходной, скрытой (нулевой
+       высоты) thead. Селектор с #ip-table бил бы мимо видимого элемента. */
+    th[data-field="address"] {
+      text-align: left !important;
+    }
+    table.dataTable tbody td {
+      border-bottom: 1px solid var(--border-soft) !important;
+      padding: .65rem .9rem;
+      font-size: .875rem;
+      transition: background .15s ease;
+      vertical-align: middle;
+    }
+    table.dataTable tbody tr { transition: background .15s ease; }
+    /* !important тут — иначе зебра/hover проигрывали бы конкретно на
+       зафиксированных колонках (FixedColumns: position:sticky на тех же
+       <td>, что и обычные, с классом .dtfc-fixed-left/-right) любому
+       другому правилу с !important, заданному позже по специфичности —
+       раньше тут было отдельное правило ".dtfc-fixed-left,.dtfc-fixed-right
+       {background:var(--bg-row-odd)!important}", которое перебивало зебру
+       и красило fixed-колонки одним цветом независимо от чётности строки. */
+    table.dataTable tbody tr:nth-child(odd) td { background: var(--bg-row-odd) !important; }
+    table.dataTable tbody tr:nth-child(even) td { background: var(--bg-row-even) !important; }
+    table.dataTable tbody tr:hover td { background: var(--bg-row-hover) !important; }
+    table.dataTable.dtfc-has-left thead, table.dataTable.dtfc-has-right thead { background: transparent; }
+    div.dt-container .dt-paging .dt-paging-button.current,
+    div.dt-container .dt-paging .dt-paging-button.current:hover {
+      background: var(--accent); color: #fff !important; border-color: var(--accent);
+    }
+    div.dt-container .dt-paging .dt-paging-button { color: var(--text-muted); }
+    div.dt-container .dt-info, div.dt-container .dt-length, div.dt-container .dt-search { color: var(--text-muted); font-size: .8rem; }
+
+    /* --- Липкий футер таблицы: "Показано X из Y" + пагинация + выбор
+       количества строк. Висит у низа экрана при скролле длинной таблицы. --- */
+    .table-footer-bar {
+      position: sticky;
+      bottom: 0;
+      z-index: 15;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: .75rem 1.5rem;
+      background: rgba(248, 250, 252, 0.97);
+      backdrop-filter: blur(6px);
+      border-top: 1px solid var(--border-soft);
+      padding: .55rem 1rem;
+    }
+    .table-footer-left { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+    .table-footer-right { display: flex; align-items: center; gap: 1.1rem; flex-wrap: wrap; }
+    .page-length-control {
+      display: inline-flex;
+      align-items: center;
+      gap: .45rem;
+      font-size: .8rem;
+      color: var(--text-muted);
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .page-length-control select {
+      border: 1px solid var(--border-soft-strong);
+      border-radius: 8px;
+      padding: .25rem .5rem;
+      font-size: .8rem;
+      color: var(--text-main);
+      background: #fff;
+      cursor: pointer;
+    }
+
+    /* --- Колонка чекбоксов + подсветка выбранных строк --- */
+    .th-select-all, .td-select { text-align: center; padding-left: .4rem !important; padding-right: .4rem !important; }
+    #select-all-checkbox, .row-select-checkbox {
+      width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); vertical-align: middle;
+    }
+    /* :has() — строка с отмеченным чекбоксом подсвечивается без отдельного
+       JS-переключения класса на каждый клик. Фон — сплошной (без alpha):
+       на rgba-фоне зебра/фон соседних колонок при горизонтальном скролле
+       просвечивали сквозь полупрозрачный оверлей, давая на стыке "обычных"
+       и зафиксированных (.dtfc-fixed-left/-right — FixedColumns даёт
+       position:sticky тем же самым <td>, а не клонирует их в отдельный
+       слой) колонок одной строки разный итоговый цвет. Hover у выбранной
+       строки — отдельный, более специфичный селектор (tr:has(...):hover),
+       однозначно выигрывающий каскад вместо хрупкого "оба !important,
+       who wins". */
+    #ip-table tbody tr:has(.row-select-checkbox:checked) td {
+      background: #fff5f5 !important;
+    }
+    #ip-table tbody tr:has(.row-select-checkbox:checked):hover td {
+      background: #ffe4e4 !important;
+    }
+
+    /* --- Кнопка массового удаления в sticky-футере --- */
+    .bulk-delete-group {
+      display: inline-flex;
+      align-items: center;
+      gap: .6rem;
+      opacity: 0;
+      transform: translateX(-6px);
+      pointer-events: none;
+      transition: opacity .18s ease, transform .18s ease;
+    }
+    .bulk-delete-group.show { opacity: 1; transform: translateX(0); pointer-events: auto; }
+    .bulk-delete-count {
+      font-size: .8rem;
+      color: var(--color-danger-strong);
+      white-space: nowrap;
+    }
+    .bulk-delete-count::before { content: '●'; margin-right: .35rem; font-size: .55rem; vertical-align: middle; }
+    .btn-danger {
+      background: var(--color-danger);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: .3rem .75rem;
+      font-size: .8rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .15s ease;
+    }
+    .btn-danger:hover { background: var(--color-danger-strong); }
+
+    /* --- Контекстное меню "Столбцы" --- */
+    .columns-dropdown-wrap { position: relative; display: inline-block; }
+    .columns-dropdown {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      margin-top: 6px;
+      background: #fff;
+      border: 1px solid var(--border-soft-strong);
+      border-radius: 14px;
+      box-shadow: 0 8px 24px rgba(22, 29, 37, .14);
+      min-width: 440px;
+      z-index: 30;
+      padding: .85rem;
+    }
+    .columns-dropdown.show { display: block; }
+    .columns-dropdown-title {
+      font-size: .72rem; color: var(--text-muted); font-weight: 700;
+      text-transform: uppercase; letter-spacing: .04em; margin-bottom: .6rem;
+    }
+    /* minmax(max-content, 1fr), не minmax(0, 1fr) — иначе колонка может
+       сжаться УЖЕ самой длинной метки ("Операционная система") и текст
+       переносится на вторую строку; max-content держит её как пол, а
+       white-space:nowrap на .column-check не даёт обернуться раньше. */
+    .columns-checklist { display: grid; grid-template-columns: repeat(2, minmax(max-content, 1fr)); gap: .1rem .5rem; }
+    .column-check {
+      display: flex; align-items: center; gap: .5rem;
+      font-size: .8125rem; color: var(--text-main); cursor: pointer;
+      padding: .35rem .4rem; border-radius: 8px; transition: background .15s ease;
+      white-space: nowrap;
+    }
+    .column-check:hover { background: var(--accent-soft, #eaf2ff); }
+    .column-check input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+    .columns-dropdown-footer {
+      margin-top: .6rem; padding-top: .6rem; border-top: 1px solid var(--border-soft);
+      display: flex; justify-content: flex-end;
+    }
+    .columns-reset-btn {
+      background: transparent; border: none; color: var(--accent);
+      font-size: .8rem; font-weight: 600; cursor: pointer; padding: .3rem .5rem; border-radius: 6px;
+    }
+    .columns-reset-btn:hover { background: var(--accent-soft, #eaf2ff); }
+
+    .cell-value {
+      display: inline-block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+    .cell-muted { color: var(--text-faint); }
+
+    /* --- Жёсткие размеры колонок (min/max из требований).
+       Цепочка авторитетности ширины в table-layout:fixed оказалась длиннее
+       ожидаемого: DataTables/scrollX сам генерирует <colgroup><col>, и
+       ширина именно <col> (не <th>!) решающая — она перезаписывается
+       инлайн-стилем при каждой инициализации/растягивании таблицы (см.
+       table.dataTable { width:100%!important } выше). Поэтому правило на
+       th/td само по себе ничего не даёт — нужно перебить именно <col>.
+       data-dt-column="N" — абсолютный индекс колонки, стабилен независимо
+       от того, какие другие колонки сейчас скрыты через "Столбцы" (в
+       отличие от nth-child, который сдвигается при скрытии).
+
+       Эмпирически проверено: max-width на <col>/th/td в table-layout:fixed
+       НЕ работает как ограничитель (полностью игнорируется браузером), а
+       min-width — РАБОТАЕТ как пол. Поэтому:
+       - колонки "только max, resizable:false" (Адрес, Статус,
+         Принадлежность, Роль, Тэги, CPE, Open Ports, OS Guess) — фиксируем
+         явным width (он же фактически их единственный размер, раз max —
+         это потолок, а расти/сжиматься колонке не положено).
+       - "min Npx, resizable:true" (DNS, Описание, OS Installed, Назначение,
+         Комментарии) — ширина в % (тянутся под доступное пространство, см.
+         <th> в ip_table.html; персональный минимум каждой — в
+         STRETCHY_MIN_WIDTHS в app.js, делёж "лишнего" места поверх минимумов
+         — поровну, см. applyColumnWidths()), а сюда добавлен только
+         min-width как пол.
+       Без #ip-table-префикса: scrollX клонирует заголовок в отдельную
+       таблицу БЕЗ id="ip-table" (.dt-scroll-headInner) — нужно перебить
+       <col> в обеих копиях, иначе thead и tbody разойдутся по ширине. --- */
+    colgroup col[data-dt-column="0"] { width: 48px !important; }    /* чекбокс, resizable:false */
+    colgroup col[data-dt-column="1"] { width: 220px !important; }   /* Адрес (IP), max 220, resizable:false */
+    colgroup col[data-dt-column="2"] { width: 120px !important; }   /* Статус, max 120, resizable:false */
+    colgroup col[data-dt-column="3"] { min-width: 280px !important; } /* DNS-имя, min 280, resizable:true */
+    colgroup col[data-dt-column="4"] { width: 200px !important; }   /* Принадлежность, max 200, resizable:false */
+    colgroup col[data-dt-column="5"] { width: 100px !important; }    /* Роль, max 100, resizable:false */
+    colgroup col[data-dt-column="6"] { min-width: 280px !important; } /* Описание, min 280, resizable:true */
+    colgroup col[data-dt-column="7"] { width: 86px !important; }    /* Тэги, max 86, resizable:false */
+    colgroup col[data-dt-column="8"] { width: 121px !important; }   /* CPE, max 121, resizable:false */
+    colgroup col[data-dt-column="9"] { width: 156px !important; }   /* Open Ports, max 156, resizable:false */
+    colgroup col[data-dt-column="10"] { width: 140px !important; }  /* Guest OS, max 140, resizable:false */
+    colgroup col[data-dt-column="11"] { width: 506px !important; }  /* OS Guess, max 506, resizable:false */
+    colgroup col[data-dt-column="12"] { min-width: 280px !important; } /* OS Installed, min 280, resizable:true */
+    colgroup col[data-dt-column="13"] { min-width: 300px !important; } /* Назначение, min 300, resizable:true */
+    colgroup col[data-dt-column="14"] { min-width: 300px !important; } /* Комментарии, min 300, resizable:true */
+
+    /* Длинный текст в "резиновых" колонках обрезается многоточием, а не
+       ломает строку/растягивает соседей. */
+    #ip-table th[data-field="dns_name"], #ip-table td[data-field="dns_name"],
+    #ip-table th[data-field="description"], #ip-table td[data-field="description"],
+    #ip-table th[data-field="os_installed"], #ip-table td[data-field="os_installed"],
+    #ip-table th[data-field="purpose"], #ip-table td[data-field="purpose"],
+    #ip-table th[data-field="comments"], #ip-table td[data-field="comments"] {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    #ip-table td[data-field="dns_name"] .cell-with-copy { max-width: 100%; }
+
+    td[data-editable="true"] { position: relative; cursor: text; }
+    td[data-editable="true"]:hover { background: rgba(31, 111, 235, .14) !important; }
+/*     td[data-editable="true"]::after {
+      content: "двойной клик";
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 10px;
+      color: var(--text-faint);
+      opacity: 0;
+      transition: opacity .16s ease;
+      pointer-events: none;
+      white-space: nowrap;
+    } */
+    td[data-editable="true"][data-type="select"]::after { content: "клик"; }
+    td[data-editable="true"]:hover::after { opacity: 1; }
+    td[data-editable="true"]:has(.inline-input)::after,
+    td[data-editable="true"]:has(.inline-select)::after { display: none; }
+
+    /* Описание/CPE/Open Ports/OS Guess — только для чтения (заполняются
+       сканированием/импортом или модалкой, не инлайн-правкой в таблице).
+       cursor:not-allowed — тот же приём, что и у readonly-полей формы
+       (.field-control[readonly]) — однозначный визуальный сигнал "не
+       кликабельно", без ложной синей подсветки editable-ячеек. */
+    td[data-editable="false"][data-field] {
+      position: relative;
+      cursor: not-allowed;
+    }
+/*     td[data-editable="false"][data-field]::after {
+      content: "только чтение";
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 10px;
+      color: var(--text-faint);
+      opacity: 0;
+      transition: opacity .16s ease;
+      pointer-events: none;
+      white-space: nowrap;
+    } */
+    td[data-editable="false"][data-field]:hover::after { opacity: 1; }
+
+    .inline-input {
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid var(--accent);
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: inherit;
+      width: 100%;
+      outline: none;
+      padding: 2px 0;
+    }
+    .inline-select { appearance: none; cursor: pointer; }
+
+    @keyframes flashSuccess {
+      0% { background-color: rgba(15, 157, 108, .25); }
+      100% { background-color: transparent; }
+    }
+    @keyframes flashError {
+      0% { background-color: rgba(194, 65, 12, .2); }
+      100% { background-color: transparent; }
+    }
+    .flash-success { animation: flashSuccess .6s ease; }
+    .flash-error { animation: flashError .6s ease; }
+
+    /* Колонка "Статус" — под реально используемые статусы (сейчас в данных
+       только Active/Reserved, остальные — Deprecated/DHCP/SLAAC — не
+       встречаются вообще), а не под самую длинную теоретическую метку:
+       иначе при коротких словах остаётся много пустого места, что
+       выглядит как "разрыв" перед соседней колонкой. centering — на
+       случай остаточной разницы между конкретными словами одной длины;
+       overflow/ellipsis на самом бейдже — подстраховка, если когда-нибудь
+       появится Deprecated/DHCP/SLAAC и не влезет: обрежется с "…", а не
+       наедет на соседнюю колонку (этот баг уже был и его чинили). */
+    td[data-field="status"] { text-align: center; }
+    td[data-field="status"] .badge-status { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+
+    /* --- Бейджи статуса --- */
+    .badge-status {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      padding: .3rem .7rem;
+      border-radius: 999px;
+      font-size: .72rem;
+      font-weight: 700;
+      letter-spacing: .02em;
+      white-space: nowrap;
+    }
+    .badge-status::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .9; }
+    .badge-status[data-status="active"] { background: #e7f7f0; color: #0f9d6c; }
+    .badge-status[data-status="reserved"] { background: #fff6df; color: #b7791f; }
+    .badge-status[data-status="deprecated"] { background: #ffefe8; color: #c2410c; }
+    .badge-status[data-status="dhcp"] { background: #eaf2ff; color: #1f6feb; }
+    .badge-status[data-status="slaac"] { background: #f3eefd; color: #7c3aed; }
+
+    /* --- Колонка "Принадлежность" (assigned_object) --- */
+    td.td-assignment {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .td-assignment .cell-value {
+      color: var(--text-main);
+      font-size: .8125rem;
+    }
+
+    /* --- Колонка "Роль" (device/VM role, read-only, 100px) --- */
+    td.td-role { overflow: hidden; }
+    .badge-role {
+      display: inline-block;
+      max-width: 100%;
+      padding: .2rem .4rem;
+      border-radius: 6px;
+      background: #eef0f3;
+      color: #4b5563;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .68rem;
+      font-weight: 600;
+      text-transform: lowercase;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* --- Чипы тэгов --- */
+    .tag-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: .3rem;
+      background: #edf3fa;
+      color: #35506f;
+      padding: .25rem .6rem;
+      border-radius: 999px;
+      font-size: .72rem;
+      font-weight: 600;
+      margin: 0 .25rem .25rem 0;
+    }
+    .tag-chip .tag-remove { cursor: pointer; opacity: .6; font-weight: 700; }
+    .tag-chip .tag-remove:hover { opacity: 1; }
+
+    td[data-editable="true"]:hover, .kebab-wrap, .btn-kebab { transition: all .15s ease; }
+
+    /* --- IP-адрес как ссылка, открывающая модалку редактирования --- */
+    .ip-link {
+      color: var(--accent);
+      cursor: pointer;
+      text-decoration: underline;
+      text-decoration-color: rgba(31, 111, 235, .35);
+      text-underline-offset: 2px;
+      transition: all .15s ease;
+    }
+    .ip-link:hover { color: var(--accent-strong); text-decoration-color: var(--accent-strong); }
+
+    /* --- Кнопка быстрого копирования (IP, DNS-имя): иконка, видна только
+       при наведении на строку, серая -> тёмно-серая при наведении на неё саму --- */
+    .cell-with-copy { display: inline-flex; align-items: center; gap: .3rem; max-width: 100%; }
+    .cell-with-copy .cell-value { flex: 1; min-width: 0; }
+    .copy-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      border: none;
+      background: none;
+      padding: 2px;
+      color: #9aa5b4;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity .15s ease, color .15s ease, transform .15s ease;
+    }
+    tr:hover .copy-btn { opacity: 1; }
+    .copy-btn svg { width: 24px; height: 24px; display: block; }
+    .copy-btn:hover { color: #4b5563; }
+    .copy-btn:active { transform: scale(.88); }
+
+    /* --- Ячейка IP: адрес+copy слева, кебаб-меню у правого края --- */
+    .ip-cell-row { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: .3rem; }
+    .kebab-wrap { position: relative; flex-shrink: 0; }
+    /* IP — зафиксированная (sticky) колонка: у каждой строки своя ячейка со
+       своим слоем отрисовки. Без этого всплывающее меню более ранней строки
+       визуально перекрывается sticky-ячейкой следующей строки. */
+    td.kebab-td-active { z-index: 25 !important; }
+    .btn-kebab {
+      background: rgba(255, 255, 255, 0.9);
+      color: var(--text-muted);
+      border: 1px solid var(--border-soft);
+      border-radius: 10px;
+      padding: .35rem .55rem;
+      cursor: pointer;
+      font-size: .9rem;
+    }
+    .btn-kebab:hover { background: #fff; color: var(--text-main); border-color: var(--text-faint); }
+    .kebab-menu {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: 100%;
+      margin-top: 4px;
+      background: #fff;
+      border: 1px solid var(--border-soft-strong);
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(22, 29, 37, .14);
+      min-width: 160px;
+      z-index: 20;
+      overflow: hidden;
+    }
+    .kebab-menu.show { display: block; }
+    /* Открытие вверх вместо вниз — когда снизу не хватает места до низа
+       вьюпорта (напр. последние строки таблицы), см. runKebabMenuToggle(). */
+    .kebab-menu.kebab-menu-up { top: auto; bottom: 100%; margin-top: 0; margin-bottom: 4px; }
+    /* Предельный случай — таблице (а точнее .dt-scroll-body, который её
+       обрезает через overflow) не хватает места НИ сверху, НИ снизу (напр.
+       отфильтрован буквально 1 адрес). position:fixed — у .table-wrapper
+       backdrop-filter, поэтому "fixed" здесь физически считается не от
+       вьюпорта, а от рамки .table-wrapper (у него overflow:visible) — то
+       есть всё равно убегает из-под обрезающего .dt-scroll-body. top/left
+       проставляет JS (см. runKebabMenuToggle()). */
+    .kebab-menu.kebab-menu-fixed { position: fixed !important; top: 0; right: auto; bottom: auto; margin: 0; }
+    .kebab-menu button {
+      display: block; width: 100%; text-align: left; background: transparent; border: none;
+      color: var(--text-main); padding: .55rem .8rem; font-size: .8rem; cursor: pointer;
+    }
+    .kebab-menu button:hover { background: var(--accent-soft, #eaf2ff); }
+    .kebab-menu .kebab-divider { height: 1px; margin: .25rem 0; background: var(--border-soft); }
+    .kebab-menu .kebab-delete-ip { color: #c2410c; }
+    .kebab-menu .kebab-delete-ip:hover { background: #ffefe8; }
+
+    /* Меню выбора "Операционная система" (ip_row.html data-type="select-or-text",
+       app.js: startOsMenuEdit) — собственное hover-меню с подменю версий
+       вместо обычного <select>, всегда монтируется в <body> с
+       position:fixed (см. positionFixedPanel) — иначе обрезалось бы
+       горизонтальным скроллом DataTables (.dt-scroll-body). */
+    .os-menu {
+      position: fixed;
+      background: #fff;
+      border: 1px solid var(--border-soft-strong);
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(22, 29, 37, .14);
+      min-width: 260px;
+      max-height: 70vh;
+      display: flex;
+      flex-direction: column;
+      z-index: 1000;
+    }
+    .os-menu-filter {
+      margin: .5rem .5rem .25rem;
+      padding: .4rem .6rem;
+      border: 1px solid var(--border-soft);
+      border-radius: 8px;
+      font-size: .85rem;
+    }
+    .os-menu-list { overflow-y: auto; padding: .25rem 0 .5rem; }
+    .os-menu-group-label {
+      padding: .4rem .8rem .2rem;
+      font-size: .68rem;
+      color: var(--accent);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .os-menu-item {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .4rem;
+      padding: .5rem .8rem;
+      font-size: .85rem;
+      color: var(--text-main);
+      cursor: pointer;
+    }
+    .os-menu-item:hover, .os-menu-item.os-menu-item-active { background: var(--accent-soft, #eaf2ff); }
+    .os-menu-arrow { color: var(--text-faint); font-size: .75rem; }
+    .os-menu-empty, .os-menu-custom-row { padding: .5rem .8rem; font-size: .8rem; color: var(--text-faint); }
+    .os-menu-custom-row { cursor: pointer; color: var(--accent); }
+    .os-menu-custom-row:hover { background: var(--accent-soft, #eaf2ff); }
+    .os-menu-submenu {
+      position: fixed;
+      display: none;
+      background: #fff;
+      border: 1px solid var(--border-soft-strong);
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(22, 29, 37, .14);
+      min-width: 180px;
+      max-height: 60vh;
+      overflow-y: auto;
+      padding: .25rem 0;
+      z-index: 1001;
+    }
+    .os-menu-submenu.show { display: block; }
+
+    /* --- Модальное окно --- */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(24, 33, 47, .45);
+      backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000;
+    }
+    .modal-box {
+      background: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      border-radius: 24px;
+      width: 600px; max-width: 95vw;
+      max-height: 85vh;
+      box-shadow: 0 24px 48px rgba(22, 29, 37, .22);
+      /* Скроллится весь modal-box целиком, а заголовок и футер "прилипают" к
+         верху/низу через position:sticky — надёжнее, чем рассчитывать на то,
+         что flexbox сам идеально ужмёт среднюю секцию под max-height (на
+         тесных viewport кнопки в футере могли визуально выезжать за рамку). */
+      overflow-y: auto;
+    }
+    .modal-title-bar {
+      position: sticky; top: 0; z-index: 2;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1.1rem 1.3rem; border-bottom: 1px solid var(--border-soft);
+      background: #fff;
+    }
+    .modal-title-bar h5 { margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-main); letter-spacing: -.01em; }
+    .modal-close-btn {
+      background: transparent; border: none; color: var(--text-muted);
+      font-size: 1.3rem; cursor: pointer; line-height: 1; padding: .2rem .4rem; border-radius: 6px;
+    }
+    .modal-close-btn:hover { color: var(--text-main); background: var(--accent-soft, #eaf2ff); }
+    .modal-body-pad { padding: 1.1rem; }
+    .modal-footer-bar {
+      position: sticky; bottom: 0; z-index: 2;
+      display: flex; justify-content: flex-end; gap: .6rem;
+      padding: .85rem 1.1rem; border-top: 1px solid var(--border-soft);
+      background: #fff;
+    }
+    .field-group { border: 1px solid var(--border-soft); border-radius: 14px; padding: .75rem .9rem; margin-bottom: .65rem; }
+    .field-group-title { font-size: .72rem; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin-bottom: .55rem; }
+    /* Текстовые блоки справки (help_modal.html) внутри .field-group */
+    .field-group p { margin: 0 0 .5rem; font-size: .85rem; color: var(--text-main); line-height: 1.5; }
+    .field-group p:last-child { margin-bottom: 0; }
+    .field-group kbd {
+      background: var(--bg-page); border: 1px solid var(--border-soft-strong);
+      border-radius: 4px; padding: .05rem .35rem; font-size: .78rem; font-family: inherit;
+    }
+    .field-label { display: block; font-size: .7rem; color: var(--text-muted); margin-bottom: .2rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+    .alert-modal-error { background: #ffefe8; border: 1px solid rgba(194, 65, 12, .25); color: #c2410c; border-radius: 10px; padding: .65rem .9rem; font-size: .85rem; margin-bottom: 1rem; }
+    .errorlist { color: #c2410c; font-size: .78rem; list-style: none; padding-left: 0; margin: .25rem 0 0; }
+
+    /* --- Адрес + Статус + DNS-имя в одну строку: Bootstrap-сетка тут не
+       подходит (адресу нужен фиксированный небольшой максимум, статусу —
+       умеренная ширина, а DNS-имени — всё, что осталось) --- */
+    .ip-form-row { display: flex; gap: .5rem; margin-bottom: .65rem; align-items: flex-start; }
+    .ip-form-field-address { flex: 0 0 auto; }
+    .ip-form-field-status { flex: 0 0 150px; }
+    .ip-form-field-dns { flex: 1 1 auto; min-width: 0; }
+
+    .htmx-indicator { display: none; }
+    .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: flex; }
+    #modal-spinner {
+      align-items: center; justify-content: center; padding: 3rem; color: var(--text-muted);
+    }
+    .spinner-ring {
+      width: 32px; height: 32px; border-radius: 50%;
+      border: 3px solid rgba(24, 33, 47, .12); border-top-color: var(--accent);
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    /* Мини-версия того же спиннера — внутри кнопки "Удалить" на время
+       массового удаления (см. bulkDeleteSelected()). */
+    .spinner-ring-sm {
+      display: inline-block; vertical-align: middle; margin-right: .4rem;
+      width: 12px; height: 12px; border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, .4); border-top-color: #fff;
+      animation: spin .7s linear infinite;
+    }
+    .btn-danger:disabled, .btn-modal-secondary:disabled, .modal-close-btn:disabled {
+      opacity: .6; cursor: not-allowed;
+    }
+
+    /* --- Тосты --- */
+    .toast-stack { position: fixed; bottom: 1.5rem; right: 1.5rem; display: flex; flex-direction: column; gap: .5rem; z-index: 1100; }
+    .toast-item { padding: .75rem 1.1rem; border-radius: 12px; color: #fff; font-size: .875rem; box-shadow: 0 8px 24px rgba(22, 29, 37, .2); }
+    .toast-success { background: #0f9d6c; }
+    .toast-error { background: #c2410c; }
+    .toast-info { background: #1f6feb; }
+
+    /* --- Подсказка под таблицей --- */
+    .panel-note {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: .75rem;
+      padding: 1rem 1.25rem;
+      border-top: 1px solid var(--border-soft);
+      background: linear-gradient(180deg, rgba(255,255,255,.6), rgba(248,250,252,.85));
+      color: var(--text-muted);
+      font-size: .8125rem;
+      /* последний элемент карточки — скругление нижних углов теперь тут,
+         а не на .table-wrapper (см. комментарий там про position:sticky) */
+      border-radius: 0 0 24px 24px;
+      overflow: hidden;
+    }
+
+    [x-cloak] { display: none !important; }
+
+    /* --- Строки свободных диапазонов (только при выбранном префиксе) ---
+       Это чисто декоративные <tr>, вставляемые в DOM ПОСЛЕ каждой
+       перерисовки DataTables (см. renderFreeRanges()) — не часть данных
+       таблицы, поэтому не участвуют в сортировке/фильтрации/выборе. */
+    tr.free-range-row td {
+      background: #f0fdf4 !important;
+      border-left: 3px solid #86efac;
+      padding: 6px 16px !important;
+    }
+    /* justify-content: space-between тут не подходит — ячейка занимает
+       colspan на ВСЮ (широкую, со своим горизонтальным скроллом) таблицу,
+       и кнопка "+" улетала бы к правому краю за пределы видимой области,
+       пока пользователь не проскроллит до конца. Кнопка должна стоять
+       сразу рядом с надписью, у левого края, где обычно смотрит пользователь. */
+    .free-range-content { display: flex; align-items: center; gap: 12px; }
+    .free-range-label { color: #16a34a; font-size: 13px; font-weight: 500; }
+    .free-range-add-btn {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      border: 1.5px solid #16a34a;
+      color: #16a34a;
+      font-size: 18px;
+      background: transparent;
+      cursor: pointer;
+      line-height: 1;
+      flex-shrink: 0;
+      transition: background .15s ease, color .15s ease;
+    }
+    .free-range-add-btn:hover { background: #16a34a; color: #fff; }
+
+    /* --- Иконка-подсказка ⓘ в заголовках колонок --- */
+    .col-info-icon {
+      display: inline-block;
+      font-size: .72rem;
+      font-style: normal;
+      color: var(--text-faint);
+      cursor: help;
+      user-select: none;
+      margin-left: .3em;
+      vertical-align: middle;
+      line-height: 1;
+      opacity: .65;
+      transition: opacity .15s ease, color .15s ease;
+    }
+    .col-info-icon:hover { opacity: 1; color: var(--accent); }
+
+    /* Плавающий тултип (position:fixed, управляется через JS) */
+    .col-info-tooltip {
+      position: fixed;
+      z-index: 300;
+      max-width: 300px;
+      background: #1a2436;
+      color: #d8e3f0;
+      font-size: .775rem;
+      font-weight: 400;
+      line-height: 1.5;
+      padding: .55rem .85rem;
+      border-radius: 8px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .12s ease;
+    }
+    .col-info-tooltip.visible { opacity: 1; }
+
+    /* DNS-записи: тултип на ховере по ячейке DNS-имя */
+    .dns-records-tooltip {
+      position: fixed;
+      z-index: 310;
+      min-width: 220px;
+      max-width: 420px;
+      background: #1a2436;
+      color: #d8e3f0;
+      font-size: .775rem;
+      line-height: 1.5;
+      padding: .55rem .85rem;
+      border-radius: 8px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .12s ease;
+    }
+    .dns-records-tooltip.visible { opacity: 1; }
+    .dns-tip-group { margin-bottom: .35rem; }
+    .dns-tip-group:last-child { margin-bottom: 0; }
+    .dns-tip-label {
+      display: block;
+      font-size: .7rem;
+      font-weight: 600;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: #7b9ab8;
+      margin-bottom: .15rem;
+    }
+    .dns-records-tooltip ul {
+      margin: 0;
+      padding-left: 1rem;
+    }
+    .dns-records-tooltip li { word-break: break-all; }
+
+/* ── Кнопка очистки строки поиска ─────────────────────────────────────────── */
+.toolbar-input-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.toolbar-input-wrap .toolbar-input { padding-right: 2.2rem; }
+.toolbar-clear-btn {
+  position: absolute;
+  right: .6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-faint);
+  line-height: 1;
+  transition: color .15s ease;
+}
+.toolbar-clear-btn:hover { color: var(--text-main); }
+
+/* ── Кнопка очистки ячейки OS Installed ──────────────────────────────────── */
+.cell-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--text-faint);
+  opacity: 0;
+  vertical-align: middle;
+  border-radius: 4px;
+  margin-left: 4px;
+  transition: opacity .15s ease, color .15s ease;
+}
+tr:hover .cell-clear-btn { opacity: 1; }
+.cell-clear-btn:hover { color: #dc2626; background: rgba(220, 38, 38, .08); }
+
+/* DataTables оставляет оригинальный <thead> внутри .dt-scroll-body для
+   задания ширин колонок. Он должен быть невидим: DT ставит height:0 на <tr>,
+   но inline-block иконки могут "пробить" его наружу — форсируем скрытие. */
+.dt-scroll-body thead tr { height: 0 !important; overflow: hidden !important; }
+.dt-scroll-body thead tr th,
+.dt-scroll-body thead tr td { padding: 0 !important; border: 0 !important; height: 0 !important; line-height: 0 !important; font-size: 0 !important; overflow: hidden !important; }
+
+/* --- Страница "ACL" (acl_lookup.html) --- */
+.acl-table th, .acl-table td { vertical-align: middle; font-size: .8125rem; }
+.acl-hint { color: var(--text-muted); margin: .75rem 0; font-size: .875rem; }
+.acl-hint-error { color: #c2410c; }
+/* Правила "permit ip any any" / "deny ip any any" в хвосте ACL матчят
+   буквально любой IP — search_ip() сортирует их в конец, здесь только
+   визуально приглушаем, чтобы не читались как "первая причина" совпадения. */
+.acl-row-catchall { opacity: .55; }
+/* Ячейка source/destination, которая реально стала причиной совпадения
+   (в отличие от второй колонки того же правила, просто идущей рядом). */
+.acl-cell-hit { font-weight: 700; color: var(--text-main); }
+.badge-acl-type {
+  display: inline-block;
+  margin-left: .35rem;
+  padding: .1rem .4rem;
+  border-radius: 5px;
+  background: #eef0f3;
+  color: #4b5563;
+  font-size: .68rem;
+  text-transform: uppercase;
+}
+.badge-acl-log {
+  display: inline-block;
+  margin-left: .3rem;
+  padding: .05rem .35rem;
+  border-radius: 5px;
+  background: #f3eefd;
+  color: #7c3aed;
+  font-size: .68rem;
+}
+.acl-port { color: var(--text-muted); font-size: .78rem; }
+.badge-status[data-status="permit"] { background: #e7f7f0; color: #0f9d6c; }
+.badge-status[data-status="deny"] { background: #fdeaea; color: #d13a3a; }
+.badge-status[data-status="remark"] { background: #eef0f3; color: #4b5563; }
+
+/* --- Кнопка "назад" (текстовая ссылка вида "← IP план" / "← ACL") ---
+   .btn-help — фиксированный circle 30x30 под один иконку-глиф (⇩, 🖴, ?,
+   🛡) и намеренно не тянется под многословный текст — использовать его для
+   "← IP план" клало текст поверх круга, вылезая за границы. Отдельная
+   pill-кнопка под авто-ширину текста, тот же hover-язык, что у .btn-help. */
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  height: 30px;
+  padding: 0 .85rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft-strong);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text-muted);
+  font-size: .8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: all .15s ease;
+}
+.btn-back:hover { color: var(--accent); border-color: var(--accent); background: rgba(31, 111, 235, .04); transform: translateY(-1px); }
+
+/* --- DataTables на acl_detail.html / acl_object_group_detail.html ---
+   Библиотека дефолтно рисует всё по-английски и inputs/select — сырым
+   bootstrap form-control/form-select (квадратные, свой focus-ring) — не в
+   стиле остального сайта (везде pill-shaped .toolbar-input/.toolbar-select).
+   Тексты локализуются через language{} в JS (см. acl_datatable.js), здесь —
+   только визуальное совпадение с остальным сайтом. */
+.dt-container.dt-bootstrap5 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem;
+  padding: 1rem 1.25rem;
+}
+.dt-container.dt-bootstrap5 .dt-length,
+.dt-container.dt-bootstrap5 .dt-search {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.dt-container.dt-bootstrap5 .dt-search label { margin: 0; }
+.dt-container.dt-bootstrap5 .form-select.form-select-sm,
+.dt-container.dt-bootstrap5 .form-control.form-control-sm {
+  height: 38px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text-main);
+  padding: 0 1rem;
+  font-family: inherit;
+  font-size: .8125rem;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset;
+}
+.dt-container.dt-bootstrap5 .form-control.form-control-sm { min-width: 220px; }
+.dt-container.dt-bootstrap5 .form-select.form-select-sm:focus,
+.dt-container.dt-bootstrap5 .form-control.form-control-sm:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(31, 111, 235, .15);
+}
+.dt-container.dt-bootstrap5 .dt-info { color: var(--text-muted); font-size: .8rem; }
+.dt-container.dt-bootstrap5 .dt-paging-button .page-link {
+  border-radius: 8px;
+  margin: 0 .1rem;
+  color: var(--text-muted);
+  border-color: var(--border-soft);
+}
+.dt-container.dt-bootstrap5 .dt-paging-button.active .page-link {
+  background: var(--accent);
+  border-color: var(--accent);
+}

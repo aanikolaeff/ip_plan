@@ -1,0 +1,18 @@
+{% comment %}
+Chip-инпут для поля "Тэги" на Alpine.js. Ожидает в контексте переменную `form`
+(используется form.tags.value как CSV-строка с текущими тэгами).
+{% endcomment %}
+<div class="col-12" x-data="chipInput('{{ form.tags.value|default:'' }}', 'tags')">
+  <label class="field-label">Тэги</label>
+  <div class="d-flex flex-wrap mb-2">
+    <template x-for="(tag, idx) in items" :key="idx">
+      <span class="tag-chip">
+        <span x-text="tag"></span>
+        <span class="tag-remove" @click="removeItem(idx)">✕</span>
+      </span>
+    </template>
+  </div>
+  <input type="text" class="field-control" style="width:100%" placeholder="Введите тэг и нажмите Enter"
+         x-model="draft" @keydown.enter.prevent="addItem()">
+  {{ form.tags }}
+</div>

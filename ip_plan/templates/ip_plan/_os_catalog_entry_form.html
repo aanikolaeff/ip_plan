@@ -1,0 +1,37 @@
+<div class="field-group" x-data="chipInput('{{ entry.versions|join:',' }}', 'versions')">
+  {% if error %}<div class="alert-modal-error">{{ error }}</div>{% endif %}
+  <form hx-post="{% if entry.id %}{% url 'ip_plan:os_catalog_entry_edit_save' category type entry.id %}{% else %}{% url 'ip_plan:os_catalog_entry_add_save' category type %}{% endif %}"
+        hx-target="#os-catalog-entries-pane" hx-swap="outerHTML">
+    {% csrf_token %}
+    <div class="row g-2">
+      <div class="col-md-6">
+        <label class="field-label">Название</label>
+        <input type="text" name="name" class="field-control" value="{{ entry.name }}" required autofocus>
+      </div>
+      <div class="col-md-6">
+        <label class="field-label">Сертификация</label>
+        <input type="text" name="certification" class="field-control" value="{{ entry.certification }}"
+               placeholder="например: ФСТЭК, ФСБ">
+      </div>
+      <div class="col-12">
+        <label class="field-label">Версии</label>
+        <div class="d-flex flex-wrap mb-2">
+          <template x-for="(v, idx) in items" :key="idx">
+            <span class="tag-chip">
+              <span x-text="v"></span>
+              <span class="tag-remove" @click="removeItem(idx)">✕</span>
+            </span>
+          </template>
+        </div>
+        <input type="text" class="field-control" style="width:100%" placeholder="Версия и Enter"
+               x-model="draft" @keydown.enter.prevent="addItem()">
+        <input type="hidden" name="versions">
+      </div>
+    </div>
+    <div style="display:flex; gap:.5rem; margin-top:.75rem;">
+      <button type="submit" class="btn-modal-primary">Сохранить</button>
+      <button type="button" class="btn-modal-secondary"
+              onclick="document.getElementById('os-catalog-entry-form-slot').innerHTML=''">Отмена</button>
+    </div>
+  </form>
+</div>

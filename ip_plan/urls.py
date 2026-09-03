@@ -1,0 +1,56 @@
+from django.contrib.auth import views as auth_views
+from django.contrib.auth.decorators import login_not_required
+from django.urls import path
+
+from . import views
+
+app_name = "ip_plan"
+
+urlpatterns = [
+    # login_not_required — единственное исключение из LoginRequiredMiddleware
+    # (см. config/settings.py); без него вход на страницу логина сам
+    # требовал бы предварительного логина.
+    path(
+        "login/",
+        login_not_required(auth_views.LoginView.as_view(template_name="ip_plan/login.html")),
+        name="login",
+    ),
+    path("logout/", auth_views.LogoutView.as_view(), name="logout"),
+    path("", views.ip_list, name="ip_list"),
+    path("csrf/", views.csrf_refresh, name="csrf_refresh"),
+    path("help/", views.help_modal, name="help_modal"),
+    path("os-catalog/", views.os_catalog_manage, name="os_catalog_manage"),
+    path("os-catalog/<str:category>/<str:type_>/entries/", views.os_catalog_entries, name="os_catalog_entries"),
+    path(
+        "os-catalog/<str:category>/<str:type_>/entries/add/",
+        views.os_catalog_entry_form, name="os_catalog_entry_add_form",
+    ),
+    path(
+        "os-catalog/<str:category>/<str:type_>/entries/add/save/",
+        views.os_catalog_entry_save, name="os_catalog_entry_add_save",
+    ),
+    path(
+        "os-catalog/<str:category>/<str:type_>/entries/<str:entry_id>/edit/",
+        views.os_catalog_entry_form, name="os_catalog_entry_edit_form",
+    ),
+    path(
+        "os-catalog/<str:category>/<str:type_>/entries/<str:entry_id>/save/",
+        views.os_catalog_entry_save, name="os_catalog_entry_edit_save",
+    ),
+    path(
+        "os-catalog/<str:category>/<str:type_>/entries/<str:entry_id>/delete/",
+        views.os_catalog_entry_delete, name="os_catalog_entry_delete",
+    ),
+    path("export/", views.export_excel, name="export_excel"),
+    path("acl/", views.acl_lookup, name="acl_lookup"),
+    path("acl/<str:device>/object-group/<str:name>/", views.acl_object_group_detail, name="acl_object_group_detail"),
+    path("acl/<str:device>/<str:acl_name>/", views.acl_detail, name="acl_detail"),
+    path("ip/add/", views.ip_add, name="ip_add"),
+    path("ip/<int:ip_id>/edit/", views.ip_edit_modal, name="ip_edit_modal"),
+    path("ip/<int:ip_id>/save/", views.ip_save, name="ip_save"),
+    path("ip/<int:ip_id>/patch/", views.ip_patch, name="ip_patch"),
+    path("ip/<int:ip_id>/delete/", views.ip_delete, name="ip_delete"),
+    path("ip/<int:ip_id>/check/", views.ip_check_availability, name="ip_check_availability"),
+    path("ip/<int:ip_id>/scan-ports/", views.ip_scan_ports, name="ip_scan_ports"),
+    path("ip/<int:ip_id>/resolve-dns/", views.ip_resolve_dns, name="ip_resolve_dns"),
+]

@@ -1,0 +1,14 @@
+{
+  "servers": [
+    "ldaps://mdc-ipa-1.sicmt.local:636",
+    "ldaps://mdc-ipa-2.sicmt.local:636"
+  ],
+  "bind_dn": "uid=openvpn_svc,cn=sysaccounts,cn=etc,dc=sicmt,dc=local",
+  "bind_password_env_var": "LDAP_BIND_PASSWORD",
+  "tls_ca_cert": "/app/ip_plan/certs/ca.crt",
+  "user_search_base": "cn=users,cn=accounts,dc=sicmt,dc=local",
+  "user_search_filter": "(uid=%(user)s)",
+  "group_search_base": "cn=groups,cn=accounts,dc=sicmt,dc=local",
+  "require_group": "cn=netbox-users,cn=groups,cn=accounts,dc=sicmt,dc=local",
+  "cache_timeout": 3600
+}

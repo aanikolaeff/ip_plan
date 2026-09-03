@@ -1,0 +1,47 @@
+{% extends "ip_plan/base.html" %}
+{% load static %}
+
+{% block content %}
+  <section class="hero">
+    <div class="hero-title-row">
+      <h1 class="title">{{ name }} <span class="badge-acl-type">object-group</span></h1>
+      <a class="btn-back" href="{% url 'ip_plan:acl_lookup' %}?device={{ device }}" title="Назад к ACL">← ACL</a>
+    </div>
+    <p class="subtitle">
+      {{ device }} · адресов/подсетей: {{ networks|length }} ·
+      {% if used_by %}
+        используется в:
+        {% for acl_name in used_by %}<a href="{% url 'ip_plan:acl_detail' device=device acl_name=acl_name %}">{{ acl_name }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
+      {% else %}
+        не используется ни в одном ACL этого устройства
+      {% endif %}
+    </p>
+  </section>
+
+  <div class="table-loading-overlay" id="acl-detail-loading-overlay">
+    <div class="spinner-ring"></div>
+    <span>Загрузка таблицы…</span>
+  </div>
+
+  <div class="table-wrapper">
+    <table id="acl-detail-table" class="table acl-table w-100">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Адрес / подсеть</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for net in networks %}
+          <tr>
+            <td>{{ forloop.counter }}</td>
+            <td>{{ net }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <script src="{% static 'ip_plan/js/acl_datatable.js' %}"></script>
+  <script>initAclDetailTable('#acl-detail-table', 'acl-detail-loading-overlay');</script>
+{% endblock %}

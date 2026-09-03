@@ -1,0 +1,702 @@
+{
+  "os_directory": {
+    "description": "Полный справочник операционных систем с 2000 года",
+    "updated": "2026-06",
+    "categories": {
+
+      "windows": {
+
+        "desktop": [
+          {
+            "name": "Windows XP",
+            "vendor": "Microsoft",
+            "year": 2001,
+            "versions": ["Home", "Professional", "Media Center", "Tablet PC"],
+            "architecture": ["x86", "x64"],
+            "support_end": "2014"
+          },
+          {
+            "name": "Windows Vista",
+            "vendor": "Microsoft",
+            "year": 2006,
+            "versions": ["Home Basic", "Home Premium", "Business", "Ultimate"],
+            "architecture": ["x86", "x64"],
+            "support_end": "2017"
+          },
+          {
+            "name": "Windows 7",
+            "vendor": "Microsoft",
+            "year": 2009,
+            "versions": ["Starter", "Home Premium", "Professional", "Enterprise", "Ultimate"],
+            "architecture": ["x86", "x64"],
+            "support_end": "2020"
+          },
+          {
+            "name": "Windows 8",
+            "vendor": "Microsoft",
+            "year": 2012,
+            "versions": ["Core", "Pro", "Enterprise"],
+            "architecture": ["x86", "x64", "ARM"],
+            "support_end": "2016"
+          },
+          {
+            "name": "Windows 8.1",
+            "vendor": "Microsoft",
+            "year": 2013,
+            "versions": ["Core", "Pro", "Enterprise"],
+            "architecture": ["x86", "x64", "ARM"],
+            "support_end": "2023"
+          },
+          {
+            "name": "Windows 10",
+            "vendor": "Microsoft",
+            "year": 2015,
+            "versions": ["Home", "Pro", "Enterprise", "Education", "LTSC"],
+            "architecture": ["x86", "x64", "ARM64"],
+            "support_end": "2025"
+          },
+          {
+            "name": "Windows 11",
+            "vendor": "Microsoft",
+            "year": 2021,
+            "versions": ["Home", "Pro", "Enterprise", "Education"],
+            "architecture": ["x64", "ARM64"],
+            "support_end": "active"
+          }
+        ],
+
+        "server": [
+          {
+            "name": "Windows Server 2000",
+            "vendor": "Microsoft",
+            "year": 2000,
+            "versions": ["Standard", "Advanced", "Datacenter"],
+            "architecture": ["x86"],
+            "support_end": "2010"
+          },
+          {
+            "name": "Windows Server 2003",
+            "vendor": "Microsoft",
+            "year": 2003,
+            "versions": ["Standard", "Enterprise", "Datacenter", "Web"],
+            "architecture": ["x86", "x64", "IA-64"],
+            "support_end": "2015"
+          },
+          {
+            "name": "Windows Server 2008",
+            "vendor": "Microsoft",
+            "year": 2008,
+            "versions": ["Standard", "Enterprise", "Datacenter", "Web", "HPC"],
+            "architecture": ["x86", "x64", "IA-64"],
+            "support_end": "2020"
+          },
+          {
+            "name": "Windows Server 2008 R2",
+            "vendor": "Microsoft",
+            "year": 2009,
+            "versions": ["Standard", "Enterprise", "Datacenter", "Web", "HPC", "Foundation"],
+            "architecture": ["x64", "IA-64"],
+            "support_end": "2020"
+          },
+          {
+            "name": "Windows Server 2012",
+            "vendor": "Microsoft",
+            "year": 2012,
+            "versions": ["Standard", "Datacenter", "Essentials", "Foundation"],
+            "architecture": ["x64"],
+            "support_end": "2023"
+          },
+          {
+            "name": "Windows Server 2012 R2",
+            "vendor": "Microsoft",
+            "year": 2013,
+            "versions": ["Standard", "Datacenter", "Essentials", "Foundation"],
+            "architecture": ["x64"],
+            "support_end": "2023"
+          },
+          {
+            "name": "Windows Server 2016",
+            "vendor": "Microsoft",
+            "year": 2016,
+            "versions": ["Standard", "Datacenter", "Essentials"],
+            "architecture": ["x64"],
+            "support_end": "2027"
+          },
+          {
+            "name": "Windows Server 2019",
+            "vendor": "Microsoft",
+            "year": 2018,
+            "versions": ["Standard", "Datacenter", "Essentials"],
+            "architecture": ["x64"],
+            "support_end": "2029"
+          },
+          {
+            "name": "Windows Server 2022",
+            "vendor": "Microsoft",
+            "year": 2021,
+            "versions": ["Standard", "Datacenter", "Essentials", "Datacenter Azure Edition"],
+            "architecture": ["x64"],
+            "support_end": "2031"
+          },
+          {
+            "name": "Windows Server 2025",
+            "vendor": "Microsoft",
+            "year": 2024,
+            "versions": ["Standard", "Datacenter", "Essentials"],
+            "architecture": ["x64", "ARM64"],
+            "support_end": "2034"
+          }
+        ]
+      },
+
+      "linux_western": {
+
+        "desktop": [
+          {
+            "name": "Debian GNU/Linux",
+            "vendor": "Debian Project",
+            "base": "independent",
+            "year_start": 1993,
+            "notable_versions": [
+              "Woody 3.0 (2002)", "Sarge 3.1 (2005)", "Etch 4.0 (2007)",
+              "Lenny 5.0 (2009)", "Squeeze 6.0 (2011)", "Wheezy 7 (2013)",
+              "Jessie 8 (2015)", "Stretch 9 (2017)", "Buster 10 (2019)",
+              "Bullseye 11 (2021)", "Bookworm 12 (2023)"
+            ],
+            "package_manager": "apt/deb",
+            "status": "active"
+          },
+          {
+            "name": "Ubuntu Desktop",
+            "vendor": "Canonical",
+            "base": "Debian",
+            "year_start": 2004,
+            "notable_versions": [
+              "4.10 Warty (2004)", "6.06 LTS Dapper (2006)", "8.04 LTS Hardy (2008)",
+              "10.04 LTS Lucid (2010)", "12.04 LTS Precise (2012)",
+              "14.04 LTS Trusty (2014)", "16.04 LTS Xenial (2016)",
+              "18.04 LTS Bionic (2018)", "20.04 LTS Focal (2020)",
+              "22.04 LTS Jammy (2022)", "24.04 LTS Noble (2024)"
+            ],
+            "package_manager": "apt/deb",
+            "status": "active"
+          },
+          {
+            "name": "Linux Mint",
+            "vendor": "Linux Mint Team",
+            "base": "Ubuntu/Debian",
+            "year_start": 2006,
+            "notable_versions": ["18 (2016)", "19 (2018)", "20 (2020)", "21 (2022)", "22 (2024)"],
+            "package_manager": "apt/deb",
+            "status": "active"
+          },
+          {
+            "name": "Fedora Workstation",
+            "vendor": "Red Hat / Fedora Project",
+            "base": "independent",
+            "year_start": 2003,
+            "notable_versions": ["20 (2013)", "25 (2016)", "30 (2019)", "35 (2021)", "38 (2023)", "39 (2023)", "40 (2024)", "41 (2024)", "42 (2025)"],
+            "package_manager": "dnf/rpm",
+            "status": "active"
+          },
+          {
+            "name": "openSUSE Leap / Tumbleweed",
+            "vendor": "SUSE / openSUSE Community",
+            "base": "independent",
+            "year_start": 2005,
+            "notable_versions": ["42.1 (2015)", "15.0 (2018)", "15.1 (2019)", "15.2 (2020)", "15.3 (2021)", "15.4 (2022)", "15.5 (2023)", "15.6 (2024)"],
+            "package_manager": "zypper/rpm",
+            "status": "active"
+          },
+          {
+            "name": "Manjaro",
+            "vendor": "Manjaro GmbH",
+            "base": "Arch Linux",
+            "year_start": 2011,
+            "notable_versions": ["18 (2018)", "20 (2020)", "21 (2021)", "22 (2022)", "23 (2023)", "24 (2024)"],
+            "package_manager": "pacman",
+            "status": "active"
+          }
+        ],
+
+        "server": [
+          {
+            "name": "Red Hat Enterprise Linux (RHEL)",
+            "vendor": "Red Hat",
+            "base": "independent",
+            "year_start": 2000,
+            "notable_versions": [
+              "RHEL 2.1 (2002)", "RHEL 3 (2003)", "RHEL 4 (2005)",
+              "RHEL 5 (2007)", "RHEL 6 (2010)", "RHEL 7 (2014)",
+              "RHEL 8 (2019)", "RHEL 9 (2022)"
+            ],
+            "package_manager": "dnf/rpm",
+            "status": "active"
+          },
+          {
+            "name": "CentOS",
+            "vendor": "CentOS Project / Red Hat",
+            "base": "RHEL",
+            "year_start": 2004,
+            "notable_versions": [
+              "3 (2004)", "4 (2005)", "5 (2007)", "6 (2011)",
+              "7 (2014)", "8 (2019)", "CentOS Stream 9 (2021)"
+            ],
+            "package_manager": "yum/dnf/rpm",
+            "support_note": "CentOS Linux EOL 2021, Stream — active"
+          },
+          {
+            "name": "AlmaLinux",
+            "vendor": "CloudLinux",
+            "base": "RHEL",
+            "year_start": 2021,
+            "notable_versions": ["8.x (2021–)", "9.x (2022–)"],
+            "package_manager": "dnf/rpm",
+            "status": "active"
+          },
+          {
+            "name": "Rocky Linux",
+            "vendor": "Rocky Linux Foundation",
+            "base": "RHEL",
+            "year_start": 2021,
+            "notable_versions": ["8.x (2021–)", "9.x (2022–)"],
+            "package_manager": "dnf/rpm",
+            "status": "active"
+          },
+          {
+            "name": "SUSE Linux Enterprise Server (SLES)",
+            "vendor": "SUSE",
+            "base": "independent",
+            "year_start": 2000,
+            "notable_versions": [
+              "SLES 8 (2002)", "SLES 9 (2004)", "SLES 10 (2006)",
+              "SLES 11 (2009)", "SLES 12 (2014)", "SLES 15 (2018)",
+              "SLES 15 SP5 (2023)", "SLES 15 SP6 (2024)"
+            ],
+            "package_manager": "zypper/rpm",
+            "status": "active"
+          },
+          {
+            "name": "Ubuntu Server",
+            "vendor": "Canonical",
+            "base": "Debian",
+            "year_start": 2004,
+            "notable_versions": [
+              "14.04 LTS (2014)", "16.04 LTS (2016)", "18.04 LTS (2018)",
+              "20.04 LTS (2020)", "22.04 LTS (2022)", "24.04 LTS (2024)"
+            ],
+            "package_manager": "apt/deb",
+            "status": "active"
+          },
+          {
+            "name": "Debian GNU/Linux (Server)",
+            "vendor": "Debian Project",
+            "base": "independent",
+            "year_start": 1993,
+            "notable_versions": [
+              "Buster 10 (2019)", "Bullseye 11 (2021)", "Bookworm 12 (2023)"
+            ],
+            "package_manager": "apt/deb",
+            "status": "active"
+          }
+        ]
+      },
+
+      "linux_russian": {
+
+        "desktop": [
+          {
+            "name": "ALT Рабочая станция",
+            "vendor": "Базальт СПО",
+            "base": "independent (собственная пакетная база Sisyphus)",
+            "year_start": 2001,
+            "versions": [
+              {"version": "ALT Linux 2.2", "year": 2003},
+              {"version": "ALT Linux 2.4", "year": 2004},
+              {"version": "ALT Linux 4.0 Kirov", "year": 2007},
+              {"version": "ALT Linux 5.0 Citius", "year": 2010},
+              {"version": "ALT Linux 6.0 Centaurea", "year": 2012},
+              {"version": "ALT Linux 7.0", "year": 2014},
+              {"version": "ALT Рабочая станция 8.0", "year": 2017},
+              {"version": "ALT Рабочая станция 9.0", "year": 2019},
+              {"version": "ALT Рабочая станция 10.0", "year": 2022},
+              {"version": "ALT Рабочая станция 10.1", "year": 2023},
+              {"version": "ALT Рабочая станция 10.2", "year": 2024},
+              {"version": "ALT Рабочая станция К 11.0 (платформа p11 Salvia)", "year": 2025},
+              {"version": "ALT Рабочая станция К 11.1", "year": 2025},
+              {"version": "ALT Рабочая станция К 11.2", "year": 2025}
+            ],
+            "package_manager": "apt/rpm",
+            "certification": "ФСТЭК",
+            "status": "active"
+          },
+          {
+            "name": "Simply Linux",
+            "vendor": "Базальт СПО",
+            "base": "ALT Linux",
+            "year_start": 2012,
+            "versions": [
+              {"version": "Simply Linux 6.0", "year": 2012},
+              {"version": "Simply Linux 7.0", "year": 2015},
+              {"version": "Simply Linux 8.0", "year": 2017},
+              {"version": "Simply Linux 9.0", "year": 2019},
+              {"version": "Simply Linux 10.0", "year": 2022},
+              {"version": "Simply Linux 10.4", "year": 2025}
+            ],
+            "package_manager": "apt/rpm",
+            "status": "active"
+          },
+          {
+            "name": "ALT Mobile",
+            "vendor": "Базальт СПО",
+            "base": "ALT Linux",
+            "year_start": 2024,
+            "versions": [
+              {"version": "ALT Mobile 20240120", "year": 2024},
+              {"version": "ALT Mobile 20240625", "year": 2024},
+              {"version": "ALT Mobile (Сизиф rolling)", "year": 2025}
+            ],
+            "package_manager": "apt/rpm",
+            "note": "мобильная/планшетная ОС на базе платформы ALT",
+            "status": "active"
+          },
+          {
+            "name": "ROSA Desktop Fresh",
+            "vendor": "НТЦ ИТ РОСА",
+            "base": "independent (bifurcated from Mandriva)",
+            "year_start": 2012,
+            "versions": [
+              {"version": "ROSA Desktop Fresh R1", "year": 2012},
+              {"version": "ROSA Desktop Fresh R2", "year": 2013},
+              {"version": "ROSA Desktop Fresh R3", "year": 2013},
+              {"version": "ROSA Desktop Fresh R4", "year": 2014},
+              {"version": "ROSA Desktop Fresh R5", "year": 2014},
+              {"version": "ROSA Desktop Fresh R6", "year": 2015},
+              {"version": "ROSA Desktop Fresh R7", "year": 2016},
+              {"version": "ROSA Desktop Fresh R8", "year": 2016},
+              {"version": "ROSA Desktop Fresh R9", "year": 2017},
+              {"version": "ROSA Desktop Fresh R10", "year": 2018},
+              {"version": "ROSA Desktop Fresh R11", "year": 2019},
+              {"version": "ROSA Desktop Fresh R12", "year": 2021},
+              {"version": "ROSA Fresh 12.1", "year": 2022},
+              {"version": "ROSA Fresh 12.2", "year": 2022},
+              {"version": "ROSA Fresh 12.3", "year": 2023},
+              {"version": "ROSA Fresh 12.4", "year": 2024},
+              {"version": "ROSA Fresh 12.5", "year": 2024},
+              {"version": "ROSA Fresh 12.5.1", "year": 2024},
+              {"version": "ROSA Fresh 13.0 (платформа Rosa 13, KDE 6)", "year": 2025},
+              {"version": "ROSA Fresh 13.1", "year": 2025}
+            ],
+            "package_manager": "urpmi/rpm",
+            "status": "active"
+          },
+          {
+            "name": "РОСА «Хром» (Chrome)",
+            "vendor": "НТЦ ИТ РОСА",
+            "base": "independent",
+            "year_start": 2014,
+            "versions": [
+              {"version": "РОСА Хром 7.x", "year_range": "2014–2018"},
+              {"version": "РОСА Хром 12.0", "year": 2021},
+              {"version": "РОСА Хром 12.5", "year": 2023},
+              {"version": "РОСА Хром 12.6", "year": 2024},
+              {"version": "РОСА Хром 12.7 (ядро Linux 6.12)", "year": 2025}
+            ],
+            "package_manager": "urpmi/rpm",
+            "certification": "ФСТЭК",
+            "note": "корпоративная сертифицированная редакция",
+            "status": "active"
+          },
+          {
+            "name": "Astra Linux Common Edition",
+            "vendor": "РусБИТех / Группа Астра",
+            "base": "Debian",
+            "year_start": 2010,
+            "versions": [
+              {"version": "Astra Linux CE 1.10 Orel", "year": 2016},
+              {"version": "Astra Linux CE 1.11 Orel", "year": 2017},
+              {"version": "Astra Linux CE 2.12 Orel", "year": 2019},
+              {"version": "Astra Linux CE 3.0 Leningrad", "year": 2023}
+            ],
+            "package_manager": "apt/deb",
+            "status": "active"
+          },
+          {
+            "name": "RED OS Рабочая станция",
+            "vendor": "РЕД СОФТ",
+            "base": "independent (RPM)",
+            "year_start": 2017,
+            "versions": [
+              {"version": "RED OS 7.1", "year": 2017},
+              {"version": "RED OS 7.2", "year": 2019},
+              {"version": "RED OS 7.3", "year": 2021},
+              {"version": "RED OS 7.3.2", "year": 2022},
+              {"version": "RED OS 7.3.5", "year": 2024},
+              {"version": "RED OS 8.0", "year": 2024},
+              {"version": "RED OS 8.0.2 (ядро 6.12, PostgreSQL 17.5, GCC 13)", "year": 2025}
+            ],
+            "package_manager": "dnf/rpm",
+            "certification": "ФСТЭК",
+            "status": "active"
+          },
+          {
+            "name": "Эльбрус ОС (десктоп)",
+            "vendor": "МЦСТ",
+            "base": "ALT Linux / собственная",
+            "year_start": 2010,
+            "versions": [
+              {"version": "Эльбрус ОС 3.0", "year": 2014},
+              {"version": "Эльбрус ОС 4.0", "year": 2018},
+              {"version": "Эльбрус ОС 5.0", "year": 2020},
+              {"version": "Эльбрус ОС 6.0", "year": 2022}
+            ],
+            "architecture": ["Эльбрус e2k", "x86-64"],
+            "package_manager": "apt/rpm",
+            "status": "active"
+          },
+          {
+            "name": "МСВСфера (рабочая станция)",
+            "vendor": "НПП Орёл",
+            "base": "ALT Linux",
+            "year_start": 2015,
+            "versions": [
+              {"version": "МСВСфера 6.3", "year": 2015},
+              {"version": "МСВСфера 8", "year": 2020}
+            ],
+            "package_manager": "apt/rpm",
+            "status": "active"
+          },
+          {
+            "name": "ОСнова",
+            "vendor": "ИВК",
+            "base": "Debian",
+            "year_start": 2018,
+            "versions": [
+              {"version": "ОСнова 1.0", "year": 2018},
+              {"version": "ОСнова 2.0", "year": 2021}
+            ],
+            "package_manager": "apt/deb",
+            "status": "active"
+          },
+          {
+            "name": "SberOS Desktop",
+            "vendor": "Сбер",
+            "base": "Debian",
+            "year_start": 2022,
+            "versions": [
+              {"version": "SberOS Desktop 1.0", "year": 2022},
+              {"version": "SberOS Desktop 2.0", "year": 2023}
+            ],
+            "package_manager": "apt/deb",
+            "status": "active"
+          },
+          {
+            "name": "Янукс",
+            "vendor": "ФГУП НИИ НПО «ЛУЧ»",
+            "base": "CentOS",
+            "year_start": 2017,
+            "versions": [
+              {"version": "Янукс 1.0", "year": 2017},
+              {"version": "Янукс 2.0", "year": 2020}
+            ],
+            "package_manager": "yum/rpm",
+            "certification": "ФСТЭК, ФСБ",
+            "status": "active"
+          }
+        ],
+
+        "server": [
+          {
+            "name": "ALT Сервер",
+            "vendor": "Базальт СПО",
+            "base": "independent (Sisyphus)",
+            "year_start": 2001,
+            "versions": [
+              {"version": "ALT Linux Server 4.0", "year": 2007},
+              {"version": "ALT Linux Server 5.0", "year": 2010},
+              {"version": "ALT Linux Server 6.0", "year": 2012},
+              {"version": "ALT Linux Server 7.0", "year": 2014},
+              {"version": "ALT Сервер 8.0", "year": 2017},
+              {"version": "ALT Сервер 8.2", "year": 2018},
+              {"version": "ALT Сервер 9.0", "year": 2019},
+              {"version": "ALT Сервер 9.1", "year": 2020},
+              {"version": "ALT Сервер 9.2", "year": 2021},
+              {"version": "ALT Сервер 10.0", "year": 2022},
+              {"version": "ALT Сервер 10.1", "year": 2023},
+              {"version": "ALT Сервер 10.2", "year": 2024},
+              {"version": "ALT Сервер 11.0 (платформа p11 Salvia, ядро 6.12)", "year": 2025}
+            ],
+            "package_manager": "apt/rpm",
+            "certification": "ФСТЭК",
+            "status": "active"
+          },
+          {
+            "name": "Альт Сервер Виртуализации",
+            "vendor": "Базальт СПО",
+            "base": "ALT Linux",
+            "year_start": 2018,
+            "versions": [
+              {"version": "Альт Сервер Виртуализации 8", "year": 2018},
+              {"version": "Альт Сервер Виртуализации 9", "year": 2020},
+              {"version": "Альт Сервер Виртуализации 10.0", "year": 2022},
+              {"version": "Альт Сервер Виртуализации 11.0", "year": 2025}
+            ],
+            "package_manager": "apt/rpm",
+            "status": "active"
+          },
+          {
+            "name": "ALT 8 СП (с защитой информации)",
+            "vendor": "Базальт СПО",
+            "base": "ALT Linux",
+            "year_start": 2016,
+            "versions": [
+              {"version": "ALT 8 СП", "year": 2016},
+              {"version": "ALT 8 СП Update 1", "year": 2017},
+              {"version": "ALT 8 СП Update 2", "year": 2018},
+              {"version": "ALT 8 СП Update 3", "year": 2019},
+              {"version": "ALT 8 СП Update 4", "year": 2020}
+            ],
+            "package_manager": "apt/rpm",
+            "certification": "ФСТЭК 1 класс, ФСБ",
+            "status": "active"
+          },
+          {
+            "name": "Astra Linux Special Edition",
+            "vendor": "РусБИТех / Группа Астра",
+            "base": "Debian",
+            "year_start": 2008,
+            "versions": [
+              {"version": "Astra Linux SE 1.2 Smolensk", "year": 2012},
+              {"version": "Astra Linux SE 1.3 Smolensk", "year": 2014},
+              {"version": "Astra Linux SE 1.4 Smolensk", "year": 2016},
+              {"version": "Astra Linux SE 1.5 Smolensk", "year": 2017},
+              {"version": "Astra Linux SE 1.6 Smolensk", "year": 2019},
+              {"version": "Astra Linux SE 1.7 Smolensk", "year": 2021},
+              {"version": "Astra Linux SE 1.7.1 Smolensk", "year": 2022},
+              {"version": "Astra Linux SE 1.7.2 Smolensk", "year": 2023},
+              {"version": "Astra Linux SE 1.8 (новое поколение)", "year": 2024},
+              {"version": "Astra Linux SE 1.8.3 (поддержка SPARC, автодеплой по сети)", "year": 2025},
+              {"version": "Astra Linux SE 1.8.4", "year": 2026}
+            ],
+            "package_manager": "apt/deb",
+            "certification": "ФСТЭК 1В, ФСБ ГТ",
+            "status": "active"
+          },
+          {
+            "name": "ROSA Enterprise Linux Server",
+            "vendor": "НТЦ ИТ РОСА",
+            "base": "independent",
+            "year_start": 2013,
+            "versions": [
+              {"version": "ROSA Enterprise Linux Server 6.0", "year": 2013},
+              {"version": "ROSA Enterprise Linux Server 6.6", "year": 2015},
+              {"version": "ROSA Enterprise Linux Server 7.0", "year": 2017},
+              {"version": "ROSA Enterprise Linux Server 7.3", "year": 2022},
+              {"version": "ROSA Enterprise Linux Server 7.9", "year": 2024}
+            ],
+            "package_manager": "urpmi/rpm",
+            "certification": "ФСТЭК",
+            "status": "active"
+          },
+          {
+            "name": "ROSA Fresh Server",
+            "vendor": "НТЦ ИТ РОСА",
+            "base": "independent (платформа Rosa 13)",
+            "year_start": 2025,
+            "versions": [
+              {"version": "ROSA Fresh Server 13.0", "year": 2025}
+            ],
+            "package_manager": "urpmi/rpm",
+            "note": "бесплатный серверный дистрибутив для сообщества",
+            "status": "active"
+          },
+          {
+            "name": "ROSA Virtualization",
+            "vendor": "НТЦ ИТ РОСА",
+            "base": "independent",
+            "year_start": 2020,
+            "versions": [
+              {"version": "ROSA Virtualization 2.0", "year": 2020},
+              {"version": "ROSA Virtualization 3.0", "year": 2023},
+              {"version": "ROSA Virtualization 3.1", "year": 2025}
+            ],
+            "package_manager": "urpmi/rpm",
+            "note": "платформа виртуализации",
+            "status": "active"
+          },
+          {
+            "name": "RED OS Server",
+            "vendor": "РЕД СОФТ",
+            "base": "independent (RPM)",
+            "year_start": 2017,
+            "versions": [
+              {"version": "RED OS Server 7.1", "year": 2017},
+              {"version": "RED OS Server 7.2", "year": 2019},
+              {"version": "RED OS Server 7.3", "year": 2021},
+              {"version": "RED OS Server 7.3.2", "year": 2022},
+              {"version": "RED OS Server 7.3.5", "year": 2024},
+              {"version": "RED OS Server 7.3.6 (ядро 6.12)", "year": 2025},
+              {"version": "RED OS Server 8.0", "year": 2024},
+              {"version": "RED OS Server 8.0.2 (ядро 6.12, PostgreSQL 17.5, GCC 13)", "year": 2025}
+            ],
+            "package_manager": "dnf/rpm",
+            "certification": "ФСТЭК",
+            "status": "active"
+          },
+          {
+            "name": "МСВС (Мобильная система вооружённых сил)",
+            "vendor": "ВНИИПВТИ",
+            "base": "Red Hat Linux",
+            "year_start": 2002,
+            "versions": [
+              {"version": "МСВС 3.0", "year": 2002},
+              {"version": "МСВС 5.0", "year": 2018}
+            ],
+            "package_manager": "rpm",
+            "certification": "Минобороны РФ, ФСБ, ФСТЭК",
+            "status": "active (специальное применение)"
+          },
+          {
+            "name": "Эльбрус ОС (серверная)",
+            "vendor": "МЦСТ",
+            "base": "ALT Linux / собственная",
+            "year_start": 2010,
+            "versions": [
+              {"version": "Эльбрус ОС Server 3.0", "year": 2014},
+              {"version": "Эльбрус ОС Server 4.0", "year": 2018},
+              {"version": "Эльбрус ОС Server 5.0", "year": 2020},
+              {"version": "Эльбрус ОС Server 6.0", "year": 2022}
+            ],
+            "architecture": ["Эльбрус e2k", "x86-64"],
+            "package_manager": "apt/rpm",
+            "status": "active"
+          },
+          {
+            "name": "SberLinux Server",
+            "vendor": "Сбер",
+            "base": "RHEL",
+            "year_start": 2022,
+            "versions": [
+              {"version": "SberLinux Server 1.0", "year": 2022},
+              {"version": "SberLinux Server 2.0", "year": 2023}
+            ],
+            "package_manager": "dnf/rpm",
+            "status": "active"
+          },
+          {
+            "name": "МСВСфера (серверная)",
+            "vendor": "НПП Орёл",
+            "base": "ALT Linux",
+            "year_start": 2015,
+            "versions": [
+              {"version": "МСВСфера 6.3", "year": 2015},
+              {"version": "МСВСфера 8", "year": 2020}
+            ],
+            "package_manager": "apt/rpm",
+            "status": "active"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,98 @@
+{% load static ip_plan_extras %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IP Plan — Список сетевых активов СИЦ</title>
+
+  <!-- Шрифты/Bootstrap/DataTables — завендорены в static/ip_plan/vendor/:
+       приложение работает на внутренней сети, где внешний интернет/CDN
+       могут быть недоступны без VPN. -->
+  <link rel="stylesheet" href="{% static 'ip_plan/vendor/fonts/fonts.css' %}">
+
+  <!-- Bootstrap 5 — только утилиты (flex/grid/spacing), компоненты (modal/badge/btn) свои -->
+  <link href="{% static 'ip_plan/vendor/bootstrap/bootstrap.min.css' %}" rel="stylesheet">
+
+  <link href="{% static 'ip_plan/vendor/datatables/dataTables.bootstrap5.min.css' %}" rel="stylesheet">
+  <link href="{% static 'ip_plan/vendor/datatables/fixedColumns.bootstrap5.min.css' %}" rel="stylesheet">
+
+  <link rel="stylesheet" href="{% static 'ip_plan/css/style.css' %}">
+</head>
+<body>
+  <!-- x-data="" — без хотя бы одного предка с x-data Alpine не навешивает
+       директивы (@click и т.п.) на элементы внутри. Оборачиваем весь основной
+       контент страницы, чтобы кнопки типа "+ Добавить IP" корректно работали. -->
+  <div class="container-fluid py-4" x-data>
+    <!-- В обычном потоке документа (НЕ position:fixed) — чтобы при скролле
+         страницы вниз уезжала вместе с контентом, как "+ Добавить IP", а не
+         оставалась прибитой к вьюпорту и наезжала на липкую шапку таблицы. -->
+    {% if user.is_authenticated %}
+      <form method="post" action="{% url 'ip_plan:logout' %}" class="user-bar">
+        {% csrf_token %}
+        <span class="user-bar-name">{{ user.get_full_name|default:user.username }}</span>
+        <button type="submit" class="btn-modal-secondary user-bar-btn">Выйти</button>
+      </form>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+  </div>
+
+  <!-- Модальное окно: оболочка постоянна, контент подгружается через HTMX -->
+  <div class="modal-overlay"
+       x-data="{ mouseDownOnOverlay: false }"
+       x-show="$store.modal.open"
+       x-cloak
+       @open-modal.window="$store.modal.open = true"
+       @close-modal.window="$store.modal.open = false; $store.modal.dirty = false; $el.querySelector('.modal-box').style.width = ''"
+       @keydown.escape.window="$store.modal.requestClose()"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0 scale-95"
+       x-transition:enter-end="opacity-100 scale-100"
+       x-transition:leave="transition ease-in duration-150"
+       x-transition:leave-start="opacity-100 scale-100"
+       x-transition:leave-end="opacity-0 scale-95"
+       @mousedown="mouseDownOnOverlay = ($event.target === $event.currentTarget)"
+       @click="if (mouseDownOnOverlay && $event.target === $event.currentTarget) $store.modal.requestClose()">
+    <div class="modal-box" @input="$store.modal.dirty = true" @change="$store.modal.dirty = true">
+      <div id="modal-spinner" class="htmx-indicator">
+        <div class="spinner-ring"></div>
+      </div>
+      <div id="modal-content"><!-- содержимое подставляется через HTMX --></div>
+    </div>
+  </div>
+
+  <!-- Подсказки для поля "Операционная система" в полной форме (модалки
+       добавления/редактирования) — наполняется из window.OS_CATALOG_OPTIONS
+       в app.js, один общий элемент на страницу. -->
+  <datalist id="os-catalog-datalist"></datalist>
+
+  <!-- Тост-уведомления -->
+  <div class="toast-stack"
+       x-data="{ toasts: [] }"
+       @show-toast.window="
+         const id = Date.now() + Math.random();
+         toasts.push({ id, message: $event.detail.message, kind: $event.detail.kind || 'success' });
+         setTimeout(() => { toasts = toasts.filter((t) => t.id !== id); }, 3000);
+       ">
+    <template x-for="toast in toasts" :key="toast.id">
+      <div class="toast-item" :class="'toast-' + (toast.kind || 'success')" x-text="toast.message"></div>
+    </template>
+  </div>
+
+  <script src="{% static 'ip_plan/vendor/jquery/jquery-3.7.1.min.js' %}"></script>
+  <script src="{% static 'ip_plan/vendor/htmx/htmx.min.js' %}"></script>
+  <script defer src="{% static 'ip_plan/vendor/alpine/alpine.min.js' %}"></script>
+  <script src="{% static 'ip_plan/vendor/datatables/dataTables.min.js' %}"></script>
+  <script src="{% static 'ip_plan/vendor/datatables/dataTables.bootstrap5.min.js' %}"></script>
+  <script src="{% static 'ip_plan/vendor/datatables/dataTables.fixedColumns.min.js' %}"></script>
+
+  <script>
+    window.URL_PREFIX = "{{ request.META.SCRIPT_NAME }}";
+    window.CSRF_COOKIE_NAME = "{% csrf_cookie_name %}";
+    window.OS_CATALOG_OPTIONS = {{ os_catalog_json|default:"{}" }};
+    window.COLUMN_INFO = {{ column_info_json|default:"{}"|safe }};
+  </script>
+  <script src="{% static 'ip_plan/js/app.js' %}"></script>
+</body>
+</html>

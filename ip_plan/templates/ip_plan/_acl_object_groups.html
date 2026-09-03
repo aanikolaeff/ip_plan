@@ -1,0 +1,45 @@
+<section class="hero" style="margin-top: 2rem;">
+  <div class="hero-title-row">
+    <h2 class="title" style="font-size: 1.25rem;">
+      {% if selected_device %}Object-group network на {{ selected_device }}{% else %}Все object-group network{% endif %}
+    </h2>
+  </div>
+</section>
+{% if object_group_rows %}
+  <div class="table-wrapper">
+    <table class="table acl-table">
+      <thead>
+        <tr>
+          <th>Устройство</th>
+          <th>Имя</th>
+          <th>Адресов/подсетей</th>
+          <th>Используется в ACL</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in object_group_rows %}
+          <tr>
+            <td>{{ row.device }}</td>
+            <td><a href="{% url 'ip_plan:acl_object_group_detail' device=row.device name=row.name %}">{{ row.name }}</a></td>
+            <td>{{ row.member_count }}</td>
+            <td>
+              {% for acl_name in row.used_by %}
+                <a href="{% url 'ip_plan:acl_detail' device=row.device acl_name=acl_name %}">{{ acl_name }}</a>{% if not forloop.last %}, {% endif %}
+              {% empty %}
+                <span class="badge-status" data-status="deprecated">не используется</span>
+              {% endfor %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="acl-hint">
+    {% if selected_device %}
+      На {{ selected_device }} object-group network не найдены.
+    {% else %}
+      object-group network не найдены ни на одном загруженном устройстве.
+    {% endif %}
+  </p>
+{% endif %}

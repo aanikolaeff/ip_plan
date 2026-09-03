@@ -1,0 +1,2 @@
+Токен IPPLAN local
+Bearer nbt_LBL92vHV8k51.F4Ujuk5KflKjyPPypxVXqgoBcTXMs7R872TF4bLo

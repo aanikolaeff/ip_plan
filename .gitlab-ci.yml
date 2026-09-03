@@ -1,0 +1,50 @@
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  tags:
+    - ip_plan_shell
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+  environment:
+    name: production
+  script:
+    - |
+      cat > .env <<EOF
+      SECRET_KEY=$SECRET_KEY
+      DEBUG=$DEBUG
+      ALLOWED_HOSTS=$ALLOWED_HOSTS
+      CSRF_TRUSTED_ORIGINS=$CSRF_TRUSTED_ORIGINS
+      USE_X_FORWARDED_PROTO=$USE_X_FORWARDED_PROTO
+      NETBOX_URL=$NETBOX_URL
+      NETBOX_TOKEN=$NETBOX_TOKEN
+      NETBOX_VERIFY_SSL=$NETBOX_VERIFY_SSL
+      NETBOX_TIMEOUT=$NETBOX_TIMEOUT
+      NETBOX_SITE_FILTER=$NETBOX_SITE_FILTER
+      NETBOX_TAG_FILTER=$NETBOX_TAG_FILTER
+      NETBOX_DNS_SERVERS=$NETBOX_DNS_SERVERS
+      NETBOX_DNS_SKIP_PATTERN=$NETBOX_DNS_SKIP_PATTERN
+      URL_PREFIX=$URL_PREFIX
+      LDAP_BIND_PASSWORD=$LDAP_BIND_PASSWORD
+      EOF
+    - docker compose up -d --build
+    - |
+      ok=""
+      smoke_host="${ALLOWED_HOSTS%%,*}"
+      for i in $(seq 1 10); do
+       if curl -fsS -H "Host: $smoke_host" http://localhost:8050/ -o /dev/null; then
+          ok=1
+          break
+        fi
+        echo "Waiting for app..."
+        sleep 3
+      done
+      if [ -z "$ok" ]; then
+        echo "App did not respond after deploy"
+        docker compose logs --tail=100 web
+        exit 1
+      fi
+      echo "App is up"
+    - docker image prune -f

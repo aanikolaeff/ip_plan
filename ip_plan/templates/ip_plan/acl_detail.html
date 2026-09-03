@@ -1,0 +1,61 @@
+{% extends "ip_plan/base.html" %}
+{% load static %}
+
+{% block content %}
+  <section class="hero">
+    <div class="hero-title-row">
+      <h1 class="title">{{ acl.name }} <span class="badge-acl-type">{{ acl.acl_type }}</span></h1>
+      <a class="btn-back" href="{% url 'ip_plan:acl_lookup' %}?device={{ device }}" title="Назад к ACL">← ACL</a>
+    </div>
+    <p class="subtitle">
+      {{ device }} · {{ acl.rules|length }} правил ·
+      {% if applied %}
+        применён:
+        {% for app in applications %}{{ app.kind }}: {{ app.location }}{% if app.direction %} ({{ app.direction }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
+      {% else %}
+        не применён нигде в конфиге
+      {% endif %}
+    </p>
+  </section>
+
+  <div class="table-loading-overlay" id="acl-detail-loading-overlay">
+    <div class="spinner-ring"></div>
+    <span>Загрузка таблицы…</span>
+  </div>
+
+  <div class="table-wrapper">
+    <table id="acl-detail-table" class="table acl-table w-100">
+      <thead>
+        <tr>
+          <th>Seq</th>
+          <th>Action</th>
+          <th>Протокол</th>
+          <th>Source</th>
+          <th>Src порт</th>
+          <th>Destination</th>
+          <th>Dst порт</th>
+          <th>Log</th>
+          <th>Remark</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rule in acl.rules %}
+          <tr>
+            <td>{{ rule.sequence }}</td>
+            <td><span class="badge-status" data-status="{{ rule.action }}">{{ rule.action }}</span></td>
+            <td>{{ rule.protocol|default:"" }}</td>
+            <td>{{ rule.source.raw|default:"" }}</td>
+            <td>{{ rule.source_port|default:"" }}</td>
+            <td>{{ rule.destination.raw|default:"" }}</td>
+            <td>{{ rule.destination_port|default:"" }}</td>
+            <td>{% if rule.log %}<span class="badge-acl-log">log</span>{% endif %}</td>
+            <td>{{ rule.remark|default:"" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <script src="{% static 'ip_plan/js/acl_datatable.js' %}"></script>
+  <script>initAclDetailTable('#acl-detail-table', 'acl-detail-loading-overlay');</script>
+{% endblock %}

@@ -1,0 +1,56 @@
+<div id="acl-results">
+  {% if search_error %}
+    <p class="acl-hint acl-hint-error">{{ search_error }}</p>
+  {% elif ip_query %}
+    {% if results %}
+      <p class="acl-hint">Найдено правил: {{ results|length }} для <strong>{{ ip_query }}</strong></p>
+      <div class="table-wrapper">
+        <table class="table acl-table">
+          <thead>
+            <tr>
+              <th>Устройство</th>
+              <th>ACL</th>
+              <th>Seq</th>
+              <th>Action</th>
+              <th>Протокол</th>
+              <th>Source</th>
+              <th>Destination</th>
+              <th>Порт</th>
+              <th>Где</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for m in results %}
+              <tr class="{% if m.catch_all %}acl-row-catchall{% endif %}">
+                <td>{{ m.device }}</td>
+                <td>{{ m.acl_name }} <span class="badge-acl-type">{{ m.acl_type }}</span></td>
+                <td>{{ m.rule.sequence }}</td>
+                <td>
+                  <span class="badge-status" data-status="{{ m.rule.action }}">{{ m.rule.action }}</span>
+                  {% if m.rule.log %}<span class="badge-acl-log" title="log">log</span>{% endif %}
+                </td>
+                <td>{{ m.rule.protocol|default:"—" }}</td>
+                <td class="{% if m.matched_as == 'source' or m.matched_as == 'source+destination' %}acl-cell-hit{% endif %}">
+                  {{ m.rule.source.raw|default:"—" }}
+                </td>
+                <td class="{% if m.matched_as == 'destination' or m.matched_as == 'source+destination' %}acl-cell-hit{% endif %}">
+                  {{ m.rule.destination.raw|default:"—" }}{% if m.rule.destination_port %} <span class="acl-port">{{ m.rule.destination_port }}</span>{% endif %}
+                </td>
+                <td>{{ m.rule.source_port|default:"" }}</td>
+                <td>
+                  {% if m.applied %}
+                    <span class="badge-status" data-status="active">применён</span>
+                  {% else %}
+                    <span class="badge-status" data-status="deprecated">не применён</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="acl-hint">Ни один загруженный ACL не трогает <strong>{{ ip_query }}</strong>.</p>
+    {% endif %}
+  {% endif %}
+</div>
