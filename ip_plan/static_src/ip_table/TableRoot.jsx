@@ -10,13 +10,28 @@ import { columns, DEFAULT_HIDDEN_COLUMNS, DEFAULT_PINNING } from './columns.jsx'
 import { deleteIp, fetchIpList } from './api.js';
 import { loadJSON, loadSession, saveJSON, saveSession } from './storage.js';
 import { showToast } from './components/cells.jsx';
+import { ipIntToStr, ipToInt } from './ip.js';
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 250, 1000];
 
-function ipToInt(address) {
-  const parts = (address || '').split('.').map(Number);
-  if (parts.length !== 4 || parts.some((p) => Number.isNaN(p))) return null;
-  return parts.reduce((acc, p) => acc * 256 + p, 0);
+// Перенесено дословно из app.js (pluralizeAddresses) — русское склонение
+// "адрес/адреса/адресов" по числу.
+function pluralizeAddresses(n) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return 'адресов';
+  if (mod10 === 1) return 'адрес';
+  if (mod10 >= 2 && mod10 <= 4) return 'адреса';
+  return 'адресов';
+}
+
+function openAddIpModal(prefillAddress) {
+  window.Alpine?.store('modal') && (window.Alpine.store('modal').dirty = false);
+  window.htmx?.ajax('GET', `${window.URL_PREFIX || ''}/ip/add/?address=${encodeURIComponent(prefillAddress)}`, {
+    target: '#modal-content',
+    indicator: '#modal-spinner',
+  });
+  window.dispatchEvent(new CustomEvent('open-modal'));
 }
 
 export default function TableRoot() {
@@ -36,7 +51,12 @@ export default function TableRoot() {
   const [columnVisibility, setColumnVisibility] = useState(() => loadJSON('columnVisibility', DEFAULT_HIDDEN_COLUMNS));
   const [columnOrder, setColumnOrder] = useState(() => loadJSON('columnOrder', []));
   const [columnPinning] = useState(DEFAULT_PINNING); // закреплённые колонки не переключаются пользователем (пока)
-  const [sorting, setSorting] = useState([]);
+  // По умолчанию — по адресу (как в старой DataTables-версии, order:
+  // [[1,'asc']]) — не персистится (в отличие от sizing/visibility/order),
+  // это просто дефолт до первого клика по заголовку. Важно и для гэп-строк
+  // свободных диапазонов ниже: их арифметика предполагает, что видимые на
+  // странице строки идут по возрастанию адреса.
+  const [sorting, setSorting] = useState([{ id: 'address', desc: false }]);
   const [rowSelection, setRowSelection] = useState({});
   const [pageSize, setPageSize] = useState(() => loadSession('pageSize', 100));
 
@@ -163,6 +183,44 @@ export default function TableRoot() {
     return <div className="alert-modal-error">Не удалось получить список IP-адресов/подсетей: {error}</div>;
   }
 
+  // --- Свободные диапазоны IP внутри выбранной подсети ("гэп-строки") ---
+  // Перенесено из app.js (renderFreeRanges/insertGapRow): чисто визуальные
+  // строки, не часть данных таблицы — считаются ТОЛЬКО по строкам,
+  // реально показанным на текущей странице (после всех фильтров и
+  // сортировки), поэтому гэп, уходящий за границу страницы, виден только
+  // с той стороны, что приходится на первую/последнюю страницу выборки.
+  // Требует возрастающего порядка по адресу — см. дефолт sorting выше и
+  // числовой sortingFn у колонки address в columns.jsx.
+  const pageRows = table.getRowModel().rows;
+  const displayRows = [];
+  if (prefixFilter) {
+    const [netStr, maskStr] = prefixFilter.split('/');
+    const mask = Number(maskStr);
+    const netInt = ipToInt(netStr);
+    const size = Number.isFinite(mask) && mask >= 0 && mask <= 32 ? 2 ** (32 - mask) : null;
+    // /31, /32 — network/broadcast не выделяются, считать "свободное" нет смысла.
+    if (netInt !== null && size !== null && size > 2) {
+      const firstHost = netInt + 1;
+      const lastHost = netInt + size - 2;
+      const isFirstPage = table.getState().pagination.pageIndex === 0;
+      const isLastPage = table.getState().pagination.pageIndex >= table.getPageCount() - 1;
+      const pushGap = (afterIpInt, count) => {
+        if (count > 0) displayRows.push({ kind: 'gap', key: `gap-${afterIpInt}`, afterIpInt, count });
+      };
+      let prevIpInt = null;
+      pageRows.forEach((row, idx) => {
+        const ipInt = ipToInt(row.original.address.split('/')[0]);
+        if (ipInt === null) { displayRows.push({ kind: 'row', row }); return; }
+        if (idx === 0 && isFirstPage) pushGap(firstHost - 1, ipInt - firstHost);
+        else if (prevIpInt !== null) pushGap(prevIpInt, ipInt - prevIpInt - 1);
+        displayRows.push({ kind: 'row', row });
+        prevIpInt = ipInt;
+      });
+      if (isLastPage && prevIpInt !== null) pushGap(prevIpInt, lastHost - prevIpInt);
+    }
+  }
+  if (!displayRows.length) pageRows.forEach((row) => displayRows.push({ kind: 'row', row }));
+
   // draggedColId — drag-переупорядочивание заголовков (нативный HTML5 DnD,
   // TanStack сам drag не делает — только держит columnOrder как state).
   let draggedColId = null;
@@ -276,25 +334,50 @@ export default function TableRoot() {
             ))}
           </thead>
           <tbody>
-            {table.getRowModel().rows.map((row) => (
-              <tr
-                key={row.id}
-                className={row.getIsSelected() ? 'row-selected' : undefined}
-                data-status={row.original.status?.value}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <td
-                    key={cell.id}
-                    className={cell.column.getIsPinned() ? 'col-pinned' : undefined}
-                    style={cell.column.getIsPinned() ? {
-                      position: 'sticky', left: cell.column.getStart('left'), zIndex: 1,
-                    } : undefined}
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {displayRows.map((item) => {
+              if (item.kind === 'gap') {
+                const maskStr = prefixFilter.split('/')[1];
+                return (
+                  <tr key={item.key} className="free-range-row">
+                    <td colSpan={table.getVisibleLeafColumns().length}>
+                      <div className="free-range-content">
+                        <span className="free-range-label">
+                          ● Свободно: {item.count} {pluralizeAddresses(item.count)}
+                        </span>
+                        <button
+                          type="button"
+                          className="free-range-add-btn"
+                          title="Добавить IP в этом диапазоне"
+                          onClick={() => openAddIpModal(`${ipIntToStr(item.afterIpInt + 1)}${maskStr ? '/' + maskStr : ''}`)}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              }
+              const row = item.row;
+              return (
+                <tr
+                  key={row.id}
+                  className={row.getIsSelected() ? 'row-selected' : undefined}
+                  data-status={row.original.status?.value}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td
+                      key={cell.id}
+                      className={cell.column.getIsPinned() ? 'col-pinned' : undefined}
+                      style={cell.column.getIsPinned() ? {
+                        position: 'sticky', left: cell.column.getStart('left'), zIndex: 1,
+                      } : undefined}
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         </div>

@@ -1,5 +1,6 @@
 import { createColumnHelper } from '@tanstack/react-table';
 import { CopyButton, EditableCell, RoleBadge, StatusBadge } from './components/cells.jsx';
+import { ipToInt } from './ip.js';
 
 const columnHelper = createColumnHelper();
 
@@ -37,6 +38,16 @@ export const columns = [
     size: 220,
     minSize: 140,
     enableHiding: false,
+    // Дефолтный sortingFn сравнил бы "10.0.1.10/24" и "10.0.1.2/24" как
+    // строки ("1" < "2") — не числовой порядок IP. Плюс это единственный
+    // столбец, отсортированный по умолчанию (см. sorting в TableRoot.jsx) —
+    // на нём же держится арифметика гэп-строк свободных диапазонов, ей
+    // нужен настоящий числовой порядок.
+    sortingFn: (rowA, rowB) => {
+      const a = ipToInt(rowA.original.address.split('/')[0]);
+      const b = ipToInt(rowB.original.address.split('/')[0]);
+      return (a ?? 0) - (b ?? 0);
+    },
     cell: ({ getValue, row, table }) => {
       const address = getValue();
       const addressOnly = address.split('/')[0];
