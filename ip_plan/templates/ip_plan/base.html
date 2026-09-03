@@ -18,24 +18,81 @@
   <link href="{% static 'ip_plan/vendor/datatables/fixedColumns.bootstrap5.min.css' %}" rel="stylesheet">
 
   <link rel="stylesheet" href="{% static 'ip_plan/css/style.css' %}">
+  <link rel="stylesheet" href="{% static 'ip_plan/css/nav.css' %}">
   {% block extra_head %}{% endblock %}
 </head>
-<body>
-  <!-- x-data="" — без хотя бы одного предка с x-data Alpine не навешивает
-       директивы (@click и т.п.) на элементы внутри. Оборачиваем весь основной
-       контент страницы, чтобы кнопки типа "+ Добавить IP" корректно работали. -->
-  <div class="container-fluid py-4" x-data>
-    <!-- В обычном потоке документа (НЕ position:fixed) — чтобы при скролле
-         страницы вниз уезжала вместе с контентом, как "+ Добавить IP", а не
-         оставалась прибитой к вьюпорту и наезжала на липкую шапку таблицы. -->
-    {% if user.is_authenticated %}
-      <form method="post" action="{% url 'ip_plan:logout' %}" class="user-bar">
-        {% csrf_token %}
-        <span class="user-bar-name">{{ user.get_full_name|default:user.username }}</span>
-        <button type="submit" class="btn-modal-secondary user-bar-btn">Выйти</button>
-      </form>
-    {% endif %}
+<!-- x-data — без хотя бы одного предка с x-data Alpine не навешивает
+     директивы (@click и т.п.) на элементы внутри. На <body>, а не только
+     на .container-fluid ниже — постоянная шапка .app-nav тоже использует
+     @click (ОС-справочник/Справка), а она специально ВНЕ .container-fluid
+     (свой full-bleed фон на всю ширину, без горизонтальных отступов
+     контейнера). -->
+<body x-data>
+  {% if user.is_authenticated %}
+    {% with url_name=request.resolver_match.url_name %}
+      <header class="app-nav">
+        <div class="nav-left">
+          <div class="brand">
+            <span class="brand-mark">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+                <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+                <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+                <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+              </svg>
+            </span>
+            <span class="brand-name">IP План</span>
+          </div>
+          <nav class="nav-tabs">
+            <a class="nav-tab{% if url_name == 'ip_list' %} active{% endif %}" href="{% url 'ip_plan:ip_list' %}">IP План</a>
+            <a class="nav-tab{% if url_name == 'acl_lookup' or url_name == 'acl_detail' or url_name == 'acl_object_group_detail' %} active{% endif %}" href="{% url 'ip_plan:acl_lookup' %}">ACL</a>
+          </nav>
+        </div>
+        <div class="nav-right">
+          <button type="button" class="nav-ghost"
+                  hx-get="{% url 'ip_plan:os_catalog_manage' %}"
+                  hx-target="#modal-content"
+                  hx-indicator="#modal-spinner"
+                  @click="$store.modal.dirty = false; $dispatch('open-modal')">
+            <span class="nav-ghost-mark">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <ellipse cx="12" cy="5" rx="8" ry="3"></ellipse>
+                <path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"></path>
+                <path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"></path>
+              </svg>
+            </span>
+            ОС-справочник
+          </button>
+          <button type="button" class="nav-ghost"
+                  hx-get="{% url 'ip_plan:help_modal' %}"
+                  hx-target="#modal-content"
+                  hx-indicator="#modal-spinner"
+                  @click="$store.modal.dirty = false; $dispatch('open-modal')">
+            <span class="nav-ghost-mark">?</span>
+            Справка
+          </button>
+          <a class="nav-icon" href="{% url 'ip_plan:export_excel' %}" title="Экспорт в Excel">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3v12"></path>
+              <path d="M7 10l5 5 5-5"></path>
+              <path d="M4 19h16"></path>
+            </svg>
+          </a>
+          <div class="nav-sep"></div>
+          <span class="nav-user">{{ user.get_full_name|default:user.username }}</span>
+          <form method="post" action="{% url 'ip_plan:logout' %}">
+            {% csrf_token %}
+            <button type="submit" class="nav-logout">Выйти</button>
+          </form>
+        </div>
+      </header>
+    {% endwith %}
+  {% endif %}
 
+  <!-- В обычном потоке документа (НЕ position:fixed) — чтобы при скролле
+       страницы вниз уезжало вместе с контентом, а не оставалось прибитым
+       к вьюпорту и наезжало на липкую шапку таблицы. -->
+  <div class="container-fluid py-4">
     {% block content %}{% endblock %}
   </div>
 

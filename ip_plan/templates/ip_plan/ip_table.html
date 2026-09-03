@@ -21,8 +21,11 @@
     <span>Загрузка таблицы…</span>
   </div>
   <section class="hero">
-    <div class="hero-title-row">
-      <h1 class="title">IP план</h1>
+    <!-- Визуально скрыт — заголовок страницы уже виден по активному табу
+         "IP План" в постоянной шапке (base.html/nav.css), <h1> тут только
+         для семантики документа/читалок экрана. -->
+    <h1 class="sr-only">IP план</h1>
+    <div class="hero-row">
       <button type="button" class="btn-add"
               hx-get="{% url 'ip_plan:ip_add' %}"
               hx-target="#modal-content"
@@ -30,33 +33,13 @@
               @click="$store.modal.dirty = false; $dispatch('open-modal')">
         + Добавить IP
       </button>
-    </div>
-    <div class="hero-stats">
-      <span class="hero-stat"><strong id="stat-total">0</strong> Всего IP</span>
       <span class="hero-stat-sep"></span>
-      <span class="hero-stat"><strong id="stat-active">0</strong> Активных</span>
-      <span class="hero-stat-sep"></span>
-      <span class="hero-stat"><strong id="stat-inactive">0</strong> Неактивных</span>
-      <span class="hero-stat-sep"></span>
-      <div class="hero-actions-row">
-        <button type="button" class="btn-help"
-                hx-get="{% url 'ip_plan:os_catalog_manage' %}"
-                hx-target="#modal-content"
-                hx-indicator="#modal-spinner"
-                @click="$store.modal.dirty = false; $dispatch('open-modal')"
-                title="Справочник «Операционная система»">
-          🖴
-        </button>
-        <button type="button" class="btn-help"
-                hx-get="{% url 'ip_plan:help_modal' %}"
-                hx-target="#modal-content"
-                hx-indicator="#modal-spinner"
-                @click="$store.modal.dirty = false; $dispatch('open-modal')"
-                title="Справка">
-          ?
-        </button>
-        <a class="btn-help" href="{% url 'ip_plan:acl_lookup' %}" title="Поиск по ACL Cisco-устройств">🛡</a>
-        <a class="btn-help" href="{% url 'ip_plan:export_excel' %}" title="Экспорт в Excel">⇩</a>
+      <div class="hero-stats">
+        <span class="hero-stat"><strong id="stat-total">0</strong> Всего IP</span>
+        <span class="hero-stat-sep"></span>
+        <span class="hero-stat"><strong id="stat-active">0</strong> Активных</span>
+        <span class="hero-stat-sep"></span>
+        <span class="hero-stat"><strong id="stat-inactive">0</strong> Неактивных</span>
       </div>
     </div>
   </section>

@@ -1,0 +1,110 @@
+/* Постоянная шапка-навигация — портирование maket/Main.dc.html (см.
+   maket/README.md про критику текущего состояния: плавающая user-bar вне
+   какой-либо навигации, emoji-иконки 🛡/🖴 без подписи, нет индикации
+   активной страницы, "← IP план" на ACL — ручной паттерн на каждую
+   подстраницу). Токены — те же переменные из style.css (--bg-page,
+   --border-soft-strong, --accent и т.д.), новых не вводится: это тот же
+   дизайн-язык, что у control strip заголовка таблицы, не отдельный стиль. */
+
+.app-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 28px;
+  background: var(--bg-page);
+  border-bottom: 1px solid var(--border-soft-strong);
+}
+
+.nav-left { display: flex; align-items: center; gap: 2rem; }
+
+.brand { display: flex; align-items: center; gap: .55rem; }
+.brand-mark {
+  width: 26px; height: 26px;
+  border-radius: 8px;
+  background: rgba(31, 111, 235, .1);
+  color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  flex: none;
+}
+.brand-name { font-weight: 700; font-size: .9375rem; letter-spacing: -.01em; color: var(--text-main); }
+
+.nav-tabs { display: flex; gap: .25rem; }
+.nav-tab {
+  /* Мокап использовал <button> (без href) — здесь это настоящая ссылка
+     для реальной навигации, отсюда сброс text-decoration/display, которых
+     кнопке не требовалось. */
+  display: inline-block;
+  padding: .45rem 1rem;
+  border-radius: 999px;
+  font-size: .875rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+  transition: background .12s ease, color .12s ease;
+}
+.nav-tab.active { background: rgba(31, 111, 235, .08); color: var(--accent); }
+.nav-tab:not(.active):hover { background: rgba(24, 33, 47, .05); color: var(--text-main); }
+
+.nav-right { display: flex; align-items: center; gap: .35rem; }
+.nav-ghost {
+  display: flex; align-items: center; gap: .4rem;
+  padding: .4rem .75rem;
+  border-radius: 999px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: .8125rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+.nav-ghost:hover { color: var(--accent); background: rgba(31, 111, 235, .05); }
+.nav-ghost-mark {
+  width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  color: inherit;
+  font-weight: 700;
+  flex: none;
+}
+.nav-icon {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--border-soft-strong);
+  background: rgba(255, 255, 255, .9);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .15s ease;
+}
+.nav-icon:hover { color: var(--accent); border-color: var(--accent); background: rgba(31, 111, 235, .05); }
+
+.nav-sep { width: 1px; height: 20px; background: var(--border-soft-strong); margin: 0 .35rem; flex: none; }
+
+.nav-user { font-size: .8rem; color: var(--text-muted); }
+.nav-logout {
+  background: rgba(255, 255, 255, .9);
+  color: var(--text-main);
+  border: 1px solid var(--border-soft-strong);
+  border-radius: 999px;
+  padding: .3rem .8rem;
+  font-weight: 600;
+  font-size: .8rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.nav-logout:hover { border-color: var(--text-faint); }
+
+/* Узкий viewport: табы важнее вспомогательных ссылок — те уходят в перенос
+   первыми (сама шапка не в брифе адаптива, но не должна ломаться до
+   планшетной ширины). */
+@media (max-width: 860px) {
+  .app-nav { flex-wrap: wrap; height: auto; padding: .5rem 1rem; gap: .5rem; row-gap: .4rem; }
+  .nav-right { margin-left: auto; }
+}
