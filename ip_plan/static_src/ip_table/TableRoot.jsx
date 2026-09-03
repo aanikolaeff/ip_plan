@@ -216,6 +216,13 @@ export default function TableRoot() {
       </div>
 
       <div className="table-wrapper">
+        {/* Свой скролл-контейнер вокруг самой <table> — .table-wrapper
+            специально держит overflow:visible (общий класс, его же
+            использует DataTables на ACL-страницах, см. комментарий в
+            style.css про sticky-шапку). Без этого контейнера широкая
+            таблица растягивала бы весь документ, и горизонтальный скролл
+            двигал бы тулбар/hero вместе с ней — ровно баг, который чиним. */}
+        <div className="ip-table-scroll">
         <table id="ip-table" className="table w-100" style={{ width: table.getTotalSize() }}>
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -290,6 +297,7 @@ export default function TableRoot() {
             ))}
           </tbody>
         </table>
+        </div>
         {loading && <div className="panel-note"><span>Загрузка…</span></div>}
         {!loading && !filteredRows.length && <div className="panel-note"><span>Ничего не найдено</span></div>}
       </div>
