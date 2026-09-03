@@ -88,6 +88,19 @@ export default function TableRoot() {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   }
 
+  // Одиночное удаление через кебаб-меню (в отличие от bulkDelete ниже,
+  // которая берёт ids из rowSelection) — на всякий случай тоже снимает
+  // строку с выбора, если её успели отметить чекбоксом до удаления.
+  function removeRow(id) {
+    setRows((prev) => prev.filter((r) => String(r.id) !== String(id)));
+    setRowSelection((prev) => {
+      if (!(String(id) in prev)) return prev;
+      const next = { ...prev };
+      delete next[String(id)];
+      return next;
+    });
+  }
+
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
@@ -131,6 +144,7 @@ export default function TableRoot() {
     initialState: { pagination: { pageSize } },
     meta: {
       updateRow,
+      removeRow,
       openEditModal(id) {
         window.Alpine?.store('modal') && (window.Alpine.store('modal').dirty = false);
         window.htmx?.ajax('GET', `${window.URL_PREFIX || ''}/ip/${id}/edit/`, {

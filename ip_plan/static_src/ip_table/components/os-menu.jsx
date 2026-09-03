@@ -2,30 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { patchIp } from '../api.js';
 import { showToast } from './cells.jsx';
-
-// Позиционирует панель (position:fixed) рядом с anchorRect, прижимая к
-// границам вьюпорта — портировано дословно из positionFixedPanel()/
-// positionSubmenu() в app.js (старая DataTables-версия).
-function positionNear(anchorRect, panelEl, { flyout } = {}) {
-  const width = panelEl.offsetWidth;
-  const height = panelEl.offsetHeight;
-  let left;
-  let top;
-  if (flyout) {
-    // Подменю версий — выезжает справа от родительского пункта, при
-    // нехватке места переворачивается влево.
-    left = anchorRect.right + 2;
-    if (left + width > window.innerWidth - 8) left = anchorRect.left - width - 2;
-    top = Math.min(anchorRect.top, window.innerHeight - 8 - height);
-  } else {
-    left = Math.min(anchorRect.left, window.innerWidth - 8 - width);
-    top = Math.min(anchorRect.bottom + 4, window.innerHeight - 8 - height);
-  }
-  left = Math.max(left, 8);
-  top = Math.max(top, 8);
-  panelEl.style.left = `${left}px`;
-  panelEl.style.top = `${top}px`;
-}
+import { positionNear } from './position.js';
 
 function OsSubmenu({ entry, anchorRect, onPick, onMouseEnter, onMouseLeave }) {
   const ref = useRef(null);

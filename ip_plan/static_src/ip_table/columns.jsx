@@ -1,6 +1,7 @@
 import { createColumnHelper } from '@tanstack/react-table';
 import { CopyButton, EditableCell, RoleBadge, StatusBadge } from './components/cells.jsx';
 import { OsMenuCell } from './components/os-menu.jsx';
+import { KebabMenu } from './components/kebab-menu.jsx';
 import { ipToInt } from './ip.js';
 
 const columnHelper = createColumnHelper();
@@ -53,14 +54,17 @@ export const columns = [
       const address = getValue();
       const addressOnly = address.split('/')[0];
       return (
-        <span className="cell-with-copy">
-          <span
-            className="ip-link ip-mono"
-            onClick={() => table.options.meta?.openEditModal(row.original.id)}
-          >
-            {address}
+        <span className="ip-cell-row">
+          <span className="cell-with-copy">
+            <span
+              className="ip-link ip-mono"
+              onClick={() => table.options.meta?.openEditModal(row.original.id)}
+            >
+              {address}
+            </span>
+            <CopyButton value={addressOnly} />
           </span>
-          <CopyButton value={addressOnly} />
+          <KebabMenu id={row.original.id} address={address} table={table} />
         </span>
       );
     },
