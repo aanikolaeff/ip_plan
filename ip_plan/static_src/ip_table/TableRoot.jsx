@@ -84,6 +84,23 @@ export default function TableRoot() {
 
   useEffect(() => { loadData(); }, []);
 
+  // Автоповтор при ошибке — на практике самая частая причина здесь: скан
+  // портов (кебаб-меню → "Сканировать порты", raw-сокеты nmap) на локальном
+  // Docker Desktop иногда на ~30–60с рвёт связность контейнера с NetBox
+  // (host.docker.internal), сама по себе восстанавливается — без
+  // автоповтора пользователь упирался бы в баннер ошибки и ничего не видел
+  // до ручной перезагрузки страницы, хотя сеть уже сама пришла в норму.
+  // setInterval, а не setTimeout внутри useEffect(..., [error]) — если
+  // повторная попытка падает с ТЕМ ЖЕ текстом ошибки, error как значение
+  // стейта не меняется (строки сравниваются по значению), и эффект просто
+  // не перезапустился бы; interval тикает сам, не завися от того, меняется
+  // ли error между попытками.
+  useEffect(() => {
+    if (!error) return undefined;
+    const timer = setInterval(loadData, 8000);
+    return () => clearInterval(timer);
+  }, [error]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function updateRow(id, patch) {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   }
@@ -194,7 +211,12 @@ export default function TableRoot() {
   }, [stats]);
 
   if (error) {
-    return <div className="alert-modal-error">Не удалось получить список IP-адресов/подсетей: {error}</div>;
+    return (
+      <div className="alert-modal-error" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+        <span>Не удалось получить список IP-адресов/подсетей: {error}. Повтор через 8 секунд…</span>
+        <button type="button" className="btn-modal-secondary" onClick={loadData}>Повторить сейчас</button>
+      </div>
+    );
   }
 
   // --- Свободные диапазоны IP внутри выбранной подсети ("гэп-строки") ---
