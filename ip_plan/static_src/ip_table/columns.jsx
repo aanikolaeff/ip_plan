@@ -1,5 +1,6 @@
 import { createColumnHelper } from '@tanstack/react-table';
 import { CopyButton, EditableCell, RoleBadge, StatusBadge } from './components/cells.jsx';
+import { OsMenuCell } from './components/os-menu.jsx';
 import { ipToInt } from './ip.js';
 
 const columnHelper = createColumnHelper();
@@ -190,8 +191,11 @@ export const columns = [
     header: 'Операционная система',
     size: 280,
     minSize: 200,
+    // Своё меню (справочник admin/os_catalog.json), не обычный текстовый
+    // EditableCell — см. components/os-menu.jsx, портировано из
+    // startOsMenuEdit() в app.js (старая DataTables-версия).
     cell: ({ getValue, row, table }) => (
-      <EditableCell id={row.original.id} field="os_installed" value={getValue()} editable table={table} />
+      <OsMenuCell id={row.original.id} value={getValue()} table={table} />
     ),
   }),
 
