@@ -17,6 +17,7 @@ urlpatterns = [
     ),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("", views.ip_list, name="ip_list"),
+    path("ip/list.json", views.ip_list_json, name="ip_list_json"),
     path("csrf/", views.csrf_refresh, name="csrf_refresh"),
     path("help/", views.help_modal, name="help_modal"),
     path("os-catalog/", views.os_catalog_manage, name="os_catalog_manage"),

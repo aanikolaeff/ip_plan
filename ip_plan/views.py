@@ -18,7 +18,7 @@ from .forms import CUSTOM_FIELD_KEYS, STATUS_CHOICES, IPAddressForm
 from .services import acl_store, os_catalog
 from .services.netbox_client import NetBoxAPIError, NetBoxClient
 from .services.network_tools import NetworkToolError, ping_check, resolve_ptr, scan_ports
-from .templatetags.ip_plan_extras import effective_description
+from .templatetags.ip_plan_extras import description_hint, effective_description
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +190,46 @@ EXPORT_COLUMNS = [
     ("Назначение", lambda ip: (ip.get("custom_fields") or {}).get("purpose") or ""),
     ("Комментарии", lambda ip: ip.get("comments") or ""),
 ]
+
+
+def serialize_ip(ip):
+    """Один IP-адрес для /ip/list.json (React-таблица) — плоский JSON-
+    объект на строку, поля 1:1 с колонками ip_row.html (data-col-key).
+    Переносит на бэкенд то, что раньше считалось в Jinja-фильтрах
+    (ip_plan_extras.py) при рендере <td> — React не должен дублировать эту
+    бизнес-логику на клиенте. ip уже должен быть пропущен через
+    _attach_role/_attach_roles_bulk (иначе "_role"/"_guest_os"/
+    "_parent_description" отсутствуют)."""
+    role = ip.get("_role")
+    custom_fields = ip.get("custom_fields") or {}
+    is_vm = bool(role and role.get("slug") == "vm")
+    return {
+        "id": ip.get("id"),
+        "address": ip.get("address", ""),
+        "status": {
+            "value": (ip.get("status") or {}).get("value", "active"),
+            "label": (ip.get("status") or {}).get("label", ""),
+        },
+        "dns_name": ip.get("dns_name") or "",
+        "dns_records": custom_fields.get("dns_records") or "",
+        "assignment": _assignment_display(ip),
+        "role": role,  # {"slug": ..., "name": ...} либо null
+        # "Описание" редактируется инлайн только не-VM (для VM — read-only,
+        # заполняется внешней синхронизацией) — см. effective_description/
+        # description_hint в ip_plan_extras.py про то же разделение.
+        "description": ip.get("description") or "",
+        "effective_description": effective_description(ip),
+        "description_hint": description_hint(ip),
+        "description_editable": not is_vm,
+        "tags": [tag["name"] for tag in ip.get("tags") or []],
+        "cpe": custom_fields.get("cpe") or "",
+        "open_ports": custom_fields.get("open_ports") or "",
+        "guest_os": ip.get("_guest_os") or "",
+        "os_guess": custom_fields.get("os_guess") or "",
+        "os_installed": custom_fields.get("os_installed") or "",
+        "purpose": custom_fields.get("purpose") or "",
+        "comments": ip.get("comments") or "",
+    }
 
 
 def _sheet_title(prefix_cidr):
@@ -401,6 +441,32 @@ def ip_list(request):
             "column_info_json": COLUMN_INFO_JSON,
         },
     )
+
+
+@ensure_csrf_cookie
+def ip_list_json(request):
+    """JSON-источник данных для React-таблицы (docs/plans/2026-09-03-ip-
+    table-react-design.md). Дублирует выборку ip_list() — сознательно
+    отдельная view, а не JSON-режим той же: ip_list остаётся HTML-
+    первичной загрузкой страницы (hero/тулбар/root-div), эта — тем, что
+    React дёргает fetch'ем при монтировании и может дёргать повторно
+    (напр. после закрытия модалки добавления/редактирования) без
+    перезагрузки всей страницы."""
+    try:
+        client = NetBoxClient()
+        ip_addresses = client.list_ip_addresses()
+        prefixes = _sorted_prefixes(client.list_prefixes())
+        _attach_roles_bulk(client, ip_addresses)
+    except NetBoxAPIError as exc:
+        logger.error("Не удалось получить список IP-адресов/подсетей (JSON): %s", exc)
+        return JsonResponse({"error": str(exc)}, status=502)
+
+    return JsonResponse({
+        "results": [serialize_ip(ip) for ip in ip_addresses],
+        "prefixes": [p["prefix"] for p in prefixes],
+        "status_choices": STATUS_CHOICES,
+        "role_choices": _distinct_roles(ip_addresses),
+    })
 
 
 def help_modal(request):
