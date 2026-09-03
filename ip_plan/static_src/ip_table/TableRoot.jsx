@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   flexRender,
   getCoreRowModel,
@@ -65,7 +65,19 @@ export default function TableRoot() {
   useEffect(() => { saveJSON('columnOrder', columnOrder); }, [columnOrder]);
   useEffect(() => { saveSession('pageSize', pageSize); }, [pageSize]);
 
+  // Гвард от параллельных загрузок — без него setInterval (см. ниже) на
+  // 8с, срабатывающий поверх ещё не завершившегося предыдущего fetch (сам
+  // /ip/list.json может идти дольше 8с — в т.ч. именно во время скана
+  // портов из кебаб-меню, см. ниже), копил бы параллельные запросы к
+  // /ip/list.json один поверх другого — упирались бы в лимит браузера на
+  // число одновременных соединений к одному origin (обычно 6) и вешали
+  // вкладку целиком, а не только эту таблицу. Ровно это и произошло при
+  // живой проверке: через ~40с параллельных попыток рендерер завис.
+  const loadingRef = useRef(false);
+
   async function loadData() {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     setError(null);
     try {
@@ -78,23 +90,27 @@ export default function TableRoot() {
       setError(e.message || 'Не удалось загрузить список IP-адресов');
     } finally {
       setLoading(false);
+      loadingRef.current = false;
       document.getElementById('table-loading-overlay')?.remove();
     }
   }
 
   useEffect(() => { loadData(); }, []);
 
-  // Автоповтор при ошибке — на практике самая частая причина здесь: скан
-  // портов (кебаб-меню → "Сканировать порты", raw-сокеты nmap) на локальном
-  // Docker Desktop иногда на ~30–60с рвёт связность контейнера с NetBox
-  // (host.docker.internal), сама по себе восстанавливается — без
-  // автоповтора пользователь упирался бы в баннер ошибки и ничего не видел
-  // до ручной перезагрузки страницы, хотя сеть уже сама пришла в норму.
+  // Автоповтор при ошибке — на практике самая частая причина здесь: пока
+  // выполняется "Сканировать порты" (кебаб-меню, nmap с raw-сокетами),
+  // сам этот контейнер на локальном Docker Desktop на время скана (~15–25с,
+  // ровно до его завершения) теряет связность с NetBox — не только
+  // конкретный запрос скана, вообще любой запрос с этого же контейнера,
+  // включая /ip/list.json; восстанавливается сама, сразу как скан
+  // закончится. Без автоповтора пользователь упирался бы в баннер ошибки
+  // и ничего не видел до ручной перезагрузки страницы.
   // setInterval, а не setTimeout внутри useEffect(..., [error]) — если
   // повторная попытка падает с ТЕМ ЖЕ текстом ошибки, error как значение
   // стейта не меняется (строки сравниваются по значению), и эффект просто
   // не перезапустился бы; interval тикает сам, не завися от того, меняется
-  // ли error между попытками.
+  // ли error между попытками. Сами тики при этом безопасны за счёт
+  // loadingRef выше — тик во время ещё идущей попытки просто no-op.
   useEffect(() => {
     if (!error) return undefined;
     const timer = setInterval(loadData, 8000);
