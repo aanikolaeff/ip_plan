@@ -9,6 +9,7 @@ Django-модели в этом приложении (см. docs/plans/2026-09-0
 случай, для которого нужна настоящая таблица с first-class CRUD, а не
 in-memory парсинг файла при каждом запросе.
 """
+import re
 from urllib.parse import urlsplit
 
 from django.db import models
@@ -92,3 +93,39 @@ class RegulatorEntry(models.Model):
     def save(self, *args, **kwargs):
         self.match_value = self.compute_match_value(self.kind, self.value)
         super().save(*args, **kwargs)
+
+
+class FirewallObjectName(models.Model):
+    """"От какого имени вести отсчёт" для генератора CLI-команд firewall
+    (см. views.regulator_firewall_commands) — на xFW 5000 нет CLI-команды
+    редактирования уже созданного ip-object'а (только firewall ip-object add
+    для НОВОГО), поэтому реальный workflow — каждый раз создавать новый
+    список с очередным порядковым номером в имени и применять его вместо
+    старого вручную через веб-интерфейс ViPNet (см. design doc, фаза 2).
+
+    current_name — то имя, что реально применено на firewall ПРЯМО СЕЙЧАС
+    (в применении разбирается администратор, эта запись — просто память
+    последнего known-applied имени). Генератор команд считает следующий
+    номер от него, но НЕ продвигает current_name сам — только явное
+    "Отметить применённым" (regulator_firewall_commands_apply), иначе
+    повторное открытие модалки без реального применения каждый раз
+    предлагало бы новый номер, хотя на firewall ничего не изменилось."""
+
+    KIND_CHOICES = [("ip", "IP"), ("fqdn", "FQDN")]
+
+    kind = models.CharField("Тип", max_length=8, choices=KIND_CHOICES, unique=True)
+    current_name = models.CharField("Текущее имя на firewall", max_length=100)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.get_kind_display()}: {self.current_name}"
+
+    def next_name(self):
+        """current_name с инкрементированным хвостовым числом
+        (BLOCK_BY_IP_2 -> BLOCK_BY_IP_3). Если хвостового числа нет —
+        дописывает "_2" (первый преемник безымянного/нестандартного имени)."""
+        m = re.match(r"^(.*?)(\d+)$", self.current_name)
+        if m:
+            prefix, num = m.group(1), int(m.group(2))
+            return f"{prefix}{num + 1}"
+        return f"{self.current_name}_2"

@@ -1,0 +1,62 @@
+<div class="modal-title-bar">
+  <h5>Команды для firewall</h5>
+  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть">✕</button>
+</div>
+<div class="modal-body-pad">
+  <p class="cell-muted">
+    На xFW 5000 нет CLI-команды правки уже созданного списка — только
+    просмотр. Ниже — команды создания НОВЫХ списков (с очередным номером в
+    имени) из всех активных записей реестра прямо сейчас. Скопируйте и
+    вставьте в консоль устройства (нужен admin-режим), затем примените
+    новый список вместо <code class="ip-mono">@{{ ip_obj.current_name }}</code> /
+    <code class="ip-mono">@{{ fqdn_obj.current_name }}</code> через
+    веб-интерфейс ViPNet — этот шаг по SSH недоступен вообще.
+  </p>
+
+  <div class="field-group">
+    <div class="field-group-title">IP ({{ ip_count }})</div>
+    {% if ip_command %}
+      <div class="firewall-cmd-box">
+        <pre class="firewall-cmd">{{ ip_command }}</pre>
+        <button type="button" class="btn-modal-secondary btn-sm"
+                @click="navigator.clipboard.writeText($el.previousElementSibling.textContent); window.dispatchEvent(new CustomEvent('show-toast', {detail:{message:'Команда скопирована', kind:'success'}}))">
+          Копировать
+        </button>
+      </div>
+    {% else %}
+      <p class="cell-muted">Нет активных записей типа IP — команда не нужна.</p>
+    {% endif %}
+  </div>
+
+  <div class="field-group">
+    <div class="field-group-title">FQDN ({{ fqdn_count }})</div>
+    {% if fqdn_command %}
+      <div class="firewall-cmd-box">
+        <pre class="firewall-cmd">{{ fqdn_command }}</pre>
+        <button type="button" class="btn-modal-secondary btn-sm"
+                @click="navigator.clipboard.writeText($el.previousElementSibling.textContent); window.dispatchEvent(new CustomEvent('show-toast', {detail:{message:'Команда скопирована', kind:'success'}}))">
+          Копировать
+        </button>
+      </div>
+    {% else %}
+      <p class="cell-muted">Нет активных записей типа FQDN/URL — команда не нужна.</p>
+    {% endif %}
+  </div>
+
+  <form hx-post="{% url 'ip_plan:regulator_firewall_commands_apply' %}" hx-target="#modal-content" hx-swap="none">
+    {% csrf_token %}
+    <input type="hidden" name="ip_next_name" value="{{ ip_next_name }}">
+    <input type="hidden" name="fqdn_next_name" value="{{ fqdn_next_name }}">
+    <p class="cell-muted">
+      Когда реально примените оба новых списка на firewall через
+      веб-интерфейс — отметьте это здесь, чтобы в следующий раз номер
+      считался от них.
+    </p>
+    <button type="submit" class="btn-modal-secondary">
+      Отметить применённым (@{{ ip_next_name }} / @{{ fqdn_next_name }})
+    </button>
+  </form>
+</div>
+<div class="modal-footer-bar">
+  <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Закрыть</button>
+</div>

@@ -17,6 +17,13 @@
               @click="$store.modal.dirty = false; $dispatch('open-modal')">
         + Письмо
       </button>
+      <button type="button" class="btn-modal-secondary"
+              hx-get="{% url 'ip_plan:regulator_firewall_commands' %}"
+              hx-target="#modal-content"
+              hx-indicator="#modal-spinner"
+              @click="$store.modal.dirty = false; $dispatch('open-modal')">
+        Команды для firewall
+      </button>
     </div>
   </section>
 

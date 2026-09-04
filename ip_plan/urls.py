@@ -58,6 +58,11 @@ urlpatterns = [
     path("regulator/entry/<int:entry_id>/revoke/", views.regulator_entry_revoke, name="regulator_entry_revoke"),
     path("regulator/entry/<int:entry_id>/reactivate/", views.regulator_entry_reactivate, name="regulator_entry_reactivate"),
     path("regulator/entry/<int:entry_id>/delete/", views.regulator_entry_delete, name="regulator_entry_delete"),
+    path("regulator/firewall-commands/", views.regulator_firewall_commands, name="regulator_firewall_commands"),
+    path(
+        "regulator/firewall-commands/apply/",
+        views.regulator_firewall_commands_apply, name="regulator_firewall_commands_apply",
+    ),
     path("ip/add/", views.ip_add, name="ip_add"),
     path("ip/<int:ip_id>/edit/", views.ip_edit_modal, name="ip_edit_modal"),
     path("ip/<int:ip_id>/save/", views.ip_save, name="ip_save"),

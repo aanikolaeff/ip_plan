@@ -20,7 +20,7 @@ from .forms import (
     CUSTOM_FIELD_KEYS, STATUS_CHOICES, IPAddressForm,
     RegulatorDocumentForm, RegulatorEntryForm, RegulatorEntryRevokeForm,
 )
-from .models import RegulatorDocument, RegulatorEntry
+from .models import FirewallObjectName, RegulatorDocument, RegulatorEntry
 from .services import acl_store, os_catalog, sync_log
 from .services.netbox_client import NetBoxAPIError, NetBoxClient
 from .services.network_tools import NetworkToolError, ping_check, resolve_ptr, scan_ports
@@ -618,6 +618,73 @@ def regulator_entry_delete(request, entry_id):
     return _regulator_saved_response(
         request, "Запись удалена", document_id=request.POST.get("return_document_id") or None
     )
+
+
+def regulator_firewall_commands(request):
+    """GET — модалка с двумя готовыми CLI-командами (firewall ip-object add)
+    для xFW: одна создаёт новый список IP, другая — новый список FQDN (с
+    доменом из URL-записей — firewall фильтрует только по DNS/IP, не по
+    path, см. RegulatorEntry.match_value), из ВСЕХ активных записей реестра
+    прямо сейчас.
+
+    Почему НОВЫЙ список, а не правка старого: на xFW 5000 под обычным SSH-
+    логином нет команды редактирования уже созданного ip-object'а — только
+    firewall object show (проверено на живом устройстве, firewall ip-object ?
+    отдаёт только "show"). Реальный workflow: скопировать команду в
+    консоль устройства (нужен admin-режим/enable, свой пароль), затем
+    применить новый список вместо старого через веб-интерфейс ViPNet —
+    та часть по SSH недоступна вообще, только руками."""
+    ip_obj, _ = FirewallObjectName.objects.get_or_create(kind="ip", defaults={"current_name": "BLOCK_BY_IP_1"})
+    fqdn_obj, _ = FirewallObjectName.objects.get_or_create(kind="fqdn", defaults={"current_name": "BBDNS_0"})
+
+    ip_values = list(
+        RegulatorEntry.objects.filter(kind="ip", status="active")
+        .order_by("match_value").values_list("match_value", flat=True).distinct()
+    )
+    fqdn_values = list(
+        RegulatorEntry.objects.filter(kind__in=["fqdn", "url"], status="active")
+        .order_by("match_value").values_list("match_value", flat=True).distinct()
+    )
+
+    ip_next_name = ip_obj.next_name()
+    fqdn_next_name = fqdn_obj.next_name()
+
+    context = {
+        "ip_obj": ip_obj,
+        "fqdn_obj": fqdn_obj,
+        "ip_next_name": ip_next_name,
+        "fqdn_next_name": fqdn_next_name,
+        "ip_count": len(ip_values),
+        "fqdn_count": len(fqdn_values),
+    }
+    if ip_values:
+        context["ip_command"] = f"firewall ip-object add name @{ip_next_name} {','.join(ip_values)}"
+    if fqdn_values:
+        context["fqdn_command"] = f"firewall ip-object add name @{fqdn_next_name} {','.join(fqdn_values)}"
+    return render(request, "ip_plan/regulator_firewall_commands_modal.html", context)
+
+
+@require_http_methods(["POST"])
+def regulator_firewall_commands_apply(request):
+    """POST — "Отметить применённым": администратор реально создал и
+    применил оба новых списка через веб-интерфейс ViPNet — продвигает
+    current_name на то имя, что было показано в модалке (ip_next_name/
+    fqdn_next_name из скрытых полей формы, НЕ пересчитываем заново здесь:
+    если между открытием модалки и нажатием этой кнопки кто-то добавил
+    новую активную запись, свежий next_name() уже успел бы уйти на шаг
+    дальше — отметка "применено" продвинула бы current_name на имя, которое
+    администратор на самом деле не создавал)."""
+    ip_next_name = request.POST.get("ip_next_name")
+    fqdn_next_name = request.POST.get("fqdn_next_name")
+    if ip_next_name:
+        FirewallObjectName.objects.update_or_create(kind="ip", defaults={"current_name": ip_next_name})
+    if fqdn_next_name:
+        FirewallObjectName.objects.update_or_create(kind="fqdn", defaults={"current_name": fqdn_next_name})
+    response = HttpResponse(status=204)
+    response["HX-Trigger"] = json.dumps(
+        {"close-modal": None, "show-toast": {"message": "Текущие имена обновлены", "kind": "success"}}
+    )
+    return response
 
 
 @login_not_required

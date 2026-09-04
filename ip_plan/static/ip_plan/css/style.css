@@ -477,6 +477,26 @@
     .regulator-back-link:hover { color: var(--accent); }
     .regulator-doc-date { font-weight: 400; color: var(--text-muted); font-size: .65em; }
 
+    /* --- Блокировки регулятора: модалка "Команды для firewall" --- */
+    .firewall-cmd-box {
+      background: var(--bg-page);
+      border: 1px solid var(--border-soft);
+      border-radius: 10px;
+      padding: .75rem 1rem;
+      margin-bottom: .75rem;
+    }
+    .firewall-cmd {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .78rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: var(--text-main);
+      margin: 0 0 .6rem;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+
     /* --- Блокировки регулятора: строка приёма (regulator_document_detail.html) ---
        Сигнатурный элемент страницы (см. design doc) — единственное место
        в этой фиче, куда осознанно вложено чуть больше визуального веса:
