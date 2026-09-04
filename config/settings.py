@@ -164,6 +164,13 @@ ACL_CONFIG_BACKUPS_DIR = config("ACL_CONFIG_BACKUPS_DIR", default=str(BASE_DIR /
 # ip_plan/services/sync_log.py.
 SYNC_LOGS_DIR = config("SYNC_LOGS_DIR", default=str(BASE_DIR / "sync_logs"))
 
+# --- Блокировки регулятора — снимок объектов блокировки firewall ---
+# Тот же принцип и тот же NETBOX_SYNC_DIR, что и у ACL_CONFIG_BACKUPS_DIR/
+# SYNC_LOGS_DIR выше — подпапка firewall_blocklists (пишет
+# netbox-sync/netbox_firewall_blocklist_sync.py). См.
+# ip_plan/services/firewall_blocklist.py.
+FIREWALL_BLOCKLISTS_DIR = config("FIREWALL_BLOCKLISTS_DIR", default=str(BASE_DIR / "firewall_blocklists"))
+
 # --- Аутентификация через FreeIPA (LDAPS) ---
 # Сами настройки AUTH_LDAP_* — в ip_plan/ldap_config.py (он же читает
 # ip_plan/ldap_settings.json). Здесь — только то, что относится к Django

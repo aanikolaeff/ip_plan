@@ -23,7 +23,7 @@ from .forms import (
     RegulatorDocumentForm, RegulatorEntryForm, RegulatorEntryRevokeForm,
 )
 from .models import FirewallObjectName, RegulatorDocument, RegulatorEntry
-from .services import acl_store, os_catalog, sync_log
+from .services import acl_store, firewall_blocklist, os_catalog, sync_log
 from .services.netbox_client import NetBoxAPIError, NetBoxClient
 from .services.network_tools import NetworkToolError, ping_check, resolve_ptr, scan_ports
 from .templatetags.ip_plan_extras import description_hint, effective_description
@@ -704,8 +704,16 @@ def regulator_firewall_commands(request):
     """GET — модалка с двумя готовыми CLI-командами (firewall ip-object add)
     для xFW: одна создаёт новый список IP, другая — новый список FQDN (с
     доменом из URL-записей — firewall фильтрует только по DNS/IP, не по
-    path, см. RegulatorEntry.match_value), из ВСЕХ активных записей реестра
-    прямо сейчас.
+    path, см. RegulatorEntry.match_value).
+
+    Значения — ОБЪЕДИНЕНИЕ двух источников, не только реестр: (1) все
+    активные записи RegulatorEntry и (2) то, что реально уже применено на
+    firewall прямо сейчас (снимок netbox-sync, см. firewall_blocklist.py).
+    Без пункта 2 значения, попавшие на firewall в обход реестра (руками,
+    до того как реестр начали вести, или кем-то ещё) молча выпали бы при
+    следующей замене списка — а мы создаём НОВЫЙ список целиком, не патчим
+    старый построчно, так что пропущенное в новом списке значение
+    равносильно случайной разблокировке.
 
     Почему НОВЫЙ список, а не правка старого: на xFW 5000 под обычным SSH-
     логином нет команды редактирования уже созданного ip-object'а — только
@@ -717,14 +725,27 @@ def regulator_firewall_commands(request):
     ip_obj, _ = FirewallObjectName.objects.get_or_create(kind="ip", defaults={"current_name": "BLOCK_BY_IP_1"})
     fqdn_obj, _ = FirewallObjectName.objects.get_or_create(kind="fqdn", defaults={"current_name": "BBDNS_0"})
 
-    ip_values = list(
-        RegulatorEntry.objects.filter(kind="ip", status="active")
-        .order_by("match_value").values_list("match_value", flat=True).distinct()
+    registry_ip = set(
+        RegulatorEntry.objects.filter(kind="ip", status="active").values_list("match_value", flat=True)
     )
-    fqdn_values = list(
-        RegulatorEntry.objects.filter(kind__in=["fqdn", "url"], status="active")
-        .order_by("match_value").values_list("match_value", flat=True).distinct()
+    registry_fqdn = set(
+        RegulatorEntry.objects.filter(kind__in=["fqdn", "url"], status="active").values_list("match_value", flat=True)
     )
+
+    # IP регистронезависимости не касается, но .strip() на всякий случай —
+    # снимок пришёл из парсинга сырого текстового вывода устройства
+    # (netbox_firewall_blocklist_sync.py), лишний пробел не исключён.
+    # Домены — приводим к тому же регистру, что и match_value в реестре
+    # (RegulatorEntry.compute_match_value уже делает .lower()), иначе
+    # "Example.com" с firewall и "example.com" из письма задвоились бы в
+    # объединении вместо дедупликации.
+    current_ip = firewall_blocklist.get_current_values(ip_obj.current_name)
+    current_fqdn = firewall_blocklist.get_current_values(fqdn_obj.current_name)
+    current_ip_set = {v.strip() for v in current_ip} if current_ip is not None else set()
+    current_fqdn_set = {v.strip().lower() for v in current_fqdn} if current_fqdn is not None else set()
+
+    ip_values = sorted(registry_ip | current_ip_set)
+    fqdn_values = sorted(registry_fqdn | current_fqdn_set)
 
     ip_next_name = ip_obj.next_name()
     fqdn_next_name = fqdn_obj.next_name()
@@ -736,6 +757,9 @@ def regulator_firewall_commands(request):
         "fqdn_next_name": fqdn_next_name,
         "ip_count": len(ip_values),
         "fqdn_count": len(fqdn_values),
+        "ip_current_available": current_ip is not None,
+        "fqdn_current_available": current_fqdn is not None,
+        "snapshot_mtime": firewall_blocklist.snapshot_mtime(),
     }
     if ip_values:
         context["ip_command"] = f"firewall ip-object add name @{ip_next_name} {','.join(ip_values)}"

@@ -33,8 +33,9 @@ services:
     volumes:
       - sqlite_data:/app/data
       - ./admin:/app/admin
-      # Страница "ACL" и сводка netbox-sync в "Настройках" читают файлы,
-      # которые netbox-sync пишет при каждом full_sync.sh — read-only, этот
+      # Страница "ACL", сводка netbox-sync в "Настройках" и генератор
+      # CLI-команд firewall на странице "Блокировки" читают файлы, которые
+      # netbox-sync пишет при каждом full_sync.sh — read-only, этот
       # контейнер туда никогда не пишет. NETBOX_SYNC_DIR — путь до корня
       # netbox-sync НА ХОСТЕ (не внутри контейнера): дефолт — соседняя
       # директория на диске разработчика (локальный чекаут, обе директории
@@ -49,6 +50,7 @@ services:
       # строчки (sync_logs) ниже.
       - ${NETBOX_SYNC_DIR:-../netbox-sync}/config_backups:/app/config_backups:ro
       - ${NETBOX_SYNC_DIR:-../netbox-sync}/sync_logs:/app/sync_logs:ro
+      - ${NETBOX_SYNC_DIR:-../netbox-sync}/firewall_blocklists:/app/firewall_blocklists:ro
 
 volumes:
   sqlite_data:

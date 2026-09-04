@@ -6,12 +6,34 @@
   <p class="cell-muted">
     На xFW 5000 нет CLI-команды правки уже созданного списка — только
     просмотр. Ниже — команды создания НОВЫХ списков (с очередным номером в
-    имени) из всех активных записей реестра прямо сейчас. Скопируйте и
-    вставьте в консоль устройства (нужен admin-режим), затем примените
-    новый список вместо <code class="ip-mono">@{{ ip_obj.current_name }}</code> /
+    имени) — объединение всех активных записей реестра И того, что реально
+    уже применено на firewall сейчас (снимок netbox-sync), без повторов —
+    иначе то, что попало на firewall в обход реестра, молча выпало бы при
+    замене списка. Скопируйте и вставьте в консоль устройства (нужен
+    admin-режим), затем примените новый список вместо
+    <code class="ip-mono">@{{ ip_obj.current_name }}</code> /
     <code class="ip-mono">@{{ fqdn_obj.current_name }}</code> через
     веб-интерфейс ViPNet — этот шаг по SSH недоступен вообще.
   </p>
+  {% if not snapshot_mtime %}
+    <p class="quick-add-error">
+      Снимок firewall не найден (netbox-sync ещё ни разу не запускался на
+      этом хосте, либо не примонтирован) — команды ниже содержат только
+      записи реестра, без сверки с реально применённым списком.
+    </p>
+  {% elif not ip_current_available or not fqdn_current_available %}
+    <p class="quick-add-error">
+      Снимок firewall от {{ snapshot_mtime|date:"d.m.Y H:i" }} не содержит
+      {% if not ip_current_available %}объект <code class="ip-mono">@{{ ip_obj.current_name }}</code>{% endif %}
+      {% if not ip_current_available and not fqdn_current_available %} и {% endif %}
+      {% if not fqdn_current_available %}объект <code class="ip-mono">@{{ fqdn_obj.current_name }}</code>{% endif %}
+      — имя уже сменилось на firewall без «Отметить применённым» здесь,
+      либо netbox-sync ещё не подхватил новое имя. Команды ниже содержат
+      только записи реестра для этого списка.
+    </p>
+  {% else %}
+    <p class="cell-muted">Снимок firewall от {{ snapshot_mtime|date:"d.m.Y H:i" }} учтён.</p>
+  {% endif %}
 
   <div class="field-group">
     <div class="field-group-title">IP ({{ ip_count }})</div>
