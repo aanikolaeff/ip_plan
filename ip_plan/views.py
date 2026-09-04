@@ -6,15 +6,20 @@ from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Font
 
+from django.db.models import Count, Q
 from django.http import Http404, HttpResponse, JsonResponse
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, render
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.contrib.auth.decorators import login_not_required
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 
-from .forms import CUSTOM_FIELD_KEYS, STATUS_CHOICES, IPAddressForm
+from .forms import (
+    CUSTOM_FIELD_KEYS, STATUS_CHOICES, IPAddressForm,
+    RegulatorDocumentForm, RegulatorEntryForm, RegulatorEntryRevokeForm,
+)
+from .models import RegulatorDocument, RegulatorEntry
 from .services import acl_store, os_catalog, sync_log
 from .services.netbox_client import NetBoxAPIError, NetBoxClient
 from .services.network_tools import NetworkToolError, ping_check, resolve_ptr, scan_ports
@@ -402,6 +407,146 @@ def acl_object_group_detail(request, device, name):
     if result is None:
         raise Http404(f"object-group «{name}» не найден на {device}")
     return render(request, "ip_plan/acl_object_group_detail.html", result)
+
+
+# --- Реестр блокировок регулятора (models.py) ---
+# В отличие от ACL Lookup выше — настоящие Django-модели (см. models.py:
+# записи накапливаются во времени, нужна история/статусы, а не просто
+# зеркало текущего файла на диске). Страница/фильтры — тот же htmx-паттерн,
+# что у acl_lookup (один URL на обычный GET и на HX-запрос, hx-push-url),
+# формы add/revoke — модалки через общий #modal-content, тот же паттерн,
+# что ip_add/os_catalog_entry_save (см. _regulator_saved_response ниже —
+# аналог _saved_response, но с OOB outerHTML всей страницы вместо одной
+# строки: тут нет клиентской React-таблицы, которая сама умеет вставлять
+# новую строку, весь список рендерится сервером).
+
+def _regulator_page_context(request):
+    kind = request.GET.get("kind", "")
+    status = request.GET.get("status", "active")
+    document_id = request.GET.get("document", "")
+    q = request.GET.get("q", "").strip()
+
+    entries = RegulatorEntry.objects.select_related("document").all()
+    if kind:
+        entries = entries.filter(kind=kind)
+    if status in ("active", "revoked"):
+        entries = entries.filter(status=status)
+    if document_id:
+        entries = entries.filter(document_id=document_id)
+    if q:
+        entries = entries.filter(Q(value__icontains=q) | Q(match_value__icontains=q))
+
+    documents = RegulatorDocument.objects.annotate(
+        entries_count=Count("entries"),
+        active_count=Count("entries", filter=Q(entries__status="active")),
+    )
+
+    return {
+        "entries": entries,
+        "documents": documents,
+        "kind": kind,
+        "status": status,
+        "document_id": str(document_id),
+        "q": q,
+    }
+
+
+def regulator_list(request):
+    """Страница «Блокировки регулятора» — тот же принцип, что у acl_lookup:
+    один URL на обычный GET и на HTMX (форма поиска/фильтры бьют сюда же,
+    hx-push-url кладёт query-string в адресную строку)."""
+    context = _regulator_page_context(request)
+    if request.headers.get("HX-Request") == "true":
+        return render(request, "ip_plan/_regulator_page_body.html", context)
+    return render(request, "ip_plan/regulator_lookup.html", context)
+
+
+def _regulator_saved_response(request, message):
+    """Ответ на успешное добавление/снятие/удаление: OOB outerHTML всей
+    #regulator-page-body (фильтры сбрасываются к дефолтным — простая
+    компромиссная цена за то, что модалка не обязана знать текущие фильтры
+    фоновой страницы) + закрытие модалки + тост. Аналог _saved_response у
+    IP-таблицы, но там OOB — одна строка внутри React-управляемой таблицы,
+    здесь — весь список, страница рендерится сервером целиком."""
+    # request.GET на POST-запросе (все action-view ниже — POST) — пустой
+    # QueryDict, так что _regulator_page_context сама откатится к дефолтным
+    # фильтрам (status=active, без kind/document/q) без специальной возни.
+    context = _regulator_page_context(request)
+    html = render_to_string(
+        "ip_plan/_regulator_page_body.html", {**context, "oob": True}, request=request
+    )
+    response = HttpResponse(html)
+    response["HX-Trigger"] = json.dumps(
+        {"close-modal": None, "show-toast": {"message": message, "kind": "success"}}
+    )
+    return response
+
+
+def regulator_document_add(request):
+    """GET — форма добавления письма (для модалки), POST — сохранение."""
+    if request.method == "POST":
+        form = RegulatorDocumentForm(request.POST)
+        if form.is_valid():
+            form.save()
+            return _regulator_saved_response(request, "Письмо добавлено")
+        return render(request, "ip_plan/regulator_document_add_modal.html", {"form": form}, status=400)
+    form = RegulatorDocumentForm(initial={"document_date": timezone.localdate()})
+    return render(request, "ip_plan/regulator_document_add_modal.html", {"form": form})
+
+
+def regulator_entry_add(request, document_id=None):
+    """GET — форма добавления записи (для модалки), POST — сохранение.
+    document_id — предзаполнение письма (кнопка "+ запись" у строки письма
+    в обзорной таблице); без него — пустой выпадающий список, письмо
+    выбирается вручную (кнопка "+ запись" в общем тулбаре)."""
+    if request.method == "POST":
+        form = RegulatorEntryForm(request.POST)
+        if form.is_valid():
+            form.save()
+            return _regulator_saved_response(request, "Запись добавлена")
+        return render(request, "ip_plan/regulator_entry_add_modal.html", {"form": form}, status=400)
+    initial = {"document": document_id} if document_id else {}
+    form = RegulatorEntryForm(initial=initial)
+    return render(request, "ip_plan/regulator_entry_add_modal.html", {"form": form})
+
+
+def regulator_entry_revoke(request, entry_id):
+    """GET — маленькая форма (причина снятия, необязательна), POST —
+    статус → revoked. Отдельная от delete: запись остаётся в базе для
+    истории/аудита (см. models.py, RegulatorEntry.status)."""
+    entry = get_object_or_404(RegulatorEntry, pk=entry_id)
+    if request.method == "POST":
+        form = RegulatorEntryRevokeForm(request.POST)
+        if form.is_valid():
+            entry.status = "revoked"
+            entry.revoked_at = timezone.now()
+            entry.revoked_reason = form.cleaned_data["revoked_reason"]
+            entry.save(update_fields=["status", "match_value", "revoked_at", "revoked_reason"])
+            return _regulator_saved_response(request, "Запись снята")
+        return render(request, "ip_plan/regulator_entry_revoke_modal.html", {"form": form, "entry": entry}, status=400)
+    form = RegulatorEntryRevokeForm()
+    return render(request, "ip_plan/regulator_entry_revoke_modal.html", {"form": form, "entry": entry})
+
+
+@require_http_methods(["POST"])
+def regulator_entry_reactivate(request, entry_id):
+    """Снятие статуса «снята» без модалки — обратное действие, причина не нужна."""
+    entry = get_object_or_404(RegulatorEntry, pk=entry_id)
+    entry.status = "active"
+    entry.revoked_at = None
+    entry.revoked_reason = ""
+    entry.save(update_fields=["status", "match_value", "revoked_at", "revoked_reason"])
+    return _regulator_saved_response(request, "Запись восстановлена")
+
+
+@require_http_methods(["POST"])
+def regulator_entry_delete(request, entry_id):
+    """Физическое удаление — только для исправления ошибки ввода (опечатка
+    и т.п.), не для "регулятор снял блокировку" (для этого — revoke выше,
+    сохраняет историю)."""
+    entry = get_object_or_404(RegulatorEntry, pk=entry_id)
+    entry.delete()
+    return _regulator_saved_response(request, "Запись удалена")
 
 
 @login_not_required

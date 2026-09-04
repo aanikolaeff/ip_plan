@@ -1,0 +1,75 @@
+{% extends "ip_plan/base.html" %}
+
+{% block content %}
+  <section class="hero">
+    <div class="hero-title-row">
+      <h1 class="title">Блокировки регулятора</h1>
+    </div>
+    <p class="subtitle">
+      Структурированный реестр IP/FQDN/URL из писем регулятора — без записи
+      в NetBox, своя таблица (см. docs/plans/2026-09-04-regulator-blocklist-design.md).
+    </p>
+    <div class="hero-row" style="margin-top: .75rem;">
+      <button type="button" class="btn-add"
+              hx-get="{% url 'ip_plan:regulator_document_add' %}"
+              hx-target="#modal-content"
+              hx-indicator="#modal-spinner"
+              @click="$store.modal.dirty = false; $dispatch('open-modal')">
+        + Письмо
+      </button>
+      <button type="button" class="btn-modal-secondary"
+              hx-get="{% url 'ip_plan:regulator_entry_add' %}"
+              hx-target="#modal-content"
+              hx-indicator="#modal-spinner"
+              @click="$store.modal.dirty = false; $dispatch('open-modal')">
+        + Запись
+      </button>
+    </div>
+  </section>
+
+  <form class="page-toolbar"
+        hx-get="{% url 'ip_plan:regulator_list' %}"
+        hx-target="#regulator-page-body"
+        hx-swap="outerHTML"
+        hx-push-url="true"
+        hx-indicator="#regulator-search-spinner">
+    <div class="toolbar-left">
+      <div class="toolbar-input-wrap">
+        <input type="text" name="q" class="toolbar-input" placeholder="🔍 IP / домен / URL…"
+               value="{{ q }}" autocomplete="off">
+      </div>
+      <select name="kind" class="toolbar-input" title="Тип"
+              hx-get="{% url 'ip_plan:regulator_list' %}" hx-target="#regulator-page-body"
+              hx-swap="outerHTML" hx-trigger="change" hx-push-url="true"
+              hx-include="closest form" hx-indicator="#regulator-search-spinner">
+        <option value="" {% if not kind %}selected{% endif %}>Тип: все</option>
+        <option value="ip" {% if kind == "ip" %}selected{% endif %}>IP</option>
+        <option value="fqdn" {% if kind == "fqdn" %}selected{% endif %}>FQDN</option>
+        <option value="url" {% if kind == "url" %}selected{% endif %}>URL</option>
+      </select>
+      <select name="status" class="toolbar-input" title="Статус"
+              hx-get="{% url 'ip_plan:regulator_list' %}" hx-target="#regulator-page-body"
+              hx-swap="outerHTML" hx-trigger="change" hx-push-url="true"
+              hx-include="closest form" hx-indicator="#regulator-search-spinner">
+        <option value="active" {% if status == "active" %}selected{% endif %}>Активные</option>
+        <option value="revoked" {% if status == "revoked" %}selected{% endif %}>Снятые</option>
+        <option value="all" {% if status == "all" %}selected{% endif %}>Все</option>
+      </select>
+      <select name="document" class="toolbar-input" title="Письмо"
+              hx-get="{% url 'ip_plan:regulator_list' %}" hx-target="#regulator-page-body"
+              hx-swap="outerHTML" hx-trigger="change" hx-push-url="true"
+              hx-include="closest form" hx-indicator="#regulator-search-spinner">
+        <option value="">Письмо: все</option>
+        {% for doc in documents %}
+          <option value="{{ doc.id }}" {% if document_id == doc.id|stringformat:"s" %}selected{% endif %}>
+            №{{ doc.reference_no }} от {{ doc.document_date|date:"d.m.Y" }}
+          </option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn-add">Найти</button>
+      <span id="regulator-search-spinner" class="htmx-indicator">Поиск…</span>
+    </div>
+  </form>
+
+  {% include "ip_plan/_regulator_page_body.html" %}
+{% endblock %}

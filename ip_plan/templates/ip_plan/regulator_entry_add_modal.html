@@ -1,0 +1,38 @@
+<div class="modal-title-bar">
+  <h5>Добавить запись</h5>
+  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть">✕</button>
+</div>
+<form hx-post="{% url 'ip_plan:regulator_entry_add' %}" hx-target="#modal-content" hx-swap="innerHTML" hx-indicator="#modal-spinner">
+  {% csrf_token %}
+  <div class="modal-body-pad">
+    {% if form.non_field_errors %}
+      <div class="alert-modal-error">{{ form.non_field_errors }}</div>
+    {% endif %}
+    {% if not form.fields.document.queryset.exists %}
+      <p class="cell-muted">Сначала добавьте хотя бы одно письмо («+ Письмо»).</p>
+    {% endif %}
+    <div class="field-group">
+      <div class="row g-2">
+        <div class="col-md-6">
+          <label class="field-label">{{ form.document.label }}</label>
+          {{ form.document }}
+          {{ form.document.errors }}
+        </div>
+        <div class="col-md-6">
+          <label class="field-label">{{ form.kind.label }}</label>
+          {{ form.kind }}
+          {{ form.kind.errors }}
+        </div>
+        <div class="col-12">
+          <label class="field-label">{{ form.value.label }}</label>
+          {{ form.value }}
+          {{ form.value.errors }}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer-bar">
+    <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Отмена</button>
+    <button type="submit" class="btn-modal-primary">Добавить</button>
+  </div>
+</form>

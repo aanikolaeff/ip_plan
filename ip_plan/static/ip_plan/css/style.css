@@ -455,6 +455,14 @@
     }
     .btn-danger:hover { background: var(--color-danger-strong); }
 
+    /* Компактный модификатор — действия в строке таблицы (Блокировки
+       регулятора: "+ запись"/Снять/Восстановить/Удалить). Без него
+       .btn-modal-secondary/.btn-danger в базовом размере (рассчитаны на
+       футер модалки) выглядели непропорционально крупно внутри узкой
+       ячейки таблицы. */
+    .btn-sm { padding: .25rem .6rem; font-size: .75rem; }
+    .regulator-entry-actions { display: flex; gap: .4rem; white-space: nowrap; }
+
     /* --- Контекстное меню "Столбцы" --- */
     .columns-dropdown-wrap { position: relative; display: inline-block; }
     .columns-dropdown {
@@ -1268,6 +1276,23 @@ tr:hover .cell-clear-btn { opacity: 1; }
   border-left-color: #22c55e;
 }
 :root[data-theme="dark"] .free-range-add-btn:hover { color: #0b1220; }
+
+/* Обычная (не React) Bootstrap-таблица .table (ACL/Блокировки регулятора —
+   в отличие от React-таблицы IP-плана, у неё нет своего table.css) красит
+   каждую ячейку через свои CSS-переменные --bs-table-bg/--bs-table-color,
+   которые нигде в проекте не переопределялись — они всегда белые (дефолт
+   Bootstrap), поэтому строки оставались белыми даже в тёмной теме, а
+   .table-wrapper под ними (уже тёмный, см. --bg-table выше) было не видно
+   за ними. Обнаружено только сейчас: ACL — единственная страница с этим
+   классом — была пуста весь предыдущий цикл разработки (отдельный баг
+   парсинга, см. docs/plans/2026-08-25-acl-lookup-design.md), поэтому
+   реальных строк в тёмной теме никто не видел. */
+:root[data-theme="dark"] .table {
+  --bs-table-bg: transparent;
+  --bs-table-color: var(--text-main);
+  --bs-table-striped-bg: rgba(255, 255, 255, .03);
+  --bs-table-hover-bg: rgba(255, 255, 255, .05);
+}
 
 /* Выбранная строка (легаси-селектор для #ip-table — см. комментарий у
    правила выше в файле; сейчас его использует ACL-таблица DataTables,

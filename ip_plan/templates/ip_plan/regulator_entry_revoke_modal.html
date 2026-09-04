@@ -1,0 +1,26 @@
+<div class="modal-title-bar">
+  <h5>Снять блокировку</h5>
+  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть">✕</button>
+</div>
+<form hx-post="{% url 'ip_plan:regulator_entry_revoke' entry.id %}" hx-target="#modal-content" hx-swap="innerHTML" hx-indicator="#modal-spinner">
+  {% csrf_token %}
+  <div class="modal-body-pad">
+    {% if form.non_field_errors %}
+      <div class="alert-modal-error">{{ form.non_field_errors }}</div>
+    {% endif %}
+    <p><span class="tag-chip">{{ entry.get_kind_display }}</span> <span class="ip-mono">{{ entry.value }}</span></p>
+    <p class="cell-muted">Запись останется в базе со статусом «снята» — для истории/аудита.</p>
+    <div class="field-group">
+      <div class="row g-2">
+        <div class="col-12">
+          <label class="field-label">{{ form.revoked_reason.label }}</label>
+          {{ form.revoked_reason }}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="modal-footer-bar">
+    <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Отмена</button>
+    <button type="submit" class="btn-modal-primary">Снять</button>
+  </div>
+</form>

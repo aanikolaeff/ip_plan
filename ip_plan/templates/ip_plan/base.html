@@ -67,6 +67,7 @@
           <nav class="nav-tabs">
             <a class="nav-tab{% if url_name == 'ip_list' %} active{% endif %}" href="{% url 'ip_plan:ip_list' %}">IP План</a>
             <a class="nav-tab{% if url_name == 'acl_lookup' or url_name == 'acl_detail' or url_name == 'acl_object_group_detail' %} active{% endif %}" href="{% url 'ip_plan:acl_lookup' %}">ACL</a>
+            <a class="nav-tab{% if url_name == 'regulator_list' %} active{% endif %}" href="{% url 'ip_plan:regulator_list' %}">Блокировки</a>
           </nav>
         </div>
         <div class="nav-right">

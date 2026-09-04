@@ -3,6 +3,8 @@ import re
 
 from django import forms
 
+from .models import RegulatorDocument, RegulatorEntry
+
 # Строго xxx.xxx.xxx.xxx/xx — отдельно от семантической проверки октетов/
 # маски через ipaddress.IPv4Interface ниже (не пропускает IPv6, не пропускает
 # адрес без маски, не пропускает произвольный текст).
@@ -112,3 +114,66 @@ class IPAddressForm(forms.Form):
             if name and name not in names:
                 names.append(name)
         return names
+
+
+# --- Реестр блокировок регулятора (models.py: RegulatorDocument/RegulatorEntry) ---
+
+FQDN_RE = re.compile(r"^(?!-)[a-zA-Z0-9-]{1,63}(?<!-)(\.[a-zA-Z0-9-]{1,63})+$")
+
+
+class RegulatorDocumentForm(forms.ModelForm):
+    class Meta:
+        model = RegulatorDocument
+        fields = ["reference_no", "document_date", "note"]
+        labels = {
+            "reference_no": "Номер письма",
+            "document_date": "Дата письма",
+            "note": "Примечание",
+        }
+        widgets = {
+            "reference_no": _text_input(placeholder="Например, 12-34/5678"),
+            "document_date": forms.DateInput(attrs={"class": "field-control", "type": "date"}),
+            "note": forms.Textarea(attrs={"class": "field-control", "rows": 2}),
+        }
+
+
+class RegulatorEntryForm(forms.ModelForm):
+    class Meta:
+        model = RegulatorEntry
+        fields = ["document", "kind", "value"]
+        labels = {"document": "Письмо", "kind": "Тип", "value": "Значение"}
+        widgets = {
+            "document": forms.Select(attrs={"class": "field-control"}),
+            "kind": forms.Select(attrs={"class": "field-control"}),
+            "value": _text_input(placeholder="IP / example.com / https://example.com/path"),
+        }
+
+    def clean(self):
+        cleaned = super().clean()
+        kind = cleaned.get("kind")
+        value = (cleaned.get("value") or "").strip()
+        cleaned["value"] = value
+        if not kind or not value:
+            return cleaned
+        if kind == "ip":
+            # Только адрес, без маски — это конкретный блокируемый хост, не
+            # подсеть (в отличие от IPAddressForm выше, где маска обязательна
+            # для полей IP Plan).
+            try:
+                ipaddress.ip_address(value)
+            except ValueError:
+                self.add_error("value", "Введите корректный IP-адрес (без маски), например 1.2.3.4")
+        elif kind == "fqdn":
+            if not FQDN_RE.match(value):
+                self.add_error("value", "Введите корректный FQDN, например example.com")
+        elif kind == "url":
+            if "://" not in value:
+                self.add_error("value", "URL должен содержать схему, например https://example.com/path")
+        return cleaned
+
+
+class RegulatorEntryRevokeForm(forms.Form):
+    revoked_reason = forms.CharField(
+        label="Причина снятия", required=False,
+        widget=forms.TextInput(attrs={"class": "field-control", "placeholder": "Необязательно"}),
+    )
