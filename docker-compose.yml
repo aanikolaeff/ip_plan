@@ -33,15 +33,22 @@ services:
     volumes:
       - sqlite_data:/app/data
       - ./admin:/app/admin
-      # Страница "ACL" (ip_plan/services/acl_store.py) читает running-config
-      # бэкапы, которые netbox-sync/netbox_config_backup.py пишет туда при
-      # каждом full_sync.sh — read-only, этот контейнер туда никогда не
-      # пишет. Предполагает, что netbox-sync и ip_plan_docker запущены на
-      # одном хосте (соседние директории) — так и есть на проде (cron
-      # full_sync.sh на том же хосте). Если это когда-нибудь изменится —
-      # либо перенести volume на путь, куда файлы доставляются (rsync/scp),
-      # либо переопределить ACL_CONFIG_BACKUPS_DIR на свою схему доставки.
-      - ../netbox-sync/config_backups:/app/config_backups:ro
+      # Страница "ACL" и сводка netbox-sync в "Настройках" читают файлы,
+      # которые netbox-sync пишет при каждом full_sync.sh — read-only, этот
+      # контейнер туда никогда не пишет. NETBOX_SYNC_DIR — путь до корня
+      # netbox-sync НА ХОСТЕ (не внутри контейнера): дефолт — соседняя
+      # директория на диске разработчика (локальный чекаут, обе директории
+      # рядом); на проде это НЕ соседняя директория (GitLab-раннер чекаутит
+      # ip_plan_react и netbox-sync в независимые build-директории под
+      # /home/gitlab-runner/builds/<runner>/...) — там NETBOX_SYNC_DIR
+      # обязателен и указывает на /opt/scan (DEPLOY_PATH из netbox-sync, см.
+      # CLAUDE.md), задаётся CI/CD-переменной проекта (.gitlab-ci.yml
+      # прокидывает её в .env как и остальные). Без этого на проде оба mount'а
+      # молча резолвились бы в пустую директорию — именно так и было с
+      # config_backups до того, как это поправили при добавлении второй
+      # строчки (sync_logs) ниже.
+      - ${NETBOX_SYNC_DIR:-../netbox-sync}/config_backups:/app/config_backups:ro
+      - ${NETBOX_SYNC_DIR:-../netbox-sync}/sync_logs:/app/sync_logs:ro
 
 volumes:
   sqlite_data:

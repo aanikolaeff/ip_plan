@@ -95,7 +95,9 @@
   border: 1px solid var(--border-soft-strong);
   border-radius: 14px;
   box-shadow: 0 8px 24px rgba(22, 29, 37, .14);
-  min-width: 200px;
+  /* 200 -> 260 — блок netbox-sync ниже (имя шага + статус в одну строку)
+     не помещался бы уже на 3-4 шагах без переноса. */
+  min-width: 260px;
   z-index: 30;
   padding: .85rem;
 }
@@ -125,6 +127,90 @@
 }
 .nav-theme-toggle button.active { background: var(--accent); color: #fff; }
 .nav-theme-toggle button:not(.active):hover { background: rgba(24, 33, 47, .05); color: var(--text-main); }
+
+/* --- Настройки: сводка netbox-sync (см. sync_log.py) ---
+   Свои цвета-токены, а не переиспользование --status-* из table.css: этот
+   dropdown живёт в base.html — на КАЖДОЙ странице (ACL, ip_table и т.д.),
+   а table.css грузится только вместе с React-бандлом на странице таблицы
+   (vite_asset в ip_table.html). Дублирование пары hex-значений тут дешевле,
+   чем тянуть table.css глобально ради трёх цветов. */
+.nav-settings-sep {
+  height: 1px;
+  background: var(--border-soft-strong);
+  margin: .75rem 0;
+}
+.sync-log-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .3rem;
+  font-size: .75rem;
+  color: var(--text-muted);
+  margin-bottom: .5rem;
+  font-variant-numeric: tabular-nums;
+}
+.sync-log-badge {
+  margin-left: auto;
+  font-size: .68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  padding: .1rem .45rem;
+  border-radius: 999px;
+}
+.sync-log-badge-ok { background: rgba(22, 163, 74, .12); color: #16a34a; }
+.sync-log-badge-failed { background: rgba(220, 38, 38, .12); color: #dc2626; }
+.sync-log-badge-running { background: rgba(31, 111, 235, .12); color: var(--accent); }
+.sync-log-badge-unknown { background: rgba(148, 163, 184, .18); color: var(--text-muted); }
+
+.sync-log-steps { display: flex; flex-direction: column; gap: .2rem; margin-bottom: .65rem; }
+.sync-log-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  font-size: .78rem;
+  padding: .12rem 0;
+}
+.sync-log-step-name { color: var(--text-main); }
+.sync-log-step-status { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.sync-log-step-ok { color: #16a34a; }
+.sync-log-step-failed { color: #dc2626; font-weight: 600; }
+.sync-log-step-running { color: var(--accent); font-weight: 600; }
+
+.sync-log-note { font-size: .78rem; color: var(--text-muted); margin-bottom: .5rem; }
+.sync-log-note-error { color: #dc2626; }
+
+.sync-log-actions { display: flex; gap: .4rem; }
+.sync-log-actions .btn-modal-secondary {
+  flex: 1;
+  padding: .35rem .5rem;
+  font-size: .75rem;
+  text-align: center;
+}
+
+/* --- Модалка "netbox-sync — полный лог" (sync_log_modal.html) --- */
+.sync-log-filename {
+  font-size: .75rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+.sync-log-modal-body { max-height: 70vh; overflow: auto; }
+.sync-log-truncated-note { font-size: .8rem; color: var(--text-muted); margin-bottom: .75rem; }
+.sync-log-raw {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-main);
+  background: var(--bg-page);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: .85rem 1rem;
+  margin: 0;
+}
 
 .nav-sep { width: 1px; height: 20px; background: var(--border-soft-strong); margin: 0 .35rem; flex: none; }
 

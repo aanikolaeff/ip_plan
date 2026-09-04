@@ -145,11 +145,24 @@ NETBOX_DNS_SKIP_PATTERN = config("NETBOX_DNS_SKIP_PATTERN", default=r"\.vipnet$"
 # Prefix/IPAddress в общем IPAM было бы неуместно. Поэтому эта страница
 # читает те же .cfg-файлы напрямую и ничего не пишет в NetBox.
 # По умолчанию — путь внутри контейнера, куда docker-compose.yml монтирует
-# ../netbox-sync/config_backups (read-only). Предполагает, что netbox-sync
-# и ip_plan_docker запущены на одном хосте (так и есть на проде — cron
-# full_sync.sh на том же хосте). Если раскладка когда-нибудь изменится —
-# свой путь/схему доставки через ACL_CONFIG_BACKUPS_DIR.
+# ${NETBOX_SYNC_DIR:-../netbox-sync}/config_backups (read-only).
+# NETBOX_SYNC_DIR — хостовый путь до корня netbox-sync, задаётся через .env
+# (см. .env.example): локально не нужен (дефолт — соседняя директория
+# ../netbox-sync на диске разработчика), на проде обязателен и указывает на
+# /opt/scan (DEPLOY_PATH из netbox-sync, см. CLAUDE.md) — там netbox-sync и
+# ip_plan_react разложены в независимые build-директории GitLab-раннера,
+# никакой относительный путь между ними не работает (баг, найденный и
+# починенный при добавлении SYNC_LOGS_DIR ниже — до этого ACL_CONFIG_BACKUPS_DIR
+# на проде молча резолвился в пустую папку через тот же самый относительный
+# путь). Если раскладка когда-нибудь изменится ещё раз — свой путь/схему
+# доставки через ACL_CONFIG_BACKUPS_DIR напрямую.
 ACL_CONFIG_BACKUPS_DIR = config("ACL_CONFIG_BACKUPS_DIR", default=str(BASE_DIR / "config_backups"))
+
+# --- Раздел "Настройки" (шапка) — сводка последнего прогона netbox-sync ---
+# Тот же принцип и тот же NETBOX_SYNC_DIR, что и у ACL_CONFIG_BACKUPS_DIR
+# выше — только подпапка sync_logs вместо config_backups. См.
+# ip_plan/services/sync_log.py.
+SYNC_LOGS_DIR = config("SYNC_LOGS_DIR", default=str(BASE_DIR / "sync_logs"))
 
 # --- Аутентификация через FreeIPA (LDAPS) ---
 # Сами настройки AUTH_LDAP_* — в ip_plan/ldap_config.py (он же читает

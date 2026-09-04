@@ -100,17 +100,15 @@
             </svg>
           </a>
 
-          <!-- Настройки — пока только тема, но отдельная кнопка (не сразу
-               toggle по клику), чтобы было куда добавить остальные
-               клиентские настройки позже, не меняя место в шапке.
-               theme в x-data читается один раз при монтировании Alpine —
-               достаточно, потому что переключить тему можно только отсюда
-               же (никакой другой вкладки/потока, которые могли бы её
-               поменять параллельно, у этой настройки нет). -->
+          <!-- Настройки — тема + сводка netbox-sync. Отдельная кнопка (не
+               сразу toggle по клику), чтобы было куда добавить остальные
+               клиентские настройки позже, не меняя место в шапке. Логика —
+               в Alpine.data('navSettings', ...), см. app.js (там же
+               объяснение, почему не инлайн x-data). -->
           <div class="nav-settings-wrap"
-               x-data="{ open: false, theme: (localStorage.getItem('ip_plan_theme') === 'dark' ? 'dark' : 'light') }"
+               x-data="navSettings()"
                @click.outside="open = false" @keydown.escape.window="open = false">
-            <button type="button" class="nav-icon" title="Настройки" @click="open = !open">
+            <button type="button" class="nav-icon" title="Настройки" @click="toggle()">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="3"></circle>
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -123,6 +121,52 @@
                         @click="theme = 'light'; setIpPlanTheme('light')">Светлая</button>
                 <button type="button" :class="{ active: theme === 'dark' }"
                         @click="theme = 'dark'; setIpPlanTheme('dark')">Тёмная</button>
+              </div>
+
+              <div class="nav-settings-sep"></div>
+
+              <div class="nav-settings-title">netbox-sync</div>
+
+              <template x-if="syncLogLoading && !syncLog">
+                <div class="sync-log-note">Загрузка…</div>
+              </template>
+              <template x-if="syncLogError">
+                <div class="sync-log-note sync-log-note-error" x-text="syncLogError"></div>
+              </template>
+              <template x-if="syncLog && !syncLog.available">
+                <div class="sync-log-note">Логи не найдены — netbox-sync ещё ни разу не запускался на этом хосте.</div>
+              </template>
+              <template x-if="syncLog && syncLog.available">
+                <div>
+                  <div class="sync-log-meta">
+                    <span x-text="syncLog.started_at"></span>
+                    <template x-if="syncLog.env"><span> · env=<span x-text="syncLog.env"></span></span></template>
+                    <span class="sync-log-badge" :class="'sync-log-badge-' + syncLog.overall.toLowerCase()" x-text="syncLog.overall"></span>
+                  </div>
+                  <div class="sync-log-steps">
+                    <template x-for="step in syncLog.steps" :key="step.name">
+                      <div class="sync-log-step">
+                        <span class="sync-log-step-name" x-text="step.name"></span>
+                        <span class="sync-log-step-status"
+                              :class="{
+                                'sync-log-step-ok': step.status === 'OK',
+                                'sync-log-step-failed': step.status === 'FAILED' || step.status === 'TIMEOUT',
+                                'sync-log-step-running': !step.status && syncLog.running_step === step.name,
+                              }"
+                              x-text="step.status ? (step.status + ' (' + step.elapsed + 'с)') : (syncLog.running_step === step.name ? 'выполняется…' : '—')"></span>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
+
+              <div class="sync-log-actions">
+                <button type="button" class="btn-modal-secondary" @click="refreshSyncLog()" :disabled="syncLogLoading">Обновить</button>
+                <button type="button" class="btn-modal-secondary"
+                        hx-get="{% url 'ip_plan:sync_log_modal' %}"
+                        hx-target="#modal-content"
+                        hx-indicator="#modal-spinner"
+                        @click="$store.modal.dirty = false; open = false; $dispatch('open-modal')">Развернуть лог ↗</button>
               </div>
             </div>
           </div>

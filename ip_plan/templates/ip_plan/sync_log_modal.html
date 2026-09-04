@@ -1,0 +1,17 @@
+<div class="modal-title-bar">
+  <h5>netbox-sync — полный лог{% if log_file %} <span class="sync-log-filename">{{ log_file }}</span>{% endif %}</h5>
+  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть">✕</button>
+</div>
+<div class="modal-body-pad sync-log-modal-body">
+  {% if log_text %}
+    {% if truncated %}
+      <p class="sync-log-truncated-note">Лог больше 2 МБ — показан только конец файла (самое свежее, включая текущий/последний шаг).</p>
+    {% endif %}
+    <pre class="sync-log-raw">{{ log_text }}</pre>
+  {% else %}
+    <p class="cell-muted">Лог не найден — netbox-sync ещё ни разу не запускался на этом хосте, либо не примонтирован (см. SYNC_LOGS_DIR).</p>
+  {% endif %}
+</div>
+<div class="modal-footer-bar">
+  <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Закрыть</button>
+</div>

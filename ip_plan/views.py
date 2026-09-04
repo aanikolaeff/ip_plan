@@ -15,7 +15,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 
 from .forms import CUSTOM_FIELD_KEYS, STATUS_CHOICES, IPAddressForm
-from .services import acl_store, os_catalog
+from .services import acl_store, os_catalog, sync_log
 from .services.netbox_client import NetBoxAPIError, NetBoxClient
 from .services.network_tools import NetworkToolError, ping_check, resolve_ptr, scan_ports
 from .templatetags.ip_plan_extras import description_hint, effective_description
@@ -460,6 +460,23 @@ def ip_list_json(request):
 def help_modal(request):
     """Справка по работе с таблицей (статический контент, без обращений к NetBox)."""
     return render(request, "ip_plan/help_modal.html")
+
+
+def sync_log_summary(request):
+    """Сводка по последнему прогону netbox-sync/full_sync.sh — для блока
+    в dropdown "Настройки" (см. sync_log.py, оттуда же формат ответа)."""
+    return JsonResponse(sync_log.get_summary())
+
+
+def sync_log_modal(request):
+    """Полный текст последнего лога netbox-sync — модалка по кнопке
+    "Развернуть лог" в том же dropdown."""
+    log_file, text, truncated = sync_log.get_raw_text()
+    return render(request, "ip_plan/sync_log_modal.html", {
+        "log_file": log_file,
+        "log_text": text,
+        "truncated": truncated,
+    })
 
 
 def _os_catalog_label(category, type_):

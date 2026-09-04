@@ -159,6 +159,43 @@
         },
       });
 
+      // Dropdown "Настройки" в шапке — тема + сводка последнего прогона
+      // netbox-sync (ip_plan/services/sync_log.py). Именованный компонент,
+      // а не инлайн x-data прямо в base.html (как раньше, пока там была
+      // только тема) — комментарий там же объяснял, что дальнейшие
+      // настройки будут добавляться в ЭТОТ ЖЕ блок, не меняя место в шапке;
+      // с логикой фетча/форматирования инлайн-объект в атрибуте стал бы
+      // нечитаемым.
+      Alpine.data('navSettings', () => ({
+        open: false,
+        theme: (localStorage.getItem('ip_plan_theme') === 'dark' ? 'dark' : 'light'),
+        syncLog: null,
+        syncLogLoading: false,
+        syncLogError: null,
+        toggle() {
+          this.open = !this.open;
+          // Фетчим один раз при первом открытии за сессию страницы — не на
+          // каждый клик (то же самое значение проще перечитать кнопкой
+          // "Обновить", раз мы сознательно отказались от live-опроса, см.
+          // design doc). !syncLogLoading — чтобы двойной быстрый клик не
+          // запускал два параллельных запроса.
+          if (this.open && !this.syncLog && !this.syncLogLoading) this.refreshSyncLog();
+        },
+        async refreshSyncLog() {
+          this.syncLogLoading = true;
+          this.syncLogError = null;
+          try {
+            const resp = await fetch((window.URL_PREFIX || '') + '/sync-log/summary.json', { credentials: 'same-origin' });
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            this.syncLog = await resp.json();
+          } catch (e) {
+            this.syncLogError = 'Не удалось загрузить сводку netbox-sync';
+          } finally {
+            this.syncLogLoading = false;
+          }
+        },
+      }));
+
       // Chip-инпут общего назначения — изначально только для "Тэгов",
       // теперь и для "Версий" в справочнике ОС (см. _os_catalog_entry_form.html).
       // fieldName — имя скрытого инпута, в который синхронизируются чипы.

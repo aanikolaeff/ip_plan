@@ -20,6 +20,8 @@ urlpatterns = [
     path("ip/list.json", views.ip_list_json, name="ip_list_json"),
     path("csrf/", views.csrf_refresh, name="csrf_refresh"),
     path("help/", views.help_modal, name="help_modal"),
+    path("sync-log/summary.json", views.sync_log_summary, name="sync_log_summary"),
+    path("sync-log/modal/", views.sync_log_modal, name="sync_log_modal"),
     path("os-catalog/", views.os_catalog_manage, name="os_catalog_manage"),
     path("os-catalog/<str:category>/<str:type_>/entries/", views.os_catalog_entries, name="os_catalog_entries"),
     path(

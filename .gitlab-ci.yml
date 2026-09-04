@@ -30,6 +30,7 @@ deploy:
       NETBOX_DNS_SKIP_PATTERN=$NETBOX_DNS_SKIP_PATTERN
       URL_PREFIX=$URL_PREFIX
       LDAP_BIND_PASSWORD=$LDAP_BIND_PASSWORD
+      NETBOX_SYNC_DIR=$NETBOX_SYNC_DIR
       EOF
     - docker compose up -d --build
     - |
