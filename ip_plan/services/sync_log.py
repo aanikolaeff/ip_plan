@@ -26,7 +26,7 @@ from django.conf import settings
 # Если этот список там когда-нибудь изменится, поправить и здесь.
 STEP_NAMES = [
     "Custom fields", "VLAN+prefixes", "Devices", "Config backup",
-    "Nmap scan", "RedVirt", "vCenter", "DNS enrich",
+    "Firewall blocklist", "Nmap scan", "RedVirt", "vCenter", "DNS enrich",
 ]
 
 _HEADER_RE = re.compile(r"Full sync started:\s*(?P<started>\S+ \S+)\s+\[env=(?P<env>\w+)\]")
