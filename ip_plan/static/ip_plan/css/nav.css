@@ -183,10 +183,13 @@
 
 .sync-log-actions { display: flex; gap: .4rem; }
 .sync-log-actions .btn-modal-secondary {
-  flex: 1;
-  padding: .35rem .5rem;
-  font-size: .75rem;
-  text-align: center;
+  /* Без flex:1 — растянутые на всю ширину dropdown пилюли с базовым
+     .btn-modal-secondary (font-weight:600, padding .6rem 1.3rem, см.
+     style.css) выглядели непропорционально крупно для двух вспомогательных
+     кнопок в компактном dropdown. Тут — по размеру текста, потише. */
+  padding: .3rem .65rem;
+  font-size: .72rem;
+  font-weight: 500;
 }
 
 /* --- Модалка "netbox-sync — полный лог" (sync_log_modal.html) --- */
