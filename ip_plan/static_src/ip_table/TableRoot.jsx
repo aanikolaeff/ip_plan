@@ -342,9 +342,16 @@ export default function TableRoot() {
                     key={header.id}
                     style={{
                       width: header.getSize(),
-                      position: header.column.getIsPinned() ? 'sticky' : 'relative',
+                      // sticky всегда (не только у закреплённых колонок) —
+                      // держит шапку по вертикали при скролле .ip-table-scroll
+                      // (см. max-height/overflow-y там же, table.css). У
+                      // закреплённых колонок (select/address) добавляется ещё
+                      // и left — угловая ячейка залипает по обеим осям сразу,
+                      // это нормально для position:sticky.
+                      position: 'sticky',
+                      top: 0,
                       left: header.column.getIsPinned() ? header.column.getStart('left') : undefined,
-                      zIndex: header.column.getIsPinned() ? 3 : undefined,
+                      zIndex: header.column.getIsPinned() ? 5 : 4,
                     }}
                     className={header.column.getIsPinned() ? 'col-pinned' : undefined}
                     draggable={header.column.id !== 'select' && header.column.getIsPinned() !== 'left'}
