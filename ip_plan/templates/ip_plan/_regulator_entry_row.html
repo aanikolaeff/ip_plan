@@ -21,19 +21,21 @@
         Снять
       </button>
     {% else %}
-      <button type="button" class="btn-modal-secondary btn-sm"
-              hx-post="{% url 'ip_plan:regulator_entry_reactivate' entry.id %}"
-              hx-vals='{"return_document_id": "{{ document.id }}"}'
-              hx-target="#document-entries-body" hx-swap="none">
-        Восстановить
-      </button>
+      <form class="regulator-inline-action"
+            hx-post="{% url 'ip_plan:regulator_entry_reactivate' entry.id %}"
+            hx-target="#document-entries-body" hx-swap="none">
+        {% csrf_token %}
+        <input type="hidden" name="return_document_id" value="{{ document.id }}">
+        <button type="submit" class="btn-modal-secondary btn-sm">Восстановить</button>
+      </form>
     {% endif %}
-    <button type="button" class="btn-danger btn-sm"
-            hx-post="{% url 'ip_plan:regulator_entry_delete' entry.id %}"
-            hx-vals='{"return_document_id": "{{ document.id }}"}'
-            hx-target="#document-entries-body" hx-swap="none"
-            hx-confirm="Удалить запись «{{ entry.value }}»? Только для исправления ошибки ввода — если блокировку сняли, используйте «Снять».">
-      Удалить
-    </button>
+    <form class="regulator-inline-action"
+          hx-post="{% url 'ip_plan:regulator_entry_delete' entry.id %}"
+          hx-target="#document-entries-body" hx-swap="none"
+          hx-confirm="Удалить запись «{{ entry.value }}»? Только для исправления ошибки ввода — если блокировку сняли, используйте «Снять».">
+      {% csrf_token %}
+      <input type="hidden" name="return_document_id" value="{{ document.id }}">
+      <button type="submit" class="btn-danger btn-sm">Удалить</button>
+    </form>
   </td>
 </tr>
