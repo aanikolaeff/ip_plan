@@ -4,7 +4,7 @@ stages:
 deploy:
   stage: deploy
   tags:
-    - ip_plan_shell
+    - ip_plan_react_shell
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
       when: manual
@@ -18,6 +18,8 @@ deploy:
       ALLOWED_HOSTS=$ALLOWED_HOSTS
       CSRF_TRUSTED_ORIGINS=$CSRF_TRUSTED_ORIGINS
       USE_X_FORWARDED_PROTO=$USE_X_FORWARDED_PROTO
+      SESSION_COOKIE_NAME=ipplanreact_sessionid
+      CSRF_COOKIE_NAME=ipplanreact_csrftoken
       NETBOX_URL=$NETBOX_URL
       NETBOX_TOKEN=$NETBOX_TOKEN
       NETBOX_VERIFY_SSL=$NETBOX_VERIFY_SSL
@@ -34,7 +36,7 @@ deploy:
       ok=""
       smoke_host="${ALLOWED_HOSTS%%,*}"
       for i in $(seq 1 10); do
-       if curl -fsS -H "Host: $smoke_host" http://localhost:8050/ -o /dev/null; then
+       if curl -fsS -H "Host: $smoke_host" http://localhost:8090/ -o /dev/null; then
           ok=1
           break
         fi
