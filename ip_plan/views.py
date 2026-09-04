@@ -9,6 +9,7 @@ from openpyxl.styles import Font
 from django.db.models import Count, Q
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.contrib.auth.decorators import login_not_required
@@ -461,20 +462,46 @@ def regulator_list(request):
     return render(request, "ip_plan/regulator_lookup.html", context)
 
 
-def _regulator_saved_response(request, message):
-    """Ответ на успешное добавление/снятие/удаление: OOB outerHTML всей
-    #regulator-page-body (фильтры сбрасываются к дефолтным — простая
-    компромиссная цена за то, что модалка не обязана знать текущие фильтры
-    фоновой страницы) + закрытие модалки + тост. Аналог _saved_response у
-    IP-таблицы, но там OOB — одна строка внутри React-управляемой таблицы,
-    здесь — весь список, страница рендерится сервером целиком."""
-    # request.GET на POST-запросе (все action-view ниже — POST) — пустой
-    # QueryDict, так что _regulator_page_context сама откатится к дефолтным
-    # фильтрам (status=active, без kind/document/q) без специальной возни.
-    context = _regulator_page_context(request)
-    html = render_to_string(
-        "ip_plan/_regulator_page_body.html", {**context, "oob": True}, request=request
-    )
+def _regulator_document_context(document_id):
+    document = get_object_or_404(RegulatorDocument, pk=document_id)
+    return {"document": document, "entries": document.entries.all()}
+
+
+def regulator_document_detail(request, document_id):
+    """Детальная страница одного письма — рабочее пространство для ввода
+    записей (см. design doc, раздел "детальная страница письма"): строка
+    приёма сверху (regulator_entry_quick_add) + таблица только записей
+    ЭТОГО письма. Замена прежнему workflow "модалка + выбор письма из
+    списка на каждую запись"."""
+    return render(request, "ip_plan/regulator_document_detail.html", _regulator_document_context(document_id))
+
+
+def _regulator_saved_response(request, message, document_id=None):
+    """Ответ на успешное снятие/восстановление/удаление записи (не
+    относится к самому добавлению — см. regulator_entry_quick_add ниже,
+    у него свой, более узкий ответ).
+
+    document_id — из чьего контекста пришло действие (см. return_document_id
+    в _regulator_entry_row.html): если задан, OOB-обновляем только таблицу
+    записей внутри детальной страницы письма (#document-entries-body,
+    _regulator_document_entries.html), не трогая строку приёма — её
+    состояние (текст в поле, фокус) незачем сбрасывать ради обновления
+    статуса другой записи. Если не задан (действие пришло с общего плоского
+    списка /regulator/) — OOB outerHTML всей #regulator-page-body, как и
+    раньше, фильтры сбрасываются к дефолтным."""
+    if document_id:
+        context = _regulator_document_context(document_id)
+        html = render_to_string(
+            "ip_plan/_regulator_document_entries.html", {**context, "oob": True}, request=request
+        )
+    else:
+        # request.GET на POST-запросе (все action-view ниже — POST) — пустой
+        # QueryDict, так что _regulator_page_context откатится к дефолтным
+        # фильтрам (status=active, без kind/document/q) без специальной возни.
+        context = _regulator_page_context(request)
+        html = render_to_string(
+            "ip_plan/_regulator_page_body.html", {**context, "oob": True}, request=request
+        )
     response = HttpResponse(html)
     response["HX-Trigger"] = json.dumps(
         {"close-modal": None, "show-toast": {"message": message, "kind": "success"}}
@@ -483,38 +510,72 @@ def _regulator_saved_response(request, message):
 
 
 def regulator_document_add(request):
-    """GET — форма добавления письма (для модалки), POST — сохранение."""
+    """GET — форма добавления письма (для модалки), POST — сохранение.
+    Успех ведёт сразу на детальную страницу нового письма (HX-Redirect) —
+    ровно тот workflow, который и просили: добавил письмо → сразу внутри
+    него вносишь записи, без промежуточного возврата к общему списку."""
     if request.method == "POST":
         form = RegulatorDocumentForm(request.POST)
         if form.is_valid():
-            form.save()
-            return _regulator_saved_response(request, "Письмо добавлено")
+            document = form.save()
+            response = HttpResponse(status=204)
+            response["HX-Redirect"] = reverse("ip_plan:regulator_document_detail", args=[document.id])
+            return response
         return render(request, "ip_plan/regulator_document_add_modal.html", {"form": form}, status=400)
     form = RegulatorDocumentForm(initial={"document_date": timezone.localdate()})
     return render(request, "ip_plan/regulator_document_add_modal.html", {"form": form})
 
 
-def regulator_entry_add(request, document_id=None):
-    """GET — форма добавления записи (для модалки), POST — сохранение.
-    document_id — предзаполнение письма (кнопка "+ запись" у строки письма
-    в обзорной таблице); без него — пустой выпадающий список, письмо
-    выбирается вручную (кнопка "+ запись" в общем тулбаре)."""
-    if request.method == "POST":
-        form = RegulatorEntryForm(request.POST)
-        if form.is_valid():
-            form.save()
-            return _regulator_saved_response(request, "Запись добавлена")
-        return render(request, "ip_plan/regulator_entry_add_modal.html", {"form": form}, status=400)
-    initial = {"document": document_id} if document_id else {}
-    form = RegulatorEntryForm(initial=initial)
-    return render(request, "ip_plan/regulator_entry_add_modal.html", {"form": form})
+def regulator_entry_quick_add(request, document_id):
+    """POST — строка приёма на детальной странице письма. document уже
+    известен из URL (не поле формы, в отличие от прежнего RegulatorEntryForm
+    с общим выпадающим списком) — ключевое отличие от старого regulator_entry_add,
+    которое и убирает повторный выбор письма на каждую запись.
+
+    Успех — только новая <tr> (см. _regulator_entry_row.html) для
+    hx-swap="beforeend" в #entry-rows, плюс OOB-очистка слота ошибки на
+    случай, если предыдущая попытка её показывала. Поле ввода/фокус
+    сбрасывает сам клиент (hx-on::after-request в regulator_document_detail.html)
+    — здесь сервер про это ничего не знает и не должен.
+
+    Ошибка — НЕ трогает таблицу вообще (no main swap), только OOB-обновление
+    #quick-add-error рядом со строкой приёма. Значение, которое пользователь
+    уже напечатал, остаётся в поле — не наказываем повторным вводом при
+    опечатке."""
+    document = get_object_or_404(RegulatorDocument, pk=document_id)
+    data = request.POST.copy()
+    data["document"] = str(document.id)
+    form = RegulatorEntryForm(data)
+    if form.is_valid():
+        entry = form.save()
+        row_html = render_to_string(
+            "ip_plan/_regulator_entry_row.html", {"entry": entry, "document": document}, request=request
+        )
+        error_html = render_to_string(
+            "ip_plan/_regulator_quick_add_error.html", {"error": None, "oob": True}, request=request
+        )
+        response = HttpResponse(row_html + error_html)
+        response["HX-Trigger"] = json.dumps(
+            {"clear-quick-add": None, "show-toast": {"message": "Запись добавлена", "kind": "success"}}
+        )
+        return response
+    error = " ".join(form.errors.get("value") or form.errors.get("kind") or ["Проверьте значение"])
+    error_html = render_to_string(
+        "ip_plan/_regulator_quick_add_error.html", {"error": error, "oob": True}, request=request
+    )
+    return HttpResponse(error_html, status=400)
 
 
 def regulator_entry_revoke(request, entry_id):
     """GET — маленькая форма (причина снятия, необязательна), POST —
     статус → revoked. Отдельная от delete: запись остаётся в базе для
-    истории/аудита (см. models.py, RegulatorEntry.status)."""
+    истории/аудита (см. models.py, RegulatorEntry.status).
+
+    ?return_document_id= (GET, прокидывается дальше в саму форму скрытым
+    полем) — см. _regulator_saved_response: с детальной страницы письма
+    приходит id этого письма, с общего списка — ничего."""
     entry = get_object_or_404(RegulatorEntry, pk=entry_id)
+    return_document_id = request.GET.get("return_document_id") or request.POST.get("return_document_id") or None
     if request.method == "POST":
         form = RegulatorEntryRevokeForm(request.POST)
         if form.is_valid():
@@ -522,10 +583,16 @@ def regulator_entry_revoke(request, entry_id):
             entry.revoked_at = timezone.now()
             entry.revoked_reason = form.cleaned_data["revoked_reason"]
             entry.save(update_fields=["status", "match_value", "revoked_at", "revoked_reason"])
-            return _regulator_saved_response(request, "Запись снята")
-        return render(request, "ip_plan/regulator_entry_revoke_modal.html", {"form": form, "entry": entry}, status=400)
+            return _regulator_saved_response(request, "Запись снята", document_id=return_document_id)
+        return render(
+            request, "ip_plan/regulator_entry_revoke_modal.html",
+            {"form": form, "entry": entry, "return_document_id": return_document_id}, status=400,
+        )
     form = RegulatorEntryRevokeForm()
-    return render(request, "ip_plan/regulator_entry_revoke_modal.html", {"form": form, "entry": entry})
+    return render(
+        request, "ip_plan/regulator_entry_revoke_modal.html",
+        {"form": form, "entry": entry, "return_document_id": return_document_id},
+    )
 
 
 @require_http_methods(["POST"])
@@ -536,7 +603,9 @@ def regulator_entry_reactivate(request, entry_id):
     entry.revoked_at = None
     entry.revoked_reason = ""
     entry.save(update_fields=["status", "match_value", "revoked_at", "revoked_reason"])
-    return _regulator_saved_response(request, "Запись восстановлена")
+    return _regulator_saved_response(
+        request, "Запись восстановлена", document_id=request.POST.get("return_document_id") or None
+    )
 
 
 @require_http_methods(["POST"])
@@ -546,7 +615,9 @@ def regulator_entry_delete(request, entry_id):
     сохраняет историю)."""
     entry = get_object_or_404(RegulatorEntry, pk=entry_id)
     entry.delete()
-    return _regulator_saved_response(request, "Запись удалена")
+    return _regulator_saved_response(
+        request, "Запись удалена", document_id=request.POST.get("return_document_id") or None
+    )
 
 
 @login_not_required

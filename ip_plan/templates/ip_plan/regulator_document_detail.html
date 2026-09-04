@@ -1,0 +1,52 @@
+{% extends "ip_plan/base.html" %}
+
+{% block content %}
+  <section class="hero">
+    <a href="{% url 'ip_plan:regulator_list' %}" class="regulator-back-link">← Все письма</a>
+    <div class="hero-title-row">
+      <h1 class="title">№{{ document.reference_no }} <span class="regulator-doc-date">от {{ document.document_date|date:"d.m.Y" }}</span></h1>
+    </div>
+    {% if document.note %}<p class="subtitle">{{ document.note }}</p>{% endif %}
+  </section>
+
+  <!-- Строка приёма — сигнатурный элемент страницы (см. design doc):
+       письмо уже известно из URL, дальше — только тип + значение, без
+       модалки и без повторного выбора письма на каждую запись. Успех
+       дописывает <tr> в конец таблицы (hx-swap=beforeend в #entry-rows) и
+       сам себя очищает (hx-on::after-request), фокус возвращается в поле
+       значения — можно вносить запись за записью, не отрывая рук от
+       клавиатуры. Ошибка не трогает таблицу вообще, только слот
+       #quick-add-error рядом (см. regulator_entry_quick_add). -->
+  <div class="regulator-intake-bar">
+    <!-- Очищаем и фокусируем только поле значения на успехе — НЕ весь
+         form.reset(): это стёрло бы и выбранный тип (kind-toggle) обратно
+         на IP, а при вводе подряд десятка FQDN/URL из одного письма
+         заново кликать тип перед каждой записью было бы ровно тем же
+         неудобством, ради которого затевалась вся эта страница. Проверяем
+         именно xhr.status, не event.detail.successful — общий
+         htmx:beforeSwap-хук в app.js форсирует isError=false для 400
+         (нужно ip_add/os_catalog-модалкам, чтобы форма с ошибками
+         переотрисовывалась), из-за чего successful был бы true и на
+         ошибке валидации тоже. -->
+    <form hx-post="{% url 'ip_plan:regulator_entry_quick_add' document.id %}"
+          hx-target="#entry-rows" hx-swap="beforeend" hx-indicator="#quick-add-spinner"
+          hx-on::after-request="const v = this.querySelector('[name=value]'); if (event.detail.xhr.status === 200) v.value = ''; v.focus();"
+          class="regulator-intake-form">
+      {% csrf_token %}
+      <span class="regulator-intake-label">Приём</span>
+      <div class="kind-toggle">
+        <label><input type="radio" name="kind" value="ip" checked><span>IP</span></label>
+        <label><input type="radio" name="kind" value="fqdn"><span>FQDN</span></label>
+        <label><input type="radio" name="kind" value="url"><span>URL</span></label>
+      </div>
+      <input type="text" name="value" class="field-control regulator-intake-value ip-mono"
+             placeholder="Значение — 1.2.3.4 / example.com / https://example.com/path"
+             autocomplete="off" autofocus>
+      <button type="submit" class="btn-add">Добавить</button>
+      <span id="quick-add-spinner" class="htmx-indicator">…</span>
+    </form>
+    <div id="quick-add-error" class="quick-add-error"></div>
+  </div>
+
+  {% include "ip_plan/_regulator_document_entries.html" %}
+{% endblock %}

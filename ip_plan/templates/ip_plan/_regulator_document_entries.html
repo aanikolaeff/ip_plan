@@ -1,0 +1,24 @@
+<div id="document-entries-body"{% if oob %} hx-swap-oob="true"{% endif %}>
+  <div class="table-wrapper">
+    <table class="table acl-table">
+      <thead>
+        <tr>
+          <th>Тип</th>
+          <th>Значение</th>
+          <th>Статус</th>
+          <th>Добавлена</th>
+          <th></th>
+        </tr>
+      </thead>
+      <!-- id всегда присутствует, даже если записей пока 0 — это цель
+           hx-swap="beforeend" у строки приёма (regulator_document_detail.html):
+           без реального <tbody> в DOM добавление первой же записи в письмо
+           без записей ничего не нашло бы и молча ничего бы не сделало. -->
+      <tbody id="entry-rows">
+        {% for entry in entries %}
+          {% include "ip_plan/_regulator_entry_row.html" with entry=entry document=document %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

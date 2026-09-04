@@ -50,10 +50,10 @@ urlpatterns = [
     path("acl/<str:device>/<str:acl_name>/", views.acl_detail, name="acl_detail"),
     path("regulator/", views.regulator_list, name="regulator_list"),
     path("regulator/document/add/", views.regulator_document_add, name="regulator_document_add"),
-    path("regulator/entry/add/", views.regulator_entry_add, name="regulator_entry_add"),
+    path("regulator/document/<int:document_id>/", views.regulator_document_detail, name="regulator_document_detail"),
     path(
-        "regulator/document/<int:document_id>/entry/add/",
-        views.regulator_entry_add, name="regulator_entry_add_for_document",
+        "regulator/document/<int:document_id>/entry/quick-add/",
+        views.regulator_entry_quick_add, name="regulator_entry_quick_add",
     ),
     path("regulator/entry/<int:entry_id>/revoke/", views.regulator_entry_revoke, name="regulator_entry_revoke"),
     path("regulator/entry/<int:entry_id>/reactivate/", views.regulator_entry_reactivate, name="regulator_entry_reactivate"),

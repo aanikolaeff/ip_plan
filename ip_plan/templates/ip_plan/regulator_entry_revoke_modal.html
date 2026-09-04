@@ -4,6 +4,7 @@
 </div>
 <form hx-post="{% url 'ip_plan:regulator_entry_revoke' entry.id %}" hx-target="#modal-content" hx-swap="innerHTML" hx-indicator="#modal-spinner">
   {% csrf_token %}
+  {% if return_document_id %}<input type="hidden" name="return_document_id" value="{{ return_document_id }}">{% endif %}
   <div class="modal-body-pad">
     {% if form.non_field_errors %}
       <div class="alert-modal-error">{{ form.non_field_errors }}</div>

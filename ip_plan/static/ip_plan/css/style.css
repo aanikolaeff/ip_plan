@@ -456,12 +456,94 @@
     .btn-danger:hover { background: var(--color-danger-strong); }
 
     /* Компактный модификатор — действия в строке таблицы (Блокировки
-       регулятора: "+ запись"/Снять/Восстановить/Удалить). Без него
+       регулятора: Снять/Восстановить/Удалить). Без него
        .btn-modal-secondary/.btn-danger в базовом размере (рассчитаны на
        футер модалки) выглядели непропорционально крупно внутри узкой
        ячейки таблицы. */
     .btn-sm { padding: .25rem .6rem; font-size: .75rem; }
     .regulator-entry-actions { display: flex; gap: .4rem; white-space: nowrap; }
+
+    /* --- Блокировки регулятора: список писем (regulator_lookup.html) --- */
+    .regulator-doc-row { cursor: pointer; }
+    .regulator-doc-row:hover td { background: var(--bg-row-hover); }
+    .regulator-back-link {
+      display: inline-block;
+      font-size: .8125rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-decoration: none;
+      margin-bottom: .6rem;
+    }
+    .regulator-back-link:hover { color: var(--accent); }
+    .regulator-doc-date { font-weight: 400; color: var(--text-muted); font-size: .65em; }
+
+    /* --- Блокировки регулятора: строка приёма (regulator_document_detail.html) ---
+       Сигнатурный элемент страницы (см. design doc) — единственное место
+       в этой фиче, куда осознанно вложено чуть больше визуального веса:
+       акцентная левая грань (та же роль, что рейка статуса у IP-таблицы,
+       см. table.css) обозначает "сюда приходят новые записи", карточка
+       всегда прямо под заголовком письма, ничего не нужно искать. */
+    .regulator-intake-bar {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-soft-strong);
+      border-left: 3px solid var(--accent);
+      border-radius: 14px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    .regulator-intake-form {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      flex-wrap: wrap;
+    }
+    .regulator-intake-label {
+      font-size: .72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--text-muted);
+    }
+    .regulator-intake-value { flex: 1; min-width: 240px; }
+    .quick-add-error {
+      color: var(--color-danger);
+      font-size: .8125rem;
+      margin-top: .6rem;
+    }
+    .quick-add-error:empty { display: none; }
+
+    /* Переключатель типа записи — сегментированный контрол на голых
+       radio-инпутах (не Alpine, как у переключателя темы в шапке): три
+       варианта, состояние не нужно нигде читать программно, чистый CSS
+       через :checked проще и не тянет за собой лишний JS-компонент. */
+    .kind-toggle {
+      display: flex;
+      border: 1px solid var(--border-soft-strong);
+      border-radius: 999px;
+      padding: 2px;
+      gap: 2px;
+      flex: none;
+    }
+    .kind-toggle label { position: relative; cursor: pointer; display: block; }
+    .kind-toggle input[type="radio"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      margin: 0;
+      cursor: pointer;
+    }
+    .kind-toggle span {
+      display: block;
+      padding: .5rem .9rem;
+      border-radius: 999px;
+      font-size: .8125rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      transition: background .12s ease, color .12s ease;
+    }
+    .kind-toggle input:checked + span { background: var(--accent); color: #fff; }
+    .kind-toggle input:not(:checked) + span:hover { background: rgba(24,33,47,.05); color: var(--text-main); }
+    .kind-toggle input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 
     /* --- Контекстное меню "Столбцы" --- */
     .columns-dropdown-wrap { position: relative; display: inline-block; }

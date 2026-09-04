@@ -17,16 +17,17 @@
               @click="$store.modal.dirty = false; $dispatch('open-modal')">
         + Письмо
       </button>
-      <button type="button" class="btn-modal-secondary"
-              hx-get="{% url 'ip_plan:regulator_entry_add' %}"
-              hx-target="#modal-content"
-              hx-indicator="#modal-spinner"
-              @click="$store.modal.dirty = false; $dispatch('open-modal')">
-        + Запись
-      </button>
     </div>
   </section>
 
+  <!-- Записи вносятся внутри конкретного письма (см. regulator_document_detail.html —
+       клик по номеру письма ниже), тут — только сквозной поиск/сверка по
+       всем письмам сразу ("встречается ли IP X где-то у нас"). -->
+  <section class="hero" style="margin-top: 2rem;">
+    <div class="hero-title-row">
+      <h2 class="title" style="font-size: 1.25rem;">Поиск по всем записям</h2>
+    </div>
+  </section>
   <form class="page-toolbar"
         hx-get="{% url 'ip_plan:regulator_list' %}"
         hx-target="#regulator-page-body"
