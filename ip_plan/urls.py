@@ -55,6 +55,10 @@ urlpatterns = [
         "regulator/document/<int:document_id>/entry/quick-add/",
         views.regulator_entry_quick_add, name="regulator_entry_quick_add",
     ),
+    path(
+        "regulator/document/<int:document_id>/entry/csv-upload/",
+        views.regulator_entry_csv_upload, name="regulator_entry_csv_upload",
+    ),
     path("regulator/entry/<int:entry_id>/revoke/", views.regulator_entry_revoke, name="regulator_entry_revoke"),
     path("regulator/entry/<int:entry_id>/reactivate/", views.regulator_entry_reactivate, name="regulator_entry_reactivate"),
     path("regulator/entry/<int:entry_id>/delete/", views.regulator_entry_delete, name="regulator_entry_delete"),

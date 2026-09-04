@@ -11,21 +11,32 @@
 
   <!-- Строка приёма — сигнатурный элемент страницы (см. design doc):
        письмо уже известно из URL, дальше — только тип + значение, без
-       модалки и без повторного выбора письма на каждую запись. Успех
-       дописывает <tr> в конец таблицы (hx-swap=beforeend в #entry-rows) и
-       сам себя очищает (hx-on::after-request), фокус возвращается в поле
-       значения — можно вносить запись за записью, не отрывая рук от
-       клавиатуры. Ошибка не трогает таблицу вообще, только слот
-       #quick-add-error рядом (см. regulator_entry_quick_add). -->
-  <div class="regulator-intake-bar">
+       модалки и без повторного выбора письма на каждую запись. Тип общий
+       для двух путей ниже (Alpine x-data, а не отдельный radio-набор на
+       каждый) — ручной ввод одной записи и загрузка CSV: незачем
+       переключать тип дважды, если весь файл — одного типа (см. design
+       doc, "формат CSV" — один тип на файл, не колонка kind в самом CSV).
+       Успех дописывает <tr>(и) в конец таблицы (hx-swap=beforeend в
+       #entry-rows), ошибка не трогает таблицу вообще — только свой слот
+       рядом с формой, откуда она пришла (оба пути, независимо). -->
+  <div class="regulator-intake-bar" x-data="{ kind: 'ip' }">
+    <div class="regulator-intake-row">
+      <span class="regulator-intake-label">Приём</span>
+      <div class="kind-toggle">
+        <label><input type="radio" x-model="kind" value="ip"><span>IP</span></label>
+        <label><input type="radio" x-model="kind" value="fqdn"><span>FQDN</span></label>
+        <label><input type="radio" x-model="kind" value="url"><span>URL</span></label>
+      </div>
+    </div>
+
     <!-- Очищаем и фокусируем только поле значения на успехе — НЕ весь
-         form.reset(): это стёрло бы и выбранный тип (kind-toggle) обратно
-         на IP, а при вводе подряд десятка FQDN/URL из одного письма
-         заново кликать тип перед каждой записью было бы ровно тем же
-         неудобством, ради которого затевалась вся эта страница. Проверяем
-         именно xhr.status, не event.detail.successful — общий
-         htmx:beforeSwap-хук в app.js форсирует isError=false для 400
-         (нужно ip_add/os_catalog-модалкам, чтобы форма с ошибками
+         form.reset(): это стёрло бы и выбранный тип (kind, теперь общий с
+         CSV-формой ниже) обратно на IP, а при вводе подряд десятка
+         FQDN/URL из одного письма заново кликать тип перед каждой записью
+         было бы ровно тем же неудобством, ради которого затевалась вся эта
+         страница. Проверяем именно xhr.status, не event.detail.successful
+         — общий htmx:beforeSwap-хук в app.js форсирует isError=false для
+         400 (нужно ip_add/os_catalog-модалкам, чтобы форма с ошибками
          переотрисовывалась), из-за чего successful был бы true и на
          ошибке валидации тоже. -->
     <form hx-post="{% url 'ip_plan:regulator_entry_quick_add' document.id %}"
@@ -33,12 +44,7 @@
           hx-on::after-request="const v = this.querySelector('[name=value]'); if (event.detail.xhr.status === 200) v.value = ''; v.focus();"
           class="regulator-intake-form">
       {% csrf_token %}
-      <span class="regulator-intake-label">Приём</span>
-      <div class="kind-toggle">
-        <label><input type="radio" name="kind" value="ip" checked><span>IP</span></label>
-        <label><input type="radio" name="kind" value="fqdn"><span>FQDN</span></label>
-        <label><input type="radio" name="kind" value="url"><span>URL</span></label>
-      </div>
+      <input type="hidden" name="kind" :value="kind">
       <input type="text" name="value" class="field-control regulator-intake-value ip-mono"
              placeholder="Значение — 1.2.3.4 / example.com / https://example.com/path"
              autocomplete="off" autofocus>
@@ -46,6 +52,29 @@
       <span id="quick-add-spinner" class="htmx-indicator">…</span>
     </form>
     <div id="quick-add-error" class="quick-add-error"></div>
+
+    <div class="regulator-intake-sep"></div>
+
+    <!-- CSV — одна колонка значений, тип общий с формой выше (radio),
+         один файл = один тип (см. комментарий у kind-toggle). Ошибка
+         (хотя бы одна невалидная строка) отклоняет ВЕСЬ файл — ничего не
+         импортируется, список ошибок по строкам в #csv-upload-error (см.
+         regulator_entry_csv_upload) — compliance-реестр, лучше явно
+         увидеть все проблемные строки и поправить файл, чем молча
+         пропустить часть записей. -->
+    <form hx-post="{% url 'ip_plan:regulator_entry_csv_upload' document.id %}"
+          hx-target="#entry-rows" hx-swap="beforeend" hx-encoding="multipart/form-data"
+          hx-indicator="#csv-upload-spinner"
+          hx-on::after-request="if (event.detail.xhr.status === 200) this.reset();"
+          class="regulator-intake-csv-form">
+      {% csrf_token %}
+      <input type="hidden" name="kind" :value="kind">
+      <span class="regulator-intake-label">CSV</span>
+      <input type="file" name="csv_file" accept=".csv,text/csv" class="field-control" required>
+      <button type="submit" class="btn-modal-secondary btn-sm">Загрузить</button>
+      <span id="csv-upload-spinner" class="htmx-indicator">…</span>
+    </form>
+    <div id="csv-upload-error" class="quick-add-error"></div>
   </div>
 
   {% include "ip_plan/_regulator_document_entries.html" %}

@@ -511,12 +511,13 @@
       padding: 1rem 1.25rem;
       margin-bottom: 1.5rem;
     }
-    .regulator-intake-form {
+    .regulator-intake-form, .regulator-intake-csv-form, .regulator-intake-row {
       display: flex;
       align-items: center;
       gap: .75rem;
       flex-wrap: wrap;
     }
+    .regulator-intake-row { margin-bottom: .85rem; }
     .regulator-intake-label {
       font-size: .72rem;
       font-weight: 700;
@@ -525,12 +526,25 @@
       color: var(--text-muted);
     }
     .regulator-intake-value { flex: 1; min-width: 240px; }
+    /* Разделитель между "одна запись" и CSV-загрузкой — оба варианта
+       приёма делят один и тот же выбор типа (.regulator-intake-row выше),
+       черта просто отмечает, что дальше начинается другой способ ввода
+       того же самого. */
+    .regulator-intake-sep { height: 1px; background: var(--border-soft); margin: .75rem 0; }
     .quick-add-error {
       color: var(--color-danger);
       font-size: .8125rem;
       margin-top: .6rem;
     }
     .quick-add-error:empty { display: none; }
+    .csv-error-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      max-height: 160px;
+      overflow-y: auto;
+    }
+    .csv-error-list li { padding: .15rem 0; }
 
     /* Переключатель типа записи — сегментированный контрол на голых
        radio-инпутах (не Alpine, как у переключателя темы в шапке): три
