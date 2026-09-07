@@ -176,6 +176,10 @@
 .status-chip[data-status="deprecated"] .status-dot { background: var(--status-deprecated); }
 .status-chip[data-status="dhcp"] .status-dot { background: var(--status-dhcp); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-dhcp) 18%, transparent); }
 .status-chip[data-status="slaac"] .status-dot { background: var(--status-slaac); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-slaac) 18%, transparent); }
+/* "revoked" — статус записи блокировки регулятора (RegulatorEntry.status),
+   не статус IP-адреса — переиспользует "deprecated"-серый семантически
+   (снята ≈ неактивна), без своего токена цвета. */
+.status-chip[data-status="revoked"] .status-dot { background: var(--status-deprecated); }
 
 /* ---------- Строки: зебра тише, hairline вместо чистой заливки ---------- */
 

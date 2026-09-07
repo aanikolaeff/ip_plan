@@ -454,14 +454,109 @@ def _regulator_page_context(request):
     }
 
 
+def _regulator_letters_context(request):
+    """Контекст вкладки «Письма» — только список писем, без фильтра (см.
+    задачу: "там не нужен фильтр, просто список писем"), с сортировкой по
+    дате (?sort=document_date|-document_date, по умолчанию свежие сверху).
+    Записи сюда не попадают вообще — они переехали в отдельную вкладку
+    «Записи» на React-таблице (regulator_entries_json ниже)."""
+    sort = request.GET.get("sort", "-document_date")
+    if sort not in ("document_date", "-document_date"):
+        sort = "-document_date"
+    tie_break = "-id" if sort.startswith("-") else "id"
+    documents = RegulatorDocument.objects.annotate(
+        entries_count=Count("entries"),
+        active_count=Count("entries", filter=Q(entries__status="active")),
+    ).order_by(sort, tie_break)
+    return {"documents": documents, "sort": sort}
+
+
 def regulator_list(request):
     """Страница «Блокировки регулятора» — тот же принцип, что у acl_lookup:
-    один URL на обычный GET и на HTMX (форма поиска/фильтры бьют сюда же,
-    hx-push-url кладёт query-string в адресную строку)."""
-    context = _regulator_page_context(request)
+    один URL на обычный GET и на HTMX (переключение сортировки бьёт сюда же,
+    hx-push-url кладёт query-string в адресную строку). Рендерит только
+    вкладку «Письма» — «Записи» подгружает свои данные отдельным JSON-
+    запросом (regulator_entries_json), это статический React-island, ему не
+    нужен серверный рендер тела при каждом хите."""
+    context = _regulator_letters_context(request)
     if request.headers.get("HX-Request") == "true":
-        return render(request, "ip_plan/_regulator_page_body.html", context)
+        return render(request, "ip_plan/_regulator_letters_body.html", context)
     return render(request, "ip_plan/regulator_lookup.html", context)
+
+
+@require_http_methods(["POST"])
+def regulator_document_delete(request, document_id):
+    """Удаление письма целиком вместе со всеми его записями. FK
+    (RegulatorEntry.document) — on_delete=PROTECT, это намеренно оставлено
+    как есть на уровне модели (страховка от случайного document.delete() из
+    Django admin/shell) — здесь каскад явный и осознанный, только после
+    подтверждения в UI (см. _regulator_letters_body.html, confirm с числом
+    записей через ru_plural_zapis)."""
+    document = get_object_or_404(RegulatorDocument, pk=document_id)
+    document.entries.all().delete()
+    document.delete()
+    context = _regulator_letters_context(request)
+    html = render_to_string(
+        "ip_plan/_regulator_letters_body.html", {**context, "oob": True}, request=request
+    )
+    response = HttpResponse(html)
+    response["HX-Trigger"] = json.dumps(
+        {"show-toast": {"message": "Письмо удалено", "kind": "success"}}
+    )
+    return response
+
+
+def _serialize_regulator_entry(entry):
+    """Одна запись блокировки для React-таблицы вкладки «Записи» — вся
+    фильтрация/поиск/пагинация там клиентские (см. design: "на той же
+    основе, на которой сделан основной ip plan" — там тоже один fetch
+    целиком и всё дальше на клиенте), так что отдаём плоский список сразу
+    со всем нужным для отображения, без пагинации на уровне API."""
+    return {
+        "id": entry.id,
+        "kind": entry.kind,
+        "kind_display": entry.get_kind_display(),
+        "value": entry.value,
+        "status": entry.status,
+        "status_display": entry.get_status_display(),
+        "revoked_at": entry.revoked_at.isoformat() if entry.revoked_at else None,
+        "revoked_reason": entry.revoked_reason,
+        "created_at": entry.created_at.isoformat(),
+        "document": {
+            "id": entry.document_id,
+            "reference_no": entry.document.reference_no,
+            "document_date": entry.document.document_date.isoformat(),
+            "url": reverse("ip_plan:regulator_document_detail", args=[entry.document_id]),
+        },
+    }
+
+
+def regulator_entries_json(request):
+    entries = RegulatorEntry.objects.select_related("document").all()
+    return JsonResponse({"entries": [_serialize_regulator_entry(e) for e in entries]})
+
+
+@require_http_methods(["POST"])
+def regulator_entry_reactivate_api(request, entry_id):
+    """JSON-версия regulator_entry_reactivate — для React-таблицы вкладки
+    «Записи» (кнопка «Снять» там убрана по ТЗ, но «Восстановить» для уже
+    снятой записи осталась: без неё опечатка в revoke необратима без похода
+    на детальную страницу письма)."""
+    entry = get_object_or_404(RegulatorEntry, pk=entry_id)
+    entry.status = "active"
+    entry.revoked_at = None
+    entry.revoked_reason = ""
+    entry.save(update_fields=["status", "match_value", "revoked_at", "revoked_reason"])
+    return JsonResponse({"entry": _serialize_regulator_entry(entry)})
+
+
+@require_http_methods(["POST"])
+def regulator_entry_delete_api(request, entry_id):
+    """JSON-версия regulator_entry_delete — для React-таблицы вкладки
+    «Записи»."""
+    entry = get_object_or_404(RegulatorEntry, pk=entry_id)
+    entry.delete()
+    return JsonResponse({"ok": True, "id": entry_id})
 
 
 def _regulator_document_context(document_id):

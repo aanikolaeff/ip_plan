@@ -463,6 +463,34 @@
     .btn-sm { padding: .25rem .6rem; font-size: .75rem; }
     .regulator-entry-actions { display: flex; gap: .4rem; white-space: nowrap; }
 
+    /* --- Блокировки регулятора: вкладки "Письма"/"Записи" (regulator_lookup.html) ---
+       Свой, третий визуальный стиль — не .nav-tab (пилюли верхней навигации
+       между разделами приложения) и не .kind-toggle (сегментированный
+       переключатель типа IOC в строке приёма формы): здесь смысл другой —
+       переключение секций ВНУТРИ одной страницы, подчёркивание снизу лучше
+       читается как "вкладка", не путается ни с одним из первых двух. */
+    .regulator-tabs-bar {
+      display: flex;
+      gap: 1.5rem;
+      border-bottom: 1px solid var(--border-soft);
+      margin-top: 1.5rem;
+    }
+    .regulator-tab {
+      background: none;
+      border: none;
+      font-family: inherit;
+      font-size: .9375rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: .6rem .1rem .7rem;
+      margin-bottom: -1px;
+      border-bottom: 2px solid transparent;
+      transition: color .12s ease, border-color .12s ease;
+    }
+    .regulator-tab:hover { color: var(--text-main); }
+    .regulator-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
     /* --- Блокировки регулятора: список писем (regulator_lookup.html) --- */
     .regulator-doc-row { cursor: pointer; }
     .regulator-doc-row:hover td { background: var(--bg-row-hover); }

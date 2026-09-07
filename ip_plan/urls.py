@@ -49,8 +49,10 @@ urlpatterns = [
     path("acl/<str:device>/object-group/<str:name>/", views.acl_object_group_detail, name="acl_object_group_detail"),
     path("acl/<str:device>/<str:acl_name>/", views.acl_detail, name="acl_detail"),
     path("regulator/", views.regulator_list, name="regulator_list"),
+    path("regulator/entries.json", views.regulator_entries_json, name="regulator_entries_json"),
     path("regulator/document/add/", views.regulator_document_add, name="regulator_document_add"),
     path("regulator/document/<int:document_id>/", views.regulator_document_detail, name="regulator_document_detail"),
+    path("regulator/document/<int:document_id>/delete/", views.regulator_document_delete, name="regulator_document_delete"),
     path(
         "regulator/document/<int:document_id>/entry/quick-add/",
         views.regulator_entry_quick_add, name="regulator_entry_quick_add",
@@ -70,6 +72,14 @@ urlpatterns = [
     path("regulator/entry/<int:entry_id>/revoke/", views.regulator_entry_revoke, name="regulator_entry_revoke"),
     path("regulator/entry/<int:entry_id>/reactivate/", views.regulator_entry_reactivate, name="regulator_entry_reactivate"),
     path("regulator/entry/<int:entry_id>/delete/", views.regulator_entry_delete, name="regulator_entry_delete"),
+    path(
+        "regulator/entry/<int:entry_id>/reactivate.json",
+        views.regulator_entry_reactivate_api, name="regulator_entry_reactivate_api",
+    ),
+    path(
+        "regulator/entry/<int:entry_id>/delete.json",
+        views.regulator_entry_delete_api, name="regulator_entry_delete_api",
+    ),
     path("regulator/firewall-commands/", views.regulator_firewall_commands, name="regulator_firewall_commands"),
     path(
         "regulator/firewall-commands/apply/",

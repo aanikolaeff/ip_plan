@@ -11,6 +11,27 @@ register = template.Library()
 _VITE_MANIFEST_PATH = Path(__file__).resolve().parent.parent / "static" / "ip_plan" / "dist" / ".vite" / "manifest.json"
 
 
+def _collect_css(manifest, key, seen):
+    """CSS собственного чанка + всех чанков, на которые он ссылается через
+    "imports" — рекурсивно. Нужно с тех пор, как появился второй Vite-вход
+    (regulator_table, см. vite.config.js): Rollup вынес общий для обоих
+    входов код (react-dom, @tanstack/react-table, table.css) в отдельный
+    shared-чанк, и CSS теперь висит на ЭТОМ чанке, а не на самой записи
+    входа в manifest.json — chunk.get("css") у самого входа стал пустым.
+    До этого (один вход) CSS всегда лежал прямо в записи входа, отдельного
+    обхода "imports" не требовалось. seen — защита от повторного обхода
+    одного и того же чанка (и на всякий случай от цикла), не от дублей в
+    итоговом списке (дедуп — в самом vite_asset)."""
+    if key in seen:
+        return []
+    seen.add(key)
+    chunk = manifest.get(key) or {}
+    css_files = list(chunk.get("css", []))
+    for imported_key in chunk.get("imports", []):
+        css_files.extend(_collect_css(manifest, imported_key, seen))
+    return css_files
+
+
 @register.simple_tag
 def vite_asset(entry):
     """<script type="module">/<link> для собранного Vite-бандла (см.
@@ -29,7 +50,8 @@ def vite_asset(entry):
     if not chunk:
         return mark_safe(f"<!-- vite entry '{entry}' not in manifest — run `npm run build` -->")
     tags = [f'<script type="module" src="{static_url("ip_plan/dist/" + chunk["file"])}"></script>']
-    for css_file in chunk.get("css", []):
+    css_files = list(dict.fromkeys(_collect_css(manifest, entry, set())))  # dedup, сохраняя порядок
+    for css_file in css_files:
         tags.append(f'<link rel="stylesheet" href="{static_url("ip_plan/dist/" + css_file)}">')
     return mark_safe("\n".join(tags))
 
@@ -83,6 +105,24 @@ def effective_description(ip):
     if _is_vm(ip):
         return ip.get("_parent_description") or ""
     return ip.get("description") or ""
+
+
+@register.filter
+def ru_plural_zapis(n):
+    """Русское склонение "запись/записи/записей" по числу n — Django
+    встроенный pluralize не умеет 3-формное склонение (mod10/mod100), а
+    используется тут только в тексте confirm-диалога удаления письма (см.
+    regulator_document_delete)."""
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return "записей"
+    n_mod10, n_mod100 = n % 10, n % 100
+    if n_mod10 == 1 and n_mod100 != 11:
+        return "запись"
+    if n_mod10 in (2, 3, 4) and n_mod100 not in (12, 13, 14):
+        return "записи"
+    return "записей"
 
 
 @register.filter
