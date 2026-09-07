@@ -171,6 +171,17 @@ SYNC_LOGS_DIR = config("SYNC_LOGS_DIR", default=str(BASE_DIR / "sync_logs"))
 # ip_plan/services/firewall_blocklist.py.
 FIREWALL_BLOCKLISTS_DIR = config("FIREWALL_BLOCKLISTS_DIR", default=str(BASE_DIR / "firewall_blocklists"))
 
+# Превью разбора документов (ip_plan/services/ioc_parser.py,
+# regulator_document_ioc_save) шлёт по 2 POST-поля (ioc_kind+ioc_value) на
+# каждую найденную запись — у реального бюллетеня регулятора это легко
+# несколько сотен IOC за один разбор (см. чек-лист в design doc: сотня+
+# SHA256-хэшей в одном файле — не редкость), Django-дефолт в 1000 полей
+# превышается уже на паре сотен строк (TooManyFieldsSent -> 400 Bad
+# Request на кнопке "Сохранить в письмо"). Официально рекомендованный путь
+# Django для легитимно больших форм — поднять лимит, не городить свой
+# транспорт для этой одной формы.
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 20000
+
 # --- Аутентификация через FreeIPA (LDAPS) ---
 # Сами настройки AUTH_LDAP_* — в ip_plan/ldap_config.py (он же читает
 # ip_plan/ldap_settings.json). Здесь — только то, что относится к Django
