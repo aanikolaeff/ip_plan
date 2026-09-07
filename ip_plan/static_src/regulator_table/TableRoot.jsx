@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-table';
 import { buildColumns } from './columns.jsx';
 import { fetchRegulatorEntries } from './api.js';
+import { downloadCsv, entriesToCsv } from './csv.js';
 import { loadJSON, loadSession, saveJSON, saveSession } from './storage.js';
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 250, 1000];
@@ -103,6 +104,19 @@ export default function TableRoot({ documentId }) {
     setRows((prev) => prev.filter((r) => r.id !== id));
   }
 
+  // Скачивает то, что сейчас реально отфильтровано (тип + поиск), не весь
+  // список целиком — "выбрали IP" значит выгрузить IP, "выбрали все" (пустой
+  // фильтр) — выгрузить всё видимое. Только на детальной странице письма
+  // (showDocumentButton=documentId задан) — на вкладке «Записи» общего
+  // списка это не просили, там письма вперемешку, экспорт "по типу" менее
+  // осмыслен без своего экспорта "по письму" тоже.
+  function handleDownloadCsv() {
+    const kindLabel = kindFilter || 'all';
+    const refNo = rows[0]?.document?.reference_no || 'entries';
+    const safeRef = String(refNo).replace(/[^\w.-]+/g, '_');
+    downloadCsv(`${safeRef}_${kindLabel}.csv`, entriesToCsv(filteredRows));
+  }
+
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
@@ -156,6 +170,15 @@ export default function TableRoot({ documentId }) {
             <option value="">Тип: все</option>
             {KIND_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
+          {!!documentId && (
+            <button
+              type="button" className="btn-modal-secondary" disabled={!filteredRows.length}
+              onClick={handleDownloadCsv}
+              title={kindFilter ? 'Скачать записи выбранного типа в CSV' : 'Скачать все записи в CSV'}
+            >
+              Скачать CSV
+            </button>
+          )}
         </div>
         <div className="toolbar-right">
           <div className="records-counter">
