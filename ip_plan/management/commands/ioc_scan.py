@@ -1,6 +1,7 @@
 """CLI-вход для ip_plan/services/ioc_parser.py (см. design doc) — не трогает
-NetBox и не пишет в БД, только читает PDF/DOCX из папки на диске и печатает
-JSON (см. --out). Django management-команда, а не голый argparse-скрипт —
+NetBox и не пишет в БД, только читает PDF/DOCX/CSV из папки на диске и
+печатает JSON (см. --out). Django management-команда, а не голый
+argparse-скрипт —
 add_arguments/handle используют тот же argparse под капотом, а команда сразу
 доступна и внутри контейнера (тот же venv, куда уже ставится pdfplumber/
 python-docx), без отдельного standalone-скрипта.
@@ -21,10 +22,10 @@ from ip_plan.services.ioc_parser import scan_folder
 
 
 class Command(BaseCommand):
-    help = "Извлечение депрофанированных IOC (IP/домен/URL/SHA256) из PDF/DOCX в папке"
+    help = "Извлечение IOC (IP/домен/URL/SHA256) из PDF/DOCX (депрофанированные) и CSV (чистые списки) в папке"
 
     def add_arguments(self, parser):
-        parser.add_argument("folder", help="Путь к папке с документами (.pdf/.docx)")
+        parser.add_argument("folder", help="Путь к папке с документами (.pdf/.docx/.csv)")
         parser.add_argument(
             "--recursive", action="store_true",
             help="Сканировать вложенные папки (по умолчанию — только сама папка)",

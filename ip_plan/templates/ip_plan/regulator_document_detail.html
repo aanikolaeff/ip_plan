@@ -78,46 +78,61 @@
     <div id="csv-upload-error" class="quick-add-error"></div>
   </div>
 
-  <!-- Разбор документов регулятора (PDF/DOCX) — извлечение депрофанированных
-       IOC (см. ip_plan/services/ioc_parser.py и design doc). В отличие от
-       строки приёма выше — тип определяется АВТОМАТИЧЕСКИ по формату
-       каждого найденного индикатора (не через общий kind-переключатель),
-       поэтому это отдельный блок, а не третья форма внутри
-       .regulator-intake-bar. Файлы НЕ сохраняются на диск и не пишутся в
-       реестр сразу — сервер только парсит их в памяти и возвращает
-       редактируемый список-превью (#ioc-preview-panel, форма с action на
-       regulator_document_ioc_save) — оператор правит/убирает строки, и
-       только после явного "Сохранить в письмо" список попадает в
-       RegulatorEntry. Два input'а с ОДНИМ и тем же именем поля
-       (ioc_files) — Django не различает "выбрали папку" (webkitdirectory)
-       от "выбрали несколько файлов" (обычный multiple), оба варианта
-       приходят одним и тем же плоским списком файлов на сервер. -->
+  <!-- Разбор документов регулятора (PDF/DOCX — депрофанированные, CSV — уже
+       чистый готовый список) — см. ip_plan/services/ioc_parser.py и design
+       doc. В отличие от строки приёма выше — тип определяется АВТОМАТИЧЕСКИ
+       по формату каждого найденного индикатора (не через общий
+       kind-переключатель), поэтому это отдельный блок, а не третья форма
+       внутри .regulator-intake-bar. Файлы НЕ сохраняются на диск и не
+       пишутся в реестр сразу — сервер только парсит их в памяти и
+       возвращает редактируемый список-превью (#ioc-preview-panel, форма с
+       action на regulator_document_ioc_save) — оператор правит/убирает
+       строки, и только после явного "Сохранить в письмо" список попадает
+       в RegulatorEntry.
+
+       Один видимый контрол вместо прежних отдельных строк "Файлы"/"Папка"
+       (два input'а с ОДНИМ и тем же именем поля ioc_files, оба спрятаны —
+       Django не различает "выбрали папку" (webkitdirectory) от "выбрали
+       несколько файлов" (обычный multiple), оба варианта всё равно
+       приходят одним и тем же плоским списком на сервер): маленькое меню
+       (та же разметка/CSS, что кебаб-меню строки IP-таблицы, .kebab-wrap/
+       .kebab-menu) выбирает, КАКОЙ из двух input'ов открыть — выбор папки
+       рекурсивно захватывает все файлы внутри неё, выбор файлов — только
+       отмеченные. Очистка "чужого" input'а перед открытием — иначе после
+       передумавшего клика ("выбрал файлы, потом решил выбрать папку") оба
+       набора уехали бы на сервер одним request.FILES.getlist('ioc_files'),
+       смешавшись. -->
   <div class="regulator-intake-bar regulator-ioc-bar">
     <div class="regulator-intake-row">
       <span class="regulator-intake-label">Разбор документов</span>
-      <span class="cell-muted" style="font-size:.8125rem;">PDF/DOCX — только депрофанированные индикаторы (hxxp/[.]/[:])</span>
+      <span class="cell-muted" style="font-size:.8125rem;">
+        PDF/DOCX — депрофанированные индикаторы (hxxp/[.]/[:]); CSV — уже
+        чистый список, по одному значению IP/FQDN/URL в строке
+      </span>
     </div>
     <form hx-post="{% url 'ip_plan:regulator_document_ioc_parse' document.id %}"
           hx-target="#ioc-preview-panel" hx-swap="innerHTML" hx-encoding="multipart/form-data"
-          hx-indicator="#ioc-parse-spinner-files"
-          hx-on::after-request="if (event.detail.xhr.status === 200) this.reset();"
-          class="regulator-intake-csv-form">
+          hx-indicator="#ioc-parse-spinner"
+          hx-on::after-request="if (event.detail.xhr.status === 200) { this.reset(); selectedCount = 0; }"
+          class="regulator-intake-csv-form"
+          x-data="{ menuOpen: false, selectedCount: 0 }">
       {% csrf_token %}
-      <span class="regulator-intake-label">Файлы</span>
-      <input type="file" name="ioc_files" accept=".pdf,.docx" multiple class="field-control" required>
-      <button type="submit" class="btn-modal-secondary btn-sm">Разобрать</button>
-      <span id="ioc-parse-spinner-files" class="htmx-indicator">…</span>
-    </form>
-    <form hx-post="{% url 'ip_plan:regulator_document_ioc_parse' document.id %}"
-          hx-target="#ioc-preview-panel" hx-swap="innerHTML" hx-encoding="multipart/form-data"
-          hx-indicator="#ioc-parse-spinner-folder"
-          hx-on::after-request="if (event.detail.xhr.status === 200) this.reset();"
-          class="regulator-intake-csv-form">
-      {% csrf_token %}
-      <span class="regulator-intake-label">Папка</span>
-      <input type="file" name="ioc_files" webkitdirectory multiple class="field-control" required>
-      <button type="submit" class="btn-modal-secondary btn-sm">Разобрать</button>
-      <span id="ioc-parse-spinner-folder" class="htmx-indicator">…</span>
+      <input type="file" name="ioc_files" accept=".pdf,.docx,.csv" multiple style="display:none"
+             x-ref="filesInput" @change="selectedCount = $event.target.files.length">
+      <input type="file" name="ioc_files" webkitdirectory multiple style="display:none"
+             x-ref="folderInput" @change="selectedCount = $event.target.files.length">
+      <div class="kebab-wrap" @click.outside="menuOpen = false">
+        <button type="button" class="btn-modal-secondary btn-sm" @click="menuOpen = !menuOpen">
+          Выбрать файлы или папку
+        </button>
+        <div class="kebab-menu" :class="{ show: menuOpen }">
+          <button type="button" @click="menuOpen = false; $refs.folderInput.value = ''; $refs.filesInput.click()">Файлы…</button>
+          <button type="button" @click="menuOpen = false; $refs.filesInput.value = ''; $refs.folderInput.click()">Папка…</button>
+        </div>
+      </div>
+      <span class="cell-muted" x-show="selectedCount" x-text="'Выбрано: ' + selectedCount"></span>
+      <button type="submit" class="btn-modal-secondary btn-sm" :disabled="!selectedCount">Разобрать</button>
+      <span id="ioc-parse-spinner" class="htmx-indicator">…</span>
     </form>
     {% include "ip_plan/_regulator_ioc_preview.html" with rows=None %}
   </div>

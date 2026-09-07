@@ -1,5 +1,6 @@
-"""Извлечение депрофанированных индикаторов компрометации (IOC) из писем/
-бюллетеней регулятора (PDF/DOCX) — см. docs/plans/2026-09-07-ioc-parser-design.md.
+"""Извлечение индикаторов компрометации (IOC) из писем/бюллетеней регулятора
+(PDF/DOCX — депрофанированные, CSV — уже чистые готовые списки) — см.
+docs/plans/2026-09-07-ioc-parser-design.md.
 
 Только текстовый разбор, никаких сетевых обращений и никакого "оживления"
 найденных адресов в кликабельные ссылки — сами письма прямо запрещают
@@ -48,7 +49,24 @@ IP_FOOTNOTE_RE = re.compile(r"\b(?:\d{1,3}\[\.\]){3}\d{1,3}[A-Za-z]{1,2}\b")
 # join_broken_url_lines.
 LINE_TERMINAL_CHARS = ";.,)"
 
-SUPPORTED_SUFFIXES = (".pdf", ".docx")
+SUPPORTED_SUFFIXES = (".pdf", ".docx", ".csv")
+
+# ── "Чистые" (не депрофанированные) регулярки — для CSV-списков ─────────
+# Формат таких файлов уже готов к загрузке (см. design doc): по одному
+# значению IP/FQDN/URL на строку, без hxxp/[.]/[:] — обычные реальные
+# адреса, как их принимает RegulatorEntryForm. Пустые строки — просто
+# визуальные разделители смысловых блоков у пользователя, тип строки не
+# зависит от секции, только от её собственной формы.
+CLEAN_URL_RE = re.compile(r"^https?://\S+$", re.IGNORECASE)
+CLEAN_IP_RE = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
+# "Похоже на IP, но не 4 октета" (1.2.3 / 1.2.3.4.5) — до проверки на домен,
+# тем же принципом, что IP_SHAPED_RE у депрофанированного пайплайна: чисто
+# числовая точечная строка — это ошибка в IP, а не домен.
+CLEAN_IP_SHAPED_RE = re.compile(r"^\d+(?:\.\d+)+$")
+CLEAN_DOMAIN_RE = re.compile(
+    r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?"
+    r"(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$"
+)
 
 
 # ── Дата-класс индикатора ────────────────────────────────────────────────
@@ -145,6 +163,25 @@ def join_broken_url_lines(lines):
 
 # ── Извлечение индикаторов из текста одного файла ────────────────────────
 
+def _record(indicators, kind, value_plain, value_defanged, source_file, needs_review=False, note=""):
+    """Общий accumulator для обоих пайплайнов (депрофанированный текст PDF/
+    DOCX и чистые CSV-списки, см. extract_csv_indicators ниже) — вынесен из
+    прежнего вложенного record() в extract_indicators_from_text, чтобы не
+    дублировать логику дедупликации/слияния needs_review/note."""
+    bucket = indicators.setdefault(kind, {})
+    key = value_plain
+    ind = bucket.get(key)
+    if ind is None:
+        ind = Indicator(kind=kind, value=value_plain, value_defanged=value_defanged)
+        bucket[key] = ind
+    ind.source_files.add(source_file)
+    ind.occurrences += 1
+    if needs_review:
+        ind.needs_review = True
+        if note and note not in ind.note:
+            ind.note = f"{ind.note}; {note}" if ind.note else note
+
+
 def extract_indicators_from_text(lines, source_file, indicators):
     """lines — уже склеенный (join_broken_url_lines) список строк файла.
     indicators — dict {kind: {match_key: Indicator}}, мутируется на месте
@@ -153,18 +190,7 @@ def extract_indicators_from_text(lines, source_file, indicators):
     full_text = "\n".join(lines)
 
     def record(kind, value_plain, value_defanged, needs_review=False, note=""):
-        bucket = indicators.setdefault(kind, {})
-        key = value_plain
-        ind = bucket.get(key)
-        if ind is None:
-            ind = Indicator(kind=kind, value=value_plain, value_defanged=value_defanged)
-            bucket[key] = ind
-        ind.source_files.add(source_file)
-        ind.occurrences += 1
-        if needs_review:
-            ind.needs_review = True
-            if note and note not in ind.note:
-                ind.note = f"{ind.note}; {note}" if ind.note else note
+        _record(indicators, kind, value_plain, value_defanged, source_file, needs_review, note)
 
     # 1. SHA256 — на исходном (не депрофанированном) тексте, независимо от
     #    остального пайплайна (хэши не пересекаются с URL/IP/domain regex).
@@ -210,6 +236,48 @@ def extract_indicators_from_text(lines, source_file, indicators):
         if not raw or IP_SHAPED_RE.match(raw):
             continue
         record("domain", refang(raw), raw)
+
+
+# ── CSV/чистые текстовые списки — один индикатор на строку ───────────────
+
+def classify_clean_line(line):
+    """Тип одной уже "чистой" строки (без депрофанации) — та же логика
+    приоритетов, что у депрофанированного пайплайна (хэш -> URL -> IP ->
+    домен), только регулярки под реальные (не [.]/hxxp) значения. Строка
+    уже .strip()'нута вызывающим кодом.
+
+    Возвращает (kind, value, needs_review, note); kind всегда какой-то —
+    формат обещан "готовым к загрузке" (см. UI-подсказку), поэтому не
+    отбрасываем строку молча даже если не смогли её опознать (needs_review),
+    тем же принципом, что невалидный октет у депрофанированного IP."""
+    if HASH_RE.fullmatch(line):
+        return "sha256", line.lower(), False, ""
+    if CLEAN_URL_RE.match(line):
+        return "url", line, False, ""
+    if CLEAN_IP_RE.match(line):
+        if _validate_ip_octets(line):
+            return "ip", line, False, ""
+        return "ip", line, True, "invalid octet range (0-255)"
+    if CLEAN_IP_SHAPED_RE.match(line):
+        return "ip", line, True, "не похоже на корректный IPv4 (ожидается 4 октета)"
+    if CLEAN_DOMAIN_RE.match(line):
+        return "domain", line, False, ""
+    return "domain", line, True, "не удалось определить тип строки по формату — проверьте вручную"
+
+
+def extract_csv_indicators(lines, source_file, indicators):
+    """CSV/чистый текстовый список (см. design doc) — один индикатор на
+    непустую строку, без депрофанации: файл уже "готов к загрузке". Пустые
+    строки — просто разделители смысловых блоков у пользователя (визуальная
+    группировка "сначала все FQDN, потом все IP" и т.п.), ничего не значат
+    для типа — тип определяется по форме каждой конкретной строки, поэтому
+    один файл может свободно содержать вперемешку IP/FQDN/URL/SHA256."""
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+        kind, value, needs_review, note = classify_clean_line(line)
+        _record(indicators, kind, value, None, source_file, needs_review=needs_review, note=note)
 
 
 # ── Извлечение текста из файлов ──────────────────────────────────────────
@@ -259,6 +327,28 @@ def extract_docx_lines(file_obj_or_path):
     return lines
 
 
+def extract_csv_lines(file_obj_or_path):
+    """Читает CSV/текстовый файл целиком и делит на строки. Кодировка — по
+    очереди utf-8-sig (снимает BOM, если есть — частый случай для файлов из
+    Excel/Notepad) и cp1251 (тоже частый для русских экспортов); "готов к
+    загрузке" не гарантирует конкретную кодировку. None — не удалось
+    декодировать ни одним из вариантов, вызывающий код превращает это в
+    warning и пропускает файл, как и для битого PDF/DOCX."""
+    if hasattr(file_obj_or_path, "read"):
+        raw = file_obj_or_path.read()
+    else:
+        with open(file_obj_or_path, "rb") as f:
+            raw = f.read()
+    if isinstance(raw, str):
+        return raw.splitlines()
+    for encoding in ("utf-8-sig", "cp1251"):
+        try:
+            return raw.decode(encoding).splitlines()
+        except UnicodeDecodeError:
+            continue
+    return None
+
+
 def extract_lines(filename, file_obj_or_path):
     """Диспетчер по расширению имени файла. Возвращает (lines, warning) —
     warning не None, если файл пропущен (неподдерживаемый формат, ошибка
@@ -274,18 +364,30 @@ def extract_lines(filename, file_obj_or_path):
         if lines is None:
             return [], f"{filename}: файл повреждён или не открылся как DOCX"
         return lines, None
-    return [], f"{filename}: неподдерживаемый формат (ожидается .pdf/.docx)"
+    if lower.endswith(".csv"):
+        lines = extract_csv_lines(file_obj_or_path)
+        if lines is None:
+            return [], f"{filename}: не удалось прочитать файл (неизвестная кодировка)"
+        return lines, None
+    return [], f"{filename}: неподдерживаемый формат (ожидается .pdf/.docx/.csv)"
 
 
 # ── Обработка одного файла (для веб-эндпоинта — файл уже открыт в памяти) ─
 
 def parse_file(filename, file_obj, indicators):
     """file_obj — файлоподобный объект (Django UploadedFile или открытый
-    файл). Мутирует indicators (см. extract_indicators_from_text). Возвращает
-    warning-строку или None."""
+    файл). Мутирует indicators. Возвращает warning-строку или None.
+
+    CSV — отдельная ветка: значения уже "чистые" (не депрофанированные),
+    join_broken_url_lines/extract_indicators_from_text рассчитаны именно на
+    депрофанированный текст PDF/DOCX (ищут hxxp/[.]/[:]) и просто не нашли
+    бы в CSV ничего — см. extract_csv_indicators."""
     lines, warning = extract_lines(filename, file_obj)
     if warning:
         return warning
+    if filename.lower().endswith(".csv"):
+        extract_csv_indicators(lines, filename, indicators)
+        return None
     joined = join_broken_url_lines(lines)
     extract_indicators_from_text(joined, filename, indicators)
     return None

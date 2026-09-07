@@ -757,7 +757,7 @@ _IOC_KIND_TO_ENTRY_KIND = {"ip": "ip", "domain": "fqdn", "url": "url", "sha256":
 
 
 def regulator_document_ioc_parse(request, document_id):
-    """POST — разбор загруженных PDF/DOCX на детальной странице письма (см.
+    """POST — разбор загруженных PDF/DOCX/CSV на детальной странице письма (см.
     ip_plan/services/ioc_parser.py и design doc). Файлы НЕ сохраняются на
     диск — parse_file() читает каждый прямо из памяти (Django
     UploadedFile — тот же файлоподобный объект, что pdfplumber/python-docx
