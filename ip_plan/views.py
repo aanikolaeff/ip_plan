@@ -651,7 +651,16 @@ def regulator_entry_quick_add(request, document_id):
     Ошибка — НЕ трогает таблицу вообще (no main swap), только OOB-обновление
     #quick-add-error рядом со строкой приёма. Значение, которое пользователь
     уже напечатал, остаётся в поле — не наказываем повторным вводом при
-    опечатке."""
+    опечатке.
+
+    Значение (тот же тип, без учёта регистра), уже существующее В ЭТОМ ЖЕ
+    письме — активное или снятое, неважно — молча пропускается вместо
+    создания дубля: тем же принципом, что batch-сохранение из
+    regulator_document_ioc_save (см. её докстринг про то, почему не по
+    другим письмам и не по match_value). UI-реакция та же, что на успех
+    (поле очищается) — с точки зрения оператора нужный результат ("это
+    значение есть в письме") уже достигнут, просто отдельным тоастом, не
+    "Запись добавлена"."""
     document = get_object_or_404(RegulatorDocument, pk=document_id)
     raw_value = (request.POST.get("value") or "").strip()
     classified = ioc_parser.classify_clean_line(raw_value) if raw_value else None
@@ -667,6 +676,18 @@ def regulator_entry_quick_add(request, document_id):
     data["value"] = classified_value
     form = RegulatorEntryForm(data)
     if form.is_valid():
+        dup_kind = form.cleaned_data["kind"]
+        dup_value = form.cleaned_data["value"]
+        if RegulatorEntry.objects.filter(document=document, kind=dup_kind, value__iexact=dup_value).exists():
+            error_html = render_to_string(
+                "ip_plan/_regulator_quick_add_error.html", {"error": None, "oob": True}, request=request
+            )
+            response = HttpResponse(error_html)
+            response["HX-Trigger"] = json.dumps({
+                "clear-quick-add": None,
+                "show-toast": {"message": "Уже есть в этом письме — не задвоено", "kind": "info"},
+            })
+            return response
         entry = form.save()
         row_html = render_to_string(
             "ip_plan/_regulator_entry_row.html", {"entry": entry, "document": document}, request=request
@@ -774,8 +795,22 @@ def regulator_document_ioc_save(request, document_id):
 
     Как и CSV-загрузка — хотя бы одна невалидная строка ПОСЛЕ правок
     оператором отклоняет ВЕСЬ список целиком (ничего не сохраняется),
-    ошибки показываются построчно в той же превью-форме, ничего в ней не
-    трогая — можно поправить и отправить снова."""
+    ошибки показываются построчно в той же превью-форме, ничего не
+    трогая — можно поправить и отправить снова.
+
+    Строки, совпадающие (тип + значение, без учёта регистра) с уже
+    существующей в ЭТОМ ЖЕ письме записью — активной или снятой, неважно —
+    молча пропускаются, а не отклоняются как ошибка: реальный сценарий,
+    из-за которого это появилось — та же папка/файлы загружены в письмо
+    повторно (по невнимательности или чтобы дозаписать пропущенное),
+    раньше это просто задваивало (а при третьей попытке — утраивало) все
+    записи. Значение, уже встречавшееся в ДРУГОМ письме, не считается
+    дублем — регулятор может законно упомянуть один и тот же IOC в
+    нескольких письмах, это не ошибка, а обычная переписка. Сравниваем по
+    ПОЛНОМУ value, не по match_value — у kind=url match_value обрезан до
+    хоста (см. RegulatorEntry.compute_match_value), а разные payload-URL на
+    одном хосте (типичный случай в письмах регулятора: .../client32.ini и
+    .../client32.exe на одном сервере) — это разные IOC, не дубли."""
     document = get_object_or_404(RegulatorDocument, pk=document_id)
     kinds = request.POST.getlist("ioc_kind")
     values = request.POST.getlist("ioc_value")
@@ -823,8 +858,22 @@ def regulator_document_ioc_save(request, document_id):
             status=400,
         )
 
+    # (kind, value.lower()) уже в этом письме — и то, что реально лежит в
+    # БД, и то, что мы вот-вот создадим в этом же цикле (превью — форма, её
+    # можно отредактировать так, что две строки совпадут между собой, не
+    # только с уже сохранённым).
+    existing_keys = {
+        (kind, value.lower())
+        for kind, value in RegulatorEntry.objects.filter(document=document).values_list("kind", "value")
+    }
     created = []
+    skipped_existing = 0
     for kind, value in validated:
+        key = (kind, value.lower())
+        if key in existing_keys:
+            skipped_existing += 1
+            continue
+        existing_keys.add(key)
         entry = RegulatorEntry(document=document, kind=kind, value=value)
         entry.save()
         created.append(entry)
@@ -836,9 +885,13 @@ def regulator_document_ioc_save(request, document_id):
     clear_preview_html = render_to_string(
         "ip_plan/_regulator_ioc_preview.html", {"document": document, "rows": [], "oob": True}, request=request
     )
+    if skipped_existing:
+        message = f"Сохранено новых: {len(created)}; уже было в этом письме: {skipped_existing}"
+    else:
+        message = f"Сохранено записей: {len(created)}"
     response = HttpResponse(rows_html + clear_preview_html)
     response["HX-Trigger"] = json.dumps(
-        {"show-toast": {"message": f"Сохранено записей: {len(created)}", "kind": "success"}}
+        {"show-toast": {"message": message, "kind": "success"}}
     )
     return response
 
