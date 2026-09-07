@@ -13,3 +13,9 @@ staticfiles/
 # как и .venv/staticfiles/ выше.
 node_modules/
 ip_plan/static/ip_plan/dist/
+
+# Реальная переписка с регулятором (письма ФСТЭК, тестовые CSV) — обнаружена
+# лежащей прямо в рабочей копии при аудите IOC-парсера (см.
+# docs/plans/2026-09-07-ioc-parser-fstec-corpus-audit.md), не файл проекта.
+# Не должна попасть в git ни при каком случайном `git add -A`.
+FSTEC/
