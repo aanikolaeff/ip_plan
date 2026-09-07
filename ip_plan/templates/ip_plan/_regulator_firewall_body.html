@@ -1,8 +1,4 @@
-<div class="modal-title-bar">
-  <h5>Команды для firewall</h5>
-  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть">✕</button>
-</div>
-<div class="modal-body-pad">
+<div id="regulator-firewall-body"{% if oob %} hx-swap-oob="true"{% endif %}>
   <p class="cell-muted">
     На xFW 5000 нет CLI-команды правки уже созданного списка — только
     просмотр. Ниже — команды создания НОВЫХ списков (с очередным номером в
@@ -65,7 +61,8 @@
     {% endif %}
   </div>
 
-  <form hx-post="{% url 'ip_plan:regulator_firewall_commands_apply' %}" hx-target="#modal-content" hx-swap="none">
+  <form hx-post="{% url 'ip_plan:regulator_firewall_commands_apply' %}"
+        hx-target="#regulator-firewall-body" hx-swap="none">
     {% csrf_token %}
     <input type="hidden" name="ip_next_name" value="{{ ip_next_name }}">
     <input type="hidden" name="fqdn_next_name" value="{{ fqdn_next_name }}">
@@ -78,7 +75,4 @@
       Отметить применённым (@{{ ip_next_name }} / @{{ fqdn_next_name }})
     </button>
   </form>
-</div>
-<div class="modal-footer-bar">
-  <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Закрыть</button>
 </div>

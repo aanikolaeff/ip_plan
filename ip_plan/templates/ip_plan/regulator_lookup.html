@@ -16,13 +16,13 @@
     </p>
   </section>
 
-  <!-- Вкладки «Письма»/«Записи» — чисто клиентское переключение (Alpine,
-       без похода на сервер): обе панели всегда в DOM, видна одна (x-show).
-       Своя визуальная манера (underline-tabs), не .nav-tab (это верхняя
-       постоянная навигация между разделами приложения) и не .kind-toggle
-       (сегментированный переключатель типа IOC в строке приёма) — третий,
-       отдельный смысл ("секции внутри одной страницы"), не должен путаться
-       ни с одним из первых двух. -->
+  <!-- Вкладки «Письма»/«Записи»/«Команды для xFW» — чисто клиентское
+       переключение (Alpine, без похода на сервер): все панели всегда в
+       DOM, видна одна (x-show). Своя визуальная манера (underline-tabs),
+       не .nav-tab (это верхняя постоянная навигация между разделами
+       приложения) и не .kind-toggle (сегментированный переключатель типа
+       IOC в строке приёма) — третий, отдельный смысл ("секции внутри одной
+       страницы"), не должен путаться ни с одним из первых двух. -->
   <div x-data="{ tab: 'letters' }">
     <div class="regulator-tabs-bar" role="tablist">
       <button type="button" class="regulator-tab" :class="{ active: tab === 'letters' }" @click="tab = 'letters'">
@@ -30,6 +30,9 @@
       </button>
       <button type="button" class="regulator-tab" :class="{ active: tab === 'entries' }" @click="tab = 'entries'">
         Записи
+      </button>
+      <button type="button" class="regulator-tab" :class="{ active: tab === 'firewall' }" @click="tab = 'firewall'">
+        Команды для xFW
       </button>
     </div>
 
@@ -47,21 +50,16 @@
     </div>
 
     <div x-show="tab === 'entries'" x-cloak>
-      <div class="hero-row" style="margin-top: 1.25rem;">
-        <button type="button" class="btn-modal-secondary"
-                hx-get="{% url 'ip_plan:regulator_firewall_commands' %}"
-                hx-target="#modal-content"
-                hx-indicator="#modal-spinner"
-                @click="$store.modal.dirty = false; $dispatch('open-modal')">
-          Команды для firewall
-        </button>
-      </div>
       <!-- Записи вносятся внутри конкретного письма (см.
            regulator_document_detail.html) — эта вкладка вместо этого
            сквозной поиск/сверка по всем письмам сразу, на той же основе,
            что и основной IP План (React/TanStack, см.
            static_src/regulator_table). -->
       <div id="regulator-entries-root"></div>
+    </div>
+
+    <div x-show="tab === 'firewall'" x-cloak style="margin-top: 1.25rem;">
+      {% include "ip_plan/_regulator_firewall_body.html" %}
     </div>
   </div>
 {% endblock %}

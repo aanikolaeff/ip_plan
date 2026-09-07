@@ -474,13 +474,17 @@ def _regulator_letters_context(request):
 def regulator_list(request):
     """Страница «Блокировки регулятора» — тот же принцип, что у acl_lookup:
     один URL на обычный GET и на HTMX (переключение сортировки бьёт сюда же,
-    hx-push-url кладёт query-string в адресную строку). Рендерит только
-    вкладку «Письма» — «Записи» подгружает свои данные отдельным JSON-
-    запросом (regulator_entries_json), это статический React-island, ему не
-    нужен серверный рендер тела при каждом хите."""
+    hx-push-url кладёт query-string в адресную строку). HTMX-ветка отдаёт
+    только вкладку «Письма» (единственное, что там переключает сортировку) —
+    «Записи» подгружает свои данные отдельным JSON-запросом
+    (regulator_entries_json, статический React-island), а «Команды для
+    xFW» пересчитывается заново при каждой полной загрузке страницы (нужен
+    и там, и при HX-Trigger от regulator_firewall_commands_apply — не имеет
+    смысла тащить в HTMX-партиал сортировки писем)."""
     context = _regulator_letters_context(request)
     if request.headers.get("HX-Request") == "true":
         return render(request, "ip_plan/_regulator_letters_body.html", context)
+    context.update(_regulator_firewall_context())
     return render(request, "ip_plan/regulator_lookup.html", context)
 
 
@@ -938,11 +942,11 @@ def regulator_entry_delete(request, entry_id):
     )
 
 
-def regulator_firewall_commands(request):
-    """GET — модалка с двумя готовыми CLI-командами (firewall ip-object add)
-    для xFW: одна создаёт новый список IP, другая — новый список FQDN (с
-    доменом из URL-записей — firewall фильтрует только по DNS/IP, не по
-    path, см. RegulatorEntry.match_value).
+def _regulator_firewall_context():
+    """Контекст вкладки «Команды для xFW» — две готовые CLI-команды
+    (firewall ip-object add): одна создаёт новый список IP, другая — новый
+    список FQDN (с доменом из URL-записей — firewall фильтрует только по
+    DNS/IP, не по path, см. RegulatorEntry.match_value).
 
     Значения — ОБЪЕДИНЕНИЕ двух источников, не только реестр: (1) все
     активные записи RegulatorEntry и (2) то, что реально уже применено на
@@ -959,7 +963,12 @@ def regulator_firewall_commands(request):
     отдаёт только "show"). Реальный workflow: скопировать команду в
     консоль устройства (нужен admin-режим/enable, свой пароль), затем
     применить новый список вместо старого через веб-интерфейс ViPNet —
-    та часть по SSH недоступна вообще, только руками."""
+    та часть по SSH недоступна вообще, только руками.
+
+    Вынесено в отдельную функцию (раньше — тело regulator_firewall_commands,
+    модалки): теперь эти же данные нужны в двух местах — при обычном
+    рендере вкладки «Команды для xFW» (regulator_list) и при OOB-обновлении
+    после «Отметить применённым» (regulator_firewall_commands_apply)."""
     ip_obj, _ = FirewallObjectName.objects.get_or_create(kind="ip", defaults={"current_name": "BLOCK_BY_IP_1"})
     fqdn_obj, _ = FirewallObjectName.objects.get_or_create(kind="fqdn", defaults={"current_name": "BBDNS_0"})
 
@@ -1003,28 +1012,36 @@ def regulator_firewall_commands(request):
         context["ip_command"] = f"firewall ip-object add name @{ip_next_name} {','.join(ip_values)}"
     if fqdn_values:
         context["fqdn_command"] = f"firewall ip-object add name @{fqdn_next_name} {','.join(fqdn_values)}"
-    return render(request, "ip_plan/regulator_firewall_commands_modal.html", context)
+    return context
 
 
 @require_http_methods(["POST"])
 def regulator_firewall_commands_apply(request):
     """POST — "Отметить применённым": администратор реально создал и
     применил оба новых списка через веб-интерфейс ViPNet — продвигает
-    current_name на то имя, что было показано в модалке (ip_next_name/
+    current_name на то имя, что было показано на вкладке (ip_next_name/
     fqdn_next_name из скрытых полей формы, НЕ пересчитываем заново здесь:
-    если между открытием модалки и нажатием этой кнопки кто-то добавил
+    если между открытием вкладки и нажатием этой кнопки кто-то добавил
     новую активную запись, свежий next_name() уже успел бы уйти на шаг
     дальше — отметка "применено" продвинула бы current_name на имя, которое
-    администратор на самом деле не создавал)."""
+    администратор на самом деле не создавал).
+
+    Ответ — OOB-обновление всей вкладки (свежие ip_next_name/fqdn_next_name
+    после продвижения current_name), тот же паттерн, что у
+    _regulator_saved_response — но без close-modal: это больше не модалка,
+    отдельная вкладка «Команды для xFW»."""
     ip_next_name = request.POST.get("ip_next_name")
     fqdn_next_name = request.POST.get("fqdn_next_name")
     if ip_next_name:
         FirewallObjectName.objects.update_or_create(kind="ip", defaults={"current_name": ip_next_name})
     if fqdn_next_name:
         FirewallObjectName.objects.update_or_create(kind="fqdn", defaults={"current_name": fqdn_next_name})
-    response = HttpResponse(status=204)
+    html = render_to_string(
+        "ip_plan/_regulator_firewall_body.html", {**_regulator_firewall_context(), "oob": True}, request=request
+    )
+    response = HttpResponse(html)
     response["HX-Trigger"] = json.dumps(
-        {"close-modal": None, "show-toast": {"message": "Текущие имена обновлены", "kind": "success"}}
+        {"show-toast": {"message": "Текущие имена обновлены", "kind": "success"}}
     )
     return response
 

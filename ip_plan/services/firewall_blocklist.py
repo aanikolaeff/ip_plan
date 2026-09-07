@@ -4,7 +4,7 @@
 ${NETBOX_SYNC_DIR}/firewall_blocklists, read-only, тот же принцип, что
 sync_log.py/acl_store.py).
 
-Используется генератором CLI-команд (views.regulator_firewall_commands):
+Используется генератором CLI-команд (views._regulator_firewall_context):
 "новый" список для firewall должен включать не только записи из реестра
 регулятора, но и то, что реально уже применено сейчас — иначе значения,
 попавшие на firewall в обход реестра (руками, до того как реестр начали

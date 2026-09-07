@@ -505,7 +505,8 @@
     .regulator-back-link:hover { color: var(--accent); }
     .regulator-doc-date { font-weight: 400; color: var(--text-muted); font-size: .65em; }
 
-    /* --- Блокировки регулятора: модалка "Команды для firewall" --- */
+    /* --- Блокировки регулятора: вкладка "Команды для xFW" (раньше была
+       модалкой, см. _regulator_firewall_body.html) --- */
     .firewall-cmd-box {
       background: var(--bg-page);
       border: 1px solid var(--border-soft);

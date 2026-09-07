@@ -80,7 +80,11 @@ urlpatterns = [
         "regulator/entry/<int:entry_id>/delete.json",
         views.regulator_entry_delete_api, name="regulator_entry_delete_api",
     ),
-    path("regulator/firewall-commands/", views.regulator_firewall_commands, name="regulator_firewall_commands"),
+    # Раньше был ещё GET regulator/firewall-commands/ (модалка) — команды
+    # переехали на отдельную вкладку страницы (regulator_lookup.html),
+    # рендерится вместе с остальной страницей при обычном GET /regulator/,
+    # отдельный URL для GET больше не нужен (см. regulator_list /
+    # _regulator_firewall_context).
     path(
         "regulator/firewall-commands/apply/",
         views.regulator_firewall_commands_apply, name="regulator_firewall_commands_apply",
