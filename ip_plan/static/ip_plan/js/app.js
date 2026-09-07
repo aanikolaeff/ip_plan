@@ -1395,9 +1395,22 @@
       // который эта функция ожидает. Без этого guard'а DataTable()
       // пыталась бы взять React-узел под свой контроль (и на resize падала
       // с "Cannot read properties of undefined (reading 'page')", т.к.
-      // инициализация не проходит до конца на чужой разметке) — #ip-table-
-      // root в DOM есть только на этой, React-версии страницы.
-      if (document.getElementById('ip-table-root')) return;
+      // инициализация не проходит до конца на чужой разметке).
+      //
+      // initIpTable() навешена глобально (DOMContentLoaded + htmx:oobAfterSwap
+      // на document.body — см. ниже), а не только на странице IP-плана,
+      // поэтому единственная защита — проверить, что мы вообще на ней:
+      // #ip-table-root в DOM есть только там. Страница «Блокировки»
+      // (regulator_table/TableRoot.jsx) переиспользует тот же id="ip-table"
+      // на своей таблице по той же причине (общие CSS-правила) — без второй
+      // проверки здесь эта функция хватала бы React-узел ЭТОЙ таблицы
+      // вместо IP-плана (обнаружено вживую: DataTables конфигурирует 16
+      // колонок IP-плана поверх 6-колоночной таблицы записей регулятора —
+      // "Requested unknown parameter '6'" и разваленный DOM после
+      // htmx:oobAfterSwap на удалении письма). Каждый новый React-island,
+      // переиспользующий id="ip-table" ради стилей, должен добавить сюда
+      // свой корневой div.
+      if (document.getElementById('ip-table-root') || document.getElementById('regulator-entries-root')) return;
       if ($.fn.DataTable.isDataTable('#ip-table')) {
         // .destroy() сам сбрасывает видимость ВСЕХ колонок как часть
         // очистки и стреляет 'column-visibility.dt' на старом инстансе —
