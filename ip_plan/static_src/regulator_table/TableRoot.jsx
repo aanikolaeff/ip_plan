@@ -6,7 +6,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { columns } from './columns.jsx';
+import { buildColumns } from './columns.jsx';
 import { fetchRegulatorEntries } from './api.js';
 import { loadJSON, loadSession, saveJSON, saveSession } from './storage.js';
 
@@ -19,13 +19,19 @@ const KIND_OPTIONS = [
   ['hash', 'IOC'],
 ];
 
-// React/TanStack island вкладки «Записи» — «та же основа, что основной IP
-// план» (см. ip_table/TableRoot.jsx): один fetch целиком + вся фильтрация/
-// сортировка/пагинация клиентские, без похода на сервер за каждой
-// страницей/фильтром. Упрощено относительно ip_table: нет инлайн-
-// редактирования, гэп-строк, OS-меню, кебаб-меню, закрепления/скрытия
-// колонок и bulk-выбора — их тут просто нет по смыслу задачи.
-export default function TableRoot() {
+// React/TanStack island — «та же основа, что основной IP план» (см.
+// ip_table/TableRoot.jsx): один fetch целиком + вся фильтрация/сортировка/
+// пагинация клиентские, без похода на сервер за каждой страницей/фильтром.
+// Упрощено относительно ip_table: нет инлайн-редактирования, гэп-строк,
+// OS-меню, кебаб-меню, закрепления/скрытия колонок и bulk-выбора — их тут
+// просто нет по смыслу задачи.
+//
+// Один и тот же компонент для двух мест: вкладка «Записи» общего списка
+// (documentId не задан — сквозной обзор по всем письмам) и таблица записей
+// на детальной странице ОДНОГО письма (documentId задан — см. main.jsx,
+// data-document-id на #regulator-entries-root). Разница — только в
+// параметре fetch'а (?document=) и составе колонок/действий (buildColumns).
+export default function TableRoot({ documentId }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -40,6 +46,11 @@ export default function TableRoot() {
   const [sorting, setSorting] = useState([{ id: 'created_at', desc: true }]);
   const [pageSize, setPageSize] = useState(() => loadSession('pageSize', 100));
 
+  const columns = useMemo(
+    () => buildColumns({ showDocument: !documentId, showRevoke: !!documentId }),
+    [documentId],
+  );
+
   useEffect(() => { saveJSON('columnSizing', columnSizing); }, [columnSizing]);
   useEffect(() => { saveSession('pageSize', pageSize); }, [pageSize]);
 
@@ -53,7 +64,7 @@ export default function TableRoot() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchRegulatorEntries();
+      const data = await fetchRegulatorEntries(documentId);
       setRows(data.entries || []);
     } catch (e) {
       setError(e.message || 'Не удалось загрузить список записей');
@@ -63,13 +74,26 @@ export default function TableRoot() {
     }
   }
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); }, [documentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!error) return undefined;
     const timer = setInterval(loadData, 8000);
     return () => clearInterval(timer);
   }, [error]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // "Ввести данные"/"Загрузить файлы" на детальной странице письма — обычные
+  // HTMX-формы, не React (см. regulator_document_detail.html) — при успехе
+  // сервер добавляет "regulator-entries-changed" в HX-Trigger своего ответа
+  // (тот же механизм, что show-toast/close-modal, см. base.html), а не
+  // возвращает готовый HTML строки, как раньше: таблица теперь тут, у неё
+  // нет DOM-узла, куда вставлять <tr> — проще (и надёжнее рассинхрона)
+  // просто перезапросить список целиком.
+  useEffect(() => {
+    if (!documentId) return undefined;
+    window.addEventListener('regulator-entries-changed', loadData);
+    return () => window.removeEventListener('regulator-entries-changed', loadData);
+  }, [documentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function updateEntry(id, patch) {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -120,7 +144,8 @@ export default function TableRoot() {
         <div className="toolbar-left">
           <div className="toolbar-input-wrap">
             <input
-              className="toolbar-input" type="text" placeholder="🔍 Поиск по значению/письму..."
+              className="toolbar-input" type="text"
+              placeholder={documentId ? '🔍 Поиск по значению...' : '🔍 Поиск по значению/письму...'}
               value={search} onChange={(e) => setSearch(e.target.value)}
             />
             {search && (

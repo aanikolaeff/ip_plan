@@ -182,8 +182,9 @@ class RegulatorEntryForm(forms.ModelForm):
         return cleaned
 
 
-class RegulatorEntryRevokeForm(forms.Form):
-    revoked_reason = forms.CharField(
-        label="Причина снятия", required=False,
-        widget=forms.TextInput(attrs={"class": "field-control", "placeholder": "Необязательно"}),
-    )
+# RegulatorEntryRevokeForm (была тут) убрана вместе с HTML-модалкой снятия
+# (regulator_entry_revoke_modal.html) — таблица записей письма теперь React
+# (см. regulator_document_detail.html, static_src/regulator_table), «Снять»
+# там собирает причину через window.prompt() и шлёт JSON прямо в
+# regulator_entry_revoke_api, форма-обёртка вокруг одного необязательного
+# поля больше не нужна.

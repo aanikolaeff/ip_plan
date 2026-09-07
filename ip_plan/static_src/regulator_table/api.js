@@ -49,8 +49,9 @@ export async function fetchWithCsrf(url, method, body) {
   return response;
 }
 
-export async function fetchRegulatorEntries() {
-  const response = await fetch(`${URL_PREFIX}/regulator/entries.json`, { credentials: 'same-origin' });
+export async function fetchRegulatorEntries(documentId) {
+  const qs = documentId ? `?document=${encodeURIComponent(documentId)}` : '';
+  const response = await fetch(`${URL_PREFIX}/regulator/entries.json${qs}`, { credentials: 'same-origin' });
   if (!response.ok) {
     let message = `Не удалось загрузить список записей (HTTP ${response.status})`;
     try {
@@ -59,6 +60,13 @@ export async function fetchRegulatorEntries() {
     throw new Error(message);
   }
   return response.json();
+}
+
+// Причина снятия — необязательная строка, собирается вызывающим кодом
+// (см. row-actions.jsx: window.prompt(), тот же паттерн, что подтверждение
+// удаления в этом же компоненте) — тут просто передаётся дальше.
+export function revokeEntry(id, reason) {
+  return fetchWithCsrf(`${URL_PREFIX}/regulator/entry/${id}/revoke.json`, 'POST', { revoked_reason: reason });
 }
 
 export function reactivateEntry(id) {

@@ -18,7 +18,7 @@ from django.views.decorators.http import require_http_methods
 
 from .forms import (
     CUSTOM_FIELD_KEYS, STATUS_CHOICES, IPAddressForm,
-    RegulatorDocumentForm, RegulatorEntryForm, RegulatorEntryRevokeForm,
+    RegulatorDocumentForm, RegulatorEntryForm,
 )
 from .models import FirewallObjectName, RegulatorDocument, RegulatorEntry
 from .services import acl_store, firewall_blocklist, ioc_parser, os_catalog, sync_log
@@ -414,43 +414,17 @@ def acl_object_group_detail(request, device, name):
 # В отличие от ACL Lookup выше — настоящие Django-модели (см. models.py:
 # записи накапливаются во времени, нужна история/статусы, а не просто
 # зеркало текущего файла на диске). Страница/фильтры — тот же htmx-паттерн,
-# что у acl_lookup (один URL на обычный GET и на HX-запрос, hx-push-url),
-# формы add/revoke — модалки через общий #modal-content, тот же паттерн,
-# что ip_add/os_catalog_entry_save (см. _regulator_saved_response ниже —
-# аналог _saved_response, но с OOB outerHTML всей страницы вместо одной
-# строки: тут нет клиентской React-таблицы, которая сама умеет вставлять
-# новую строку, весь список рендерится сервером).
-
-def _regulator_page_context(request):
-    kind = request.GET.get("kind", "")
-    status = request.GET.get("status", "active")
-    document_id = request.GET.get("document", "")
-    q = request.GET.get("q", "").strip()
-
-    entries = RegulatorEntry.objects.select_related("document").all()
-    if kind:
-        entries = entries.filter(kind=kind)
-    if status in ("active", "revoked"):
-        entries = entries.filter(status=status)
-    if document_id:
-        entries = entries.filter(document_id=document_id)
-    if q:
-        entries = entries.filter(Q(value__icontains=q) | Q(match_value__icontains=q))
-
-    documents = RegulatorDocument.objects.annotate(
-        entries_count=Count("entries"),
-        active_count=Count("entries", filter=Q(entries__status="active")),
-    )
-
-    return {
-        "entries": entries,
-        "documents": documents,
-        "kind": kind,
-        "status": status,
-        "document_id": str(document_id),
-        "q": q,
-    }
-
+# что у acl_lookup (один URL на обычный GET и на HX-запрос, hx-push-url).
+# Записи (RegulatorEntry) везде, где их вообще показывают — и вкладка
+# «Записи» общего списка, и таблица на детальной странице письма —
+# React/TanStack island (static_src/regulator_table, один и тот же
+# TableRoot с разными параметрами, см. main.jsx/regulator_entries_json):
+# один fetch целиком, вся фильтрация/сортировка/пагинация клиентские.
+# Мутации (revoke/reactivate/delete) — свои JSON-эндпоинты (_api ниже),
+# без модалок и OOB-рендера списка сервером — раньше (до перевода детальной
+# страницы письма на этот же компонент) тут был ещё server-rendered путь
+# для неё же, с HTML-модалкой снятия и OOB-обновлением всей таблицы;
+# убран целиком как дублирующий (см. коммит).
 
 def _regulator_letters_context(request):
     """Контекст вкладки «Письма» — только список писем, без фильтра (см.
@@ -534,16 +508,49 @@ def _serialize_regulator_entry(entry):
 
 
 def regulator_entries_json(request):
+    """?document=<id> — тот же список, но только записи ОДНОГО письма (см.
+    static_src/regulator_table/main.jsx: data-document-id на
+    #regulator-entries-root на детальной странице письма). Без параметра —
+    как раньше, все письма разом (вкладка «Записи» общего списка)."""
     entries = RegulatorEntry.objects.select_related("document").all()
+    document_id = request.GET.get("document")
+    if document_id:
+        entries = entries.filter(document_id=document_id)
     return JsonResponse({"entries": [_serialize_regulator_entry(e) for e in entries]})
 
 
 @require_http_methods(["POST"])
+def regulator_entry_revoke_api(request, entry_id):
+    """JSON-версия прежней HTML-модалки снятия (regulator_entry_revoke +
+    regulator_entry_revoke_modal.html, обе убраны) — для React-таблицы на
+    детальной странице письма (static_src/regulator_table). Причина снятия
+    по-прежнему необязательна, но собирается не формой-модалкой, а
+    window.prompt() на клиенте (row-actions.jsx) — тут просто читаем её из
+    JSON-тела запроса вместо request.POST (fetchWithCsrf шлёт
+    application/json, не form-encoded)."""
+    entry = get_object_or_404(RegulatorEntry, pk=entry_id)
+    try:
+        payload = json.loads(request.body or b"{}")
+    except (ValueError, TypeError):
+        payload = {}
+    # [:255] — сознательно, а не полагаемся на валидацию формы (которой тут
+    # больше нет): у RegulatorEntry.revoked_reason max_length=255 на уровне
+    # модели, но не на уровне SQLite-схемы (SQLite не проверяет длину
+    # VARCHAR) — без обрезки слишком длинный prompt() тихо сохранился бы
+    # длиннее объявленного поля.
+    entry.status = "revoked"
+    entry.revoked_at = timezone.now()
+    entry.revoked_reason = (payload.get("revoked_reason") or "").strip()[:255]
+    entry.save(update_fields=["status", "match_value", "revoked_at", "revoked_reason"])
+    return JsonResponse({"entry": _serialize_regulator_entry(entry)})
+
+
+@require_http_methods(["POST"])
 def regulator_entry_reactivate_api(request, entry_id):
-    """JSON-версия regulator_entry_reactivate — для React-таблицы вкладки
-    «Записи» (кнопка «Снять» там убрана по ТЗ, но «Восстановить» для уже
-    снятой записи осталась: без неё опечатка в revoke необратима без похода
-    на детальную страницу письма)."""
+    """JSON-версия regulator_entry_reactivate (убрана вместе с HTML-таблицей
+    записей письма) — используется и вкладкой «Записи» общего списка, и
+    React-таблицей на детальной странице письма (обе — static_src/
+    regulator_table, один и тот же TableRoot)."""
     entry = get_object_or_404(RegulatorEntry, pk=entry_id)
     entry.status = "active"
     entry.revoked_at = None
@@ -554,16 +561,12 @@ def regulator_entry_reactivate_api(request, entry_id):
 
 @require_http_methods(["POST"])
 def regulator_entry_delete_api(request, entry_id):
-    """JSON-версия regulator_entry_delete — для React-таблицы вкладки
-    «Записи»."""
+    """JSON-версия regulator_entry_delete (убрана вместе с HTML-таблицей
+    записей письма) — используется и вкладкой «Записи», и React-таблицей на
+    детальной странице письма."""
     entry = get_object_or_404(RegulatorEntry, pk=entry_id)
     entry.delete()
     return JsonResponse({"ok": True, "id": entry_id})
-
-
-def _regulator_document_context(document_id):
-    document = get_object_or_404(RegulatorDocument, pk=document_id)
-    return {"document": document, "entries": document.entries.all()}
 
 
 def regulator_document_detail(request, document_id):
@@ -572,40 +575,8 @@ def regulator_document_detail(request, document_id):
     приёма сверху (regulator_entry_quick_add) + таблица только записей
     ЭТОГО письма. Замена прежнему workflow "модалка + выбор письма из
     списка на каждую запись"."""
-    return render(request, "ip_plan/regulator_document_detail.html", _regulator_document_context(document_id))
-
-
-def _regulator_saved_response(request, message, document_id=None):
-    """Ответ на успешное снятие/восстановление/удаление записи (не
-    относится к самому добавлению — см. regulator_entry_quick_add ниже,
-    у него свой, более узкий ответ).
-
-    document_id — из чьего контекста пришло действие (см. return_document_id
-    в _regulator_entry_row.html): если задан, OOB-обновляем только таблицу
-    записей внутри детальной страницы письма (#document-entries-body,
-    _regulator_document_entries.html), не трогая строку приёма — её
-    состояние (текст в поле, фокус) незачем сбрасывать ради обновления
-    статуса другой записи. Если не задан (действие пришло с общего плоского
-    списка /regulator/) — OOB outerHTML всей #regulator-page-body, как и
-    раньше, фильтры сбрасываются к дефолтным."""
-    if document_id:
-        context = _regulator_document_context(document_id)
-        html = render_to_string(
-            "ip_plan/_regulator_document_entries.html", {**context, "oob": True}, request=request
-        )
-    else:
-        # request.GET на POST-запросе (все action-view ниже — POST) — пустой
-        # QueryDict, так что _regulator_page_context откатится к дефолтным
-        # фильтрам (status=active, без kind/document/q) без специальной возни.
-        context = _regulator_page_context(request)
-        html = render_to_string(
-            "ip_plan/_regulator_page_body.html", {**context, "oob": True}, request=request
-        )
-    response = HttpResponse(html)
-    response["HX-Trigger"] = json.dumps(
-        {"close-modal": None, "show-toast": {"message": message, "kind": "success"}}
-    )
-    return response
+    document = get_object_or_404(RegulatorDocument, pk=document_id)
+    return render(request, "ip_plan/regulator_document_detail.html", {"document": document})
 
 
 def regulator_document_add(request):
@@ -642,9 +613,12 @@ def regulator_entry_quick_add(request, document_id):
     доменное имя не по формату и т.п.) по-прежнему отклоняется с обычной
     ошибкой валидации.
 
-    Успех — только новая <tr> (см. _regulator_entry_row.html) для
-    hx-swap="beforeend" в #entry-rows, плюс OOB-очистка слота ошибки на
-    случай, если предыдущая попытка её показывала. Поле ввода/фокус
+    Успех — тело ответа пустое (таблица теперь React-island, см.
+    static_src/regulator_table — вставлять готовый <tr> некуда), только
+    OOB-очистка слота ошибки на случай, если предыдущая попытка её
+    показывала, и "regulator-entries-changed" в HX-Trigger — тот же
+    механизм, что show-toast/close-modal (см. base.html), React слушает его
+    глобально и перезапрашивает список (TableRoot.jsx). Поле ввода/фокус
     сбрасывает сам клиент (hx-on::after-request в regulator_document_detail.html)
     — здесь сервер про это ничего не знает и не должен.
 
@@ -688,17 +662,16 @@ def regulator_entry_quick_add(request, document_id):
                 "show-toast": {"message": "Уже есть в этом письме — не задвоено", "kind": "info"},
             })
             return response
-        entry = form.save()
-        row_html = render_to_string(
-            "ip_plan/_regulator_entry_row.html", {"entry": entry, "document": document}, request=request
-        )
+        form.save()
         error_html = render_to_string(
             "ip_plan/_regulator_quick_add_error.html", {"error": None, "oob": True}, request=request
         )
-        response = HttpResponse(row_html + error_html)
-        response["HX-Trigger"] = json.dumps(
-            {"clear-quick-add": None, "show-toast": {"message": "Запись добавлена", "kind": "success"}}
-        )
+        response = HttpResponse(error_html)
+        response["HX-Trigger"] = json.dumps({
+            "clear-quick-add": None,
+            "show-toast": {"message": "Запись добавлена", "kind": "success"},
+            "regulator-entries-changed": True,
+        })
         return response
     error = " ".join(form.errors.get("value") or form.errors.get("kind") or ["Проверьте значение"])
     error_html = render_to_string(
@@ -878,10 +851,10 @@ def regulator_document_ioc_save(request, document_id):
         entry.save()
         created.append(entry)
 
-    rows_html = "".join(
-        render_to_string("ip_plan/_regulator_entry_row.html", {"entry": e, "document": document}, request=request)
-        for e in created
-    )
+    # Таблица записей — React-island (см. её докстринг выше про
+    # "regulator-entries-changed"): готовые <tr> вставлять больше некуда,
+    # только OOB-очистка превью, а созданные записи React подхватит сам
+    # перезапросом по тому же триггеру.
     clear_preview_html = render_to_string(
         "ip_plan/_regulator_ioc_preview.html", {"document": document, "rows": [], "oob": True}, request=request
     )
@@ -889,65 +862,18 @@ def regulator_document_ioc_save(request, document_id):
         message = f"Сохранено новых: {len(created)}; уже было в этом письме: {skipped_existing}"
     else:
         message = f"Сохранено записей: {len(created)}"
-    response = HttpResponse(rows_html + clear_preview_html)
+    response = HttpResponse(clear_preview_html)
     response["HX-Trigger"] = json.dumps(
-        {"show-toast": {"message": message, "kind": "success"}}
+        {"show-toast": {"message": message, "kind": "success"}, "regulator-entries-changed": True}
     )
     return response
 
 
-def regulator_entry_revoke(request, entry_id):
-    """GET — маленькая форма (причина снятия, необязательна), POST —
-    статус → revoked. Отдельная от delete: запись остаётся в базе для
-    истории/аудита (см. models.py, RegulatorEntry.status).
-
-    ?return_document_id= (GET, прокидывается дальше в саму форму скрытым
-    полем) — см. _regulator_saved_response: с детальной страницы письма
-    приходит id этого письма, с общего списка — ничего."""
-    entry = get_object_or_404(RegulatorEntry, pk=entry_id)
-    return_document_id = request.GET.get("return_document_id") or request.POST.get("return_document_id") or None
-    if request.method == "POST":
-        form = RegulatorEntryRevokeForm(request.POST)
-        if form.is_valid():
-            entry.status = "revoked"
-            entry.revoked_at = timezone.now()
-            entry.revoked_reason = form.cleaned_data["revoked_reason"]
-            entry.save(update_fields=["status", "match_value", "revoked_at", "revoked_reason"])
-            return _regulator_saved_response(request, "Запись снята", document_id=return_document_id)
-        return render(
-            request, "ip_plan/regulator_entry_revoke_modal.html",
-            {"form": form, "entry": entry, "return_document_id": return_document_id}, status=400,
-        )
-    form = RegulatorEntryRevokeForm()
-    return render(
-        request, "ip_plan/regulator_entry_revoke_modal.html",
-        {"form": form, "entry": entry, "return_document_id": return_document_id},
-    )
-
-
-@require_http_methods(["POST"])
-def regulator_entry_reactivate(request, entry_id):
-    """Снятие статуса «снята» без модалки — обратное действие, причина не нужна."""
-    entry = get_object_or_404(RegulatorEntry, pk=entry_id)
-    entry.status = "active"
-    entry.revoked_at = None
-    entry.revoked_reason = ""
-    entry.save(update_fields=["status", "match_value", "revoked_at", "revoked_reason"])
-    return _regulator_saved_response(
-        request, "Запись восстановлена", document_id=request.POST.get("return_document_id") or None
-    )
-
-
-@require_http_methods(["POST"])
-def regulator_entry_delete(request, entry_id):
-    """Физическое удаление — только для исправления ошибки ввода (опечатка
-    и т.п.), не для "регулятор снял блокировку" (для этого — revoke выше,
-    сохраняет историю)."""
-    entry = get_object_or_404(RegulatorEntry, pk=entry_id)
-    entry.delete()
-    return _regulator_saved_response(
-        request, "Запись удалена", document_id=request.POST.get("return_document_id") or None
-    )
+# regulator_entry_revoke/_reactivate/_delete (HTML, с модалкой и OOB-
+# рендером всей таблицы сервером) убраны — таблица записей письма теперь
+# React (см. комментарий над _regulator_letters_context выше), снятие/
+# восстановление/удаление идут через JSON-эндпоинты (_api, см. выше:
+# regulator_entry_revoke_api/_reactivate_api/_delete_api).
 
 
 def _regulator_firewall_context():

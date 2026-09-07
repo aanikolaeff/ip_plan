@@ -1,4 +1,9 @@
 {% extends "ip_plan/base.html" %}
+{% load ip_plan_extras %}
+
+{% block extra_scripts %}
+  {% vite_asset "ip_plan/static_src/regulator_table/main.jsx" %}
+{% endblock %}
 
 {% block content %}
   <section class="hero">
@@ -41,7 +46,7 @@
            переотрисовывалась), из-за чего successful был бы true и на
            ошибке валидации тоже. -->
       <form hx-post="{% url 'ip_plan:regulator_entry_quick_add' document.id %}"
-            hx-target="#entry-rows" hx-swap="beforeend" hx-indicator="#quick-add-spinner"
+            hx-target="#quick-add-error" hx-swap="none" hx-indicator="#quick-add-spinner"
             hx-on::after-request="const v = this.querySelector('[name=value]'); if (event.detail.xhr.status === 200) v.value = ''; v.focus();"
             class="regulator-intake-form">
         {% csrf_token %}
@@ -108,38 +113,18 @@
 
   {% include "ip_plan/_regulator_ioc_preview.html" with rows=None %}
 
-  <!-- Фильтр/поиск по уже сохранённым записям письма — чисто клиентский
-       (Alpine, без похода на сервер): записей на письмо обычно не тысячи,
-       а x-data вынесен СЮДА, в родительский шаблон, а не внутрь
-       #document-entries-body — тот div целиком заменяется OOB-ответом на
-       "Снять"/"Восстановить"/"Удалить" (hx-target="#document-entries-body"
-       hx-swap="none" + hx-swap-oob в ответе), и любое состояние Alpine
-       внутри него сбросилось бы на дефолт при каждом таком действии.
-       Снаружи — переживает эти свопы. -->
-  <div x-data="{
-    kindFilter: '',
-    search: '',
-    matches(el) {
-      if (this.kindFilter && el.dataset.kind !== this.kindFilter) return false;
-      if (this.search && !el.dataset.value.includes(this.search.toLowerCase())) return false;
-      return true;
-    },
-    anyVisible() {
-      return Array.from($refs.entryRows ? $refs.entryRows.children : []).some(row => this.matches(row));
-    },
-  }">
-    <div class="page-toolbar">
-      <div class="toolbar-left">
-        <select class="toolbar-select" x-model="kindFilter">
-          <option value="">Тип: все</option>
-          <option value="ip">IP</option>
-          <option value="fqdn">FQDN</option>
-          <option value="url">URL</option>
-          <option value="hash">IOC</option>
-        </select>
-        <input type="text" class="toolbar-input" placeholder="Поиск по значению…" x-model="search" autocomplete="off">
-      </div>
-    </div>
-    {% include "ip_plan/_regulator_document_entries.html" %}
-  </div>
+  <!-- Таблица записей ЭТОГО письма — тот же React/TanStack-компонент, что
+       вкладка «Записи» общего списка (static_src/regulator_table,
+       TableRoot.jsx) — один island на оба места, отличаются только
+       параметром: data-document-id здесь ограничивает выборку одним
+       письмом, прячет колонку "Письмо" (незачем — она и так одна) и
+       включает "Снять" в действиях строки. Заодно даёт готовый scroll:
+       .ip-table-scroll внутри компонента — overflow-y:auto с
+       max-height:calc(100vh-300px) и sticky <th> — скроллится только сама
+       таблица, шапка страницы и карточки ввода выше остаются на месте.
+       "Ввести данные"/"Загрузить файлы" выше — обычные HTMX-формы (не
+       React), при успехе сервер шлёт "regulator-entries-changed" в
+       HX-Trigger своего ответа, TableRoot слушает его глобально и
+       перезапрашивает список (см. views.py). -->
+  <div id="regulator-entries-root" data-document-id="{{ document.id }}"></div>
 {% endblock %}

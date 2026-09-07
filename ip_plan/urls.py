@@ -68,9 +68,15 @@ urlpatterns = [
         "regulator/document/<int:document_id>/ioc/save/",
         views.regulator_document_ioc_save, name="regulator_document_ioc_save",
     ),
-    path("regulator/entry/<int:entry_id>/revoke/", views.regulator_entry_revoke, name="regulator_entry_revoke"),
-    path("regulator/entry/<int:entry_id>/reactivate/", views.regulator_entry_reactivate, name="regulator_entry_reactivate"),
-    path("regulator/entry/<int:entry_id>/delete/", views.regulator_entry_delete, name="regulator_entry_delete"),
+    # Снятие/восстановление/удаление записи — только JSON (React-таблица,
+    # static_src/regulator_table, и на вкладке «Записи», и на детальной
+    # странице письма). HTML-версии с модалкой снятия и OOB-рендером всей
+    # таблицы сервером убраны — той таблицы, для которой они существовали,
+    # больше нет.
+    path(
+        "regulator/entry/<int:entry_id>/revoke.json",
+        views.regulator_entry_revoke_api, name="regulator_entry_revoke_api",
+    ),
     path(
         "regulator/entry/<int:entry_id>/reactivate.json",
         views.regulator_entry_reactivate_api, name="regulator_entry_reactivate_api",

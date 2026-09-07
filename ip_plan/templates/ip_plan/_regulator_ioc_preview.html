@@ -21,7 +21,7 @@
          (см. #ioc-save-button в style.css, :has()). -->
     <form id="ioc-save-form"
           hx-post="{% url 'ip_plan:regulator_document_ioc_save' document.id %}"
-          hx-target="#entry-rows" hx-swap="beforeend" hx-indicator="#regulator-busy-overlay"
+          hx-target="#ioc-preview-panel" hx-swap="none" hx-indicator="#regulator-busy-overlay"
           class="ioc-preview-form">
       {% csrf_token %}
       <div class="table-wrapper ioc-preview-table-wrap">

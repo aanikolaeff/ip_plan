@@ -11,9 +11,13 @@ import '../ip_table/table.css';
 
 const container = document.getElementById('regulator-entries-root');
 if (container) {
+  // data-document-id — только на детальной странице письма (см.
+  // regulator_document_detail.html); на вкладке «Записи» общего списка его
+  // нет вообще, TableRoot получает documentId=null и показывает все письма.
+  const documentId = container.dataset.documentId ? Number(container.dataset.documentId) : null;
   createRoot(container).render(
     <StrictMode>
-      <TableRoot />
+      <TableRoot documentId={documentId} />
     </StrictMode>,
   );
 } else {
