@@ -465,10 +465,9 @@
 
     /* --- Блокировки регулятора: вкладки "Письма"/"Записи" (regulator_lookup.html) ---
        Свой, третий визуальный стиль — не .nav-tab (пилюли верхней навигации
-       между разделами приложения) и не .kind-toggle (сегментированный
-       переключатель типа IOC в строке приёма формы): здесь смысл другой —
-       переключение секций ВНУТРИ одной страницы, подчёркивание снизу лучше
-       читается как "вкладка", не путается ни с одним из первых двух. */
+       между разделами приложения): здесь смысл другой — переключение
+       секций ВНУТРИ одной страницы, подчёркивание снизу лучше читается
+       как "вкладка". */
     .regulator-tabs-bar {
       display: flex;
       gap: 1.5rem;
@@ -555,11 +554,6 @@
       color: var(--text-muted);
     }
     .regulator-intake-value { flex: 1; min-width: 240px; }
-    /* Разделитель между "одна запись" и CSV-загрузкой — оба варианта
-       приёма делят один и тот же выбор типа (.regulator-intake-row выше),
-       черта просто отмечает, что дальше начинается другой способ ввода
-       того же самого. */
-    .regulator-intake-sep { height: 1px; background: var(--border-soft); margin: .75rem 0; }
     .quick-add-error {
       color: var(--color-danger);
       font-size: .8125rem;
@@ -583,39 +577,6 @@
     .ioc-preview-table-wrap { margin-top: .5rem; }
     .ioc-preview-row select, .ioc-preview-row input[type="text"] { min-width: 140px; }
     .ioc-preview-actions { display: flex; align-items: center; gap: .5rem; margin-top: .75rem; }
-
-    /* Переключатель типа записи — сегментированный контрол на голых
-       radio-инпутах (не Alpine, как у переключателя темы в шапке): три
-       варианта, состояние не нужно нигде читать программно, чистый CSS
-       через :checked проще и не тянет за собой лишний JS-компонент. */
-    .kind-toggle {
-      display: flex;
-      border: 1px solid var(--border-soft-strong);
-      border-radius: 999px;
-      padding: 2px;
-      gap: 2px;
-      flex: none;
-    }
-    .kind-toggle label { position: relative; cursor: pointer; display: block; }
-    .kind-toggle input[type="radio"] {
-      position: absolute;
-      inset: 0;
-      opacity: 0;
-      margin: 0;
-      cursor: pointer;
-    }
-    .kind-toggle span {
-      display: block;
-      padding: .5rem .9rem;
-      border-radius: 999px;
-      font-size: .8125rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      transition: background .12s ease, color .12s ease;
-    }
-    .kind-toggle input:checked + span { background: var(--accent); color: #fff; }
-    .kind-toggle input:not(:checked) + span:hover { background: rgba(24,33,47,.05); color: var(--text-main); }
-    .kind-toggle input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 
     /* --- Контекстное меню "Столбцы" --- */
     .columns-dropdown-wrap { position: relative; display: inline-block; }

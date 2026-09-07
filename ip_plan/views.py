@@ -1,5 +1,3 @@
-import csv
-import io
 import ipaddress
 import json
 import logging
@@ -633,6 +631,17 @@ def regulator_entry_quick_add(request, document_id):
     с общим выпадающим списком) — ключевое отличие от старого regulator_entry_add,
     которое и убирает повторный выбор письма на каждую запись.
 
+    Тип (kind) больше не выбирается вручную (убран kind-toggle, см. design
+    doc) — определяется автоматически той же classify_clean_line(), что и
+    "чистая" ветка IOC-парсера для CSV/.txt (services/ioc_parser.py):
+    оператор печатает голое значение, тип виден только в готовой строке
+    таблицы после сохранения. classify_clean_line() лишь ПРЕДПОЛАГАЕТ тип
+    (её собственные регулярки мягче) — итоговая строгая проверка по
+    выбранному типу всё равно идёт через RegulatorEntryForm.clean(), как и
+    раньше, так что заведомо некорректное значение (невалидный IP,
+    доменное имя не по формату и т.п.) по-прежнему отклоняется с обычной
+    ошибкой валидации.
+
     Успех — только новая <tr> (см. _regulator_entry_row.html) для
     hx-swap="beforeend" в #entry-rows, плюс OOB-очистка слота ошибки на
     случай, если предыдущая попытка её показывала. Поле ввода/фокус
@@ -644,8 +653,18 @@ def regulator_entry_quick_add(request, document_id):
     уже напечатал, остаётся в поле — не наказываем повторным вводом при
     опечатке."""
     document = get_object_or_404(RegulatorDocument, pk=document_id)
+    raw_value = (request.POST.get("value") or "").strip()
+    classified = ioc_parser.classify_clean_line(raw_value) if raw_value else None
+    if classified is None:
+        error_html = render_to_string(
+            "ip_plan/_regulator_quick_add_error.html", {"error": "Введите значение", "oob": True}, request=request
+        )
+        return HttpResponse(error_html, status=400)
+    parser_kind, classified_value, _needs_review, _note = classified
     data = request.POST.copy()
     data["document"] = str(document.id)
+    data["kind"] = _IOC_KIND_TO_ENTRY_KIND[parser_kind]
+    data["value"] = classified_value
     form = RegulatorEntryForm(data)
     if form.is_valid():
         entry = form.save()
@@ -667,84 +686,12 @@ def regulator_entry_quick_add(request, document_id):
     return HttpResponse(error_html, status=400)
 
 
-def _regulator_csv_error(request, message_or_list):
-    """OOB-ответ в #csv-upload-error — либо один текст, либо готовый список
-    строк-ошибок (regulator_entry_csv_upload передаёт список "Строка N:
-    ..." по одной на невалидную строку файла)."""
-    errors = message_or_list if isinstance(message_or_list, list) else [message_or_list]
-    html = render_to_string("ip_plan/_regulator_csv_upload_error.html", {"errors": errors}, request=request)
-    return HttpResponse(html, status=400)
-
-
-def regulator_entry_csv_upload(request, document_id):
-    """POST — загрузка CSV на детальной странице письма: одна колонка
-    значений, один тип на весь файл (radio, общий с обычной строкой
-    приёма — см. regulator_document_detail.html). Хотя бы одна невалидная
-    строка — отклоняет ВЕСЬ файл целиком, ничего не импортируется (список
-    ошибок построчно в #csv-upload-error) — compliance-реестр, явный отказ
-    с полным списком проблем лучше, чем тихий частичный импорт, где легко
-    не заметить пропущенную запись.
-
-    Успех — все новые <tr> сразу (hx-swap=beforeend в #entry-rows, тот же
-    целевой элемент, что и у ручного приёма) + OOB-очистка слота ошибки."""
-    document = get_object_or_404(RegulatorDocument, pk=document_id)
-    kind = request.POST.get("kind", "")
-    csv_file = request.FILES.get("csv_file")
-
-    if kind not in dict(RegulatorEntry.KIND_CHOICES):
-        return _regulator_csv_error(request, "Не выбран тип записей.")
-    if not csv_file:
-        return _regulator_csv_error(request, "Файл не выбран.")
-
-    try:
-        text = csv_file.read().decode("utf-8-sig")  # utf-8-sig — снимает BOM, который Excel добавляет при экспорте
-    except UnicodeDecodeError:
-        return _regulator_csv_error(request, "Не удалось прочитать файл — ожидается текст в кодировке UTF-8.")
-
-    # Одна колонка — значение всегда первая ячейка строки, остальные
-    # (если есть) игнорируются. Пустые строки пропускаются молча (не
-    # ошибка — обычный артефакт CSV-экспорта из Excel).
-    rows = [
-        (line_no, row[0].strip())
-        for line_no, row in enumerate(csv.reader(io.StringIO(text)), start=1)
-        if row and row[0].strip()
-    ]
-    if not rows:
-        return _regulator_csv_error(request, "Файл пуст или не содержит значений.")
-
-    errors = []
-    validated_values = []
-    for line_no, value in rows:
-        form = RegulatorEntryForm(data={"document": document.id, "kind": kind, "value": value})
-        if form.is_valid():
-            validated_values.append(form.cleaned_data["value"])
-        else:
-            msg = " ".join(form.errors.get("value") or form.errors.get("kind") or ["некорректное значение"])
-            errors.append(f"Строка {line_no}: «{value}» — {msg}")
-
-    if errors:
-        return _regulator_csv_error(request, errors)
-
-    created = []
-    for value in validated_values:
-        entry = RegulatorEntry(document=document, kind=kind, value=value)
-        entry.save()  # save() сам считает match_value (см. models.py)
-        created.append(entry)
-
-    rows_html = "".join(
-        render_to_string("ip_plan/_regulator_entry_row.html", {"entry": e, "document": document}, request=request)
-        for e in created
-    )
-    clear_error_html = render_to_string(
-        "ip_plan/_regulator_csv_upload_error.html", {"errors": []}, request=request
-    )
-    response = HttpResponse(rows_html + clear_error_html)
-    response["HX-Trigger"] = json.dumps(
-        {"show-toast": {"message": f"Импортировано записей: {len(created)}", "kind": "success"}}
-    )
-    return response
-
-
+# Раньше здесь была отдельная загрузка CSV (одна колонка, один тип на
+# весь файл, тот же radio, что у строки приёма) — regulator_entry_csv_upload
+# и её error-хелпер _regulator_csv_error. Убрана: общая загрузка файлов
+# в "Разборе документов" ниже (regulator_document_ioc_parse) уже
+# поддерживает CSV/.txt с автоопределением типа построчно, дублировать
+# незачем (см. docs/plans/2026-09-07-ioc-parser-fstec-corpus-audit.md).
 
 # Порядок вывода типов в превью-таблице разбора документов — тот же, что и
 # везде в UI (IP/FQDN/URL/IOC), не порядок обнаружения в тексте. sha256/

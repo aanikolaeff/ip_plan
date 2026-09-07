@@ -57,10 +57,9 @@ urlpatterns = [
         "regulator/document/<int:document_id>/entry/quick-add/",
         views.regulator_entry_quick_add, name="regulator_entry_quick_add",
     ),
-    path(
-        "regulator/document/<int:document_id>/entry/csv-upload/",
-        views.regulator_entry_csv_upload, name="regulator_entry_csv_upload",
-    ),
+    # Раньше был ещё entry/csv-upload/ (одна колонка, один тип на весь
+    # файл) — убран, общая загрузка в "Разборе документов" ниже
+    # (ioc/parse/) уже покрывает CSV/.txt с автоопределением типа.
     path(
         "regulator/document/<int:document_id>/ioc/parse/",
         views.regulator_document_ioc_parse, name="regulator_document_ioc_parse",
