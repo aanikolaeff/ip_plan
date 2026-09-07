@@ -1,7 +1,8 @@
 """Извлечение индикаторов компрометации (IOC) из писем/бюллетеней регулятора
-(PDF/DOCX — депрофанированные; CSV — либо готовый чистый список, либо тот
-же депрофанированный вид, что в PDF/DOCX, определяется по строке) — см.
-docs/plans/2026-09-07-ioc-parser-design.md.
+(PDF/DOCX — депрофанированные; CSV/.txt — либо готовый чистый список,
+либо тот же депрофанированный вид, что в PDF/DOCX, определяется по
+строке) — см. docs/plans/2026-09-07-ioc-parser-design.md и
+docs/plans/2026-09-07-ioc-parser-fstec-corpus-audit.md.
 
 Только текстовый разбор, никаких сетевых обращений и никакого "оживления"
 найденных адресов в кликабельные ссылки — сами письма прямо запрещают
@@ -24,10 +25,28 @@ logger = logging.getLogger(__name__)
 
 URL_RE = re.compile(r"hxxps?\[:\]//[A-Za-z0-9\[\].\-_/%:]+", re.IGNORECASE)
 IP_RE = re.compile(r"\b(?:\d{1,3}\[\.\]){3}\d{1,3}\b")
-HASH_RE = re.compile(r"\b[a-fA-F0-9]{64}\b")
+# MD5 (32 hex), SHA1 (40 hex), SHA256 (64 hex) — все три реально встречаются
+# в письмах регулятора (см. docs/plans/2026-09-07-ioc-parser-fstec-corpus-audit.md,
+# письма сами подписывают блоки "(md5):"/"(sha1):"/"(sha256):"). \b-границы
+# с обеих сторон гарантируют, что более короткий вариант не совпадёт с
+# частью более длинной hex-строки на той же позиции.
+HASH_RE = re.compile(r"\b[a-fA-F0-9]{64}\b|\b[a-fA-F0-9]{40}\b|\b[a-fA-F0-9]{32}\b")
+_HASH_KIND_BY_LENGTH = {64: "sha256", 40: "sha1", 32: "md5"}
+# Разделитель лейблов домена — точка ИЛИ "[.]" (частичная депрофанация:
+# автор депрофанировал не КАЖДУЮ точку домена, а только часть, обычно
+# самую "кликабельную" — TLD). Просто разрешить обычную точку было бы
+# опасно — тогда любое "слово.слово" обычной прозы письма (имя файла,
+# версия ПО, сокращение) матчилось бы как домен; поэтому результат
+# принимается, только если в нём есть хотя бы одна настоящая "[.]" (см.
+# место применения ниже, IP_SHAPED_RE-фильтр там же) — сигнал "тут что-то
+# депрофанировано" всё равно обязателен, просто теперь захватывает домен
+# целиком, а не только депрофанированный хвост. Реальный пример из
+# корпуса: "drive.google[.]com" раньше давало "google.com" (опасно —
+# легитимный домен), с этим паттерном — "drive.google.com" целиком. См.
+# docs/plans/2026-09-07-ioc-parser-fstec-corpus-audit.md.
 DOMAIN_RE = re.compile(
     r"\b[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?"
-    r"(?:\[\.\][a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+\b"
+    r"(?:(?:\.|\[\.\])[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+\b"
 )
 # Хвостовая пунктуация ПРЕДЛОЖЕНИЯ, приклеившаяся к найденному токену
 # ("...msi." -> "...msi") — не путать с [.]/[:] внутри самого депрофанированного
@@ -35,8 +54,11 @@ DOMAIN_RE = re.compile(
 TRAIL_PUNCT_RE = re.compile(r"[.;:,)\]]+$")
 # "Похоже на IP" (все группы — числа) — чтобы отфильтровать из результатов
 # DOMAIN_RE случайно совпавшие числовые последовательности (см. design doc,
-# шаг 4: домен из одних цифр — это на самом деле IP, не домен).
-IP_SHAPED_RE = re.compile(r"^\d+(\[\.\]\d+)+$")
+# шаг 4: домен из одних цифр — это на самом деле IP, не домен). Разделитель
+# — точка ИЛИ "[.]", тем же принципом и по той же причине, что у самого
+# DOMAIN_RE выше (частичная депрофанация): "1.2[.]3.4" тоже "похоже на IP",
+# не домен, хотя не все точки депрофанированы.
+IP_SHAPED_RE = re.compile(r"^\d+(?:(?:\.|\[\.\])\d+)+$")
 # "Похоже на IP с приклеенной сноской" — 1-2 латинские буквы сразу после
 # последнего октета без разделителя, например "89[.]221[.]203[.]162l" (перед
 # ";"). Обычный IP_RE такое НЕ ловит вообще: \b после последнего \d{1,3} не
@@ -50,7 +72,7 @@ IP_FOOTNOTE_RE = re.compile(r"\b(?:\d{1,3}\[\.\]){3}\d{1,3}[A-Za-z]{1,2}\b")
 # join_broken_url_lines.
 LINE_TERMINAL_CHARS = ";.,)"
 
-SUPPORTED_SUFFIXES = (".pdf", ".docx", ".csv")
+SUPPORTED_SUFFIXES = (".pdf", ".docx", ".csv", ".txt")
 
 # ── "Чистые" (не депрофанированные) регулярки — для CSV-списков ─────────
 # Формат таких файлов уже готов к загрузке (см. design doc): по одному
@@ -74,7 +96,7 @@ CLEAN_DOMAIN_RE = re.compile(
 
 @dataclass
 class Indicator:
-    kind: str  # "ip" | "domain" | "url" | "sha256"
+    kind: str  # "ip" | "domain" | "url" | "sha256" | "sha1" | "md5"
     value: str  # рефанированное (нормальное) значение
     value_defanged: str | None  # None для sha256 — там нет депрофанации
     source_files: set = field(default_factory=set)
@@ -116,6 +138,14 @@ def _validate_ip_octets(ip_plain: str) -> bool:
         return False
 
 
+def _looks_like_glued_urls(refanged_value: str) -> bool:
+    """Настоящий одиночный URL содержит схему (http://|https://) РОВНО один
+    раз — если больше, это почти наверняка несколько URL, слипшихся в одно
+    значение (см. join_broken_url_lines и защитную сетку в шаге 2 ниже)."""
+    lowered = refanged_value.lower()
+    return lowered.count("http://") + lowered.count("https://") > 1
+
+
 # ── Склейка строк, разорванных переносом посередине URL ─────────────────
 
 def join_broken_url_lines(lines):
@@ -128,7 +158,20 @@ def join_broken_url_lines(lines):
     остаток — как отдельную строку дальше).
 
     НЕ трогает обычные построчные списки (IP/домены/хэши без ';' на конце)
-    — они не содержат 'hxxp', условие склейки на них не срабатывает вообще."""
+    — они не содержат 'hxxp', условие склейки на них не срабатывает вообще.
+
+    Ещё одно условие "не клеить" (кроме терминальной пунктуации) — если
+    после начала 'hxxp' на строке уже есть пробел. У депрофанированного
+    URL внутри никогда нет пробелов (см. URL_RE — пробел не входит в его
+    класс символов), поэтому пробел после 'hxxp' однозначно значит, что на
+    этой строке уже лежит ОТДЕЛЬНОЕ, самостоятельное значение — типичная
+    строка двухколоночной PDF-таблицы вида "URL[пробел]домен", а не обрыв
+    URL посередине. Без этого условия такая строка ошибочно считалась бы
+    "перенесённой" и клеилась бы с началом следующей (тоже независимой)
+    строки таблицы — реальный баг, найденный на письмах регулятора: см.
+    docs/plans/2026-09-07-ioc-parser-fstec-corpus-audit.md, там же и цифры
+    (до фикса — до ~188 доменов, слипшихся в одну "суперстроку" за один
+    такой случай)."""
     work = list(lines)  # рабочая копия — мутируем на месте (заменяем/удаляем)
     result = []
     i = 0
@@ -139,6 +182,9 @@ def join_broken_url_lines(lines):
             if not stripped or "hxxp" not in stripped.lower():
                 break
             if stripped[-1] in LINE_TERMINAL_CHARS:
+                break
+            hxxp_idx = stripped.lower().find("hxxp")
+            if " " in stripped[hxxp_idx:] or "\t" in stripped[hxxp_idx:]:
                 break
             if i + 1 >= len(work):
                 break
@@ -193,11 +239,18 @@ def extract_indicators_from_text(lines, source_file, indicators):
     def record(kind, value_plain, value_defanged, needs_review=False, note=""):
         _record(indicators, kind, value_plain, value_defanged, source_file, needs_review, note)
 
-    # 1. SHA256 — на исходном (не депрофанированном) тексте, независимо от
-    #    остального пайплайна (хэши не пересекаются с URL/IP/domain regex).
+    # 1. MD5/SHA1/SHA256 — на исходном (не депрофанированном) тексте,
+    #    независимо от остального пайплайна (хэши не пересекаются с
+    #    URL/IP/domain regex). Тип определяется по длине найденной строки —
+    #    не по подписи в самом письме ("(sha256):" и т.п.): регулятор иногда
+    #    ошибается в подписи (см. design doc, реальный случай — блок,
+    #    подписанный "(sha256)", на деле оказался 40-символьным SHA1), а для
+    #    реестра разница неважна — RegulatorEntry хранит все три в одном
+    #    kind="hash" ("IOC"), сама категоризация здесь нужна только для
+    #    дедупликации внутри парсера.
     for m in HASH_RE.finditer(full_text):
         h = m.group(0).lower()
-        record("sha256", h, None)
+        record(_HASH_KIND_BY_LENGTH[len(h)], h, None)
 
     # 2. URL — до IP/доменов, чтобы адрес внутри URL не задвоился отдельным
     #    индикатором (см. design doc, порядок применения регулярок).
@@ -206,7 +259,21 @@ def extract_indicators_from_text(lines, source_file, indicators):
         raw = TRAIL_PUNCT_RE.sub("", m.group(0))
         if not raw:
             continue
-        record("url", refang(raw), raw)
+        plain = refang(raw)
+        if _looks_like_glued_urls(plain):
+            # Защитная сетка на случай, если join_broken_url_lines всё же
+            # склеила независимые строки (её собственная эвристика не
+            # покрывает 100% случаев — см. её докстринг и design doc): у
+            # настоящего одиночного URL схема (http://|https://) встречается
+            # РОВНО один раз, у склейки — минимум дважды. Не отбрасываем —
+            # оператор увидит и разберёт вручную, тихая потеря хуже лишнего
+            # флага. Проверено на реальном корпусе — ловит все оставшиеся
+            # после фикса join_broken_url_lines случаи, ни одного ложного
+            # срабатывания на настоящих одиночных URL.
+            record("url", plain, raw, needs_review=True,
+                   note="похоже на несколько склеенных URL — разбейте вручную")
+        else:
+            record("url", plain, raw)
     working = URL_RE.sub(" ", working)
 
     # 3. IP с "приклеенной сноской" — отдельным проходом ПЕРЕД строгим
@@ -234,9 +301,28 @@ def extract_indicators_from_text(lines, source_file, indicators):
     # 5. Домены — из остатка, отфильтровав то, что на самом деле IP-подобно.
     for m in DOMAIN_RE.finditer(working):
         raw = TRAIL_PUNCT_RE.sub("", m.group(0))
-        if not raw or IP_SHAPED_RE.match(raw):
+        if not raw or IP_SHAPED_RE.match(raw) or "[.]" not in raw:
+            # "[.]" not in raw — DOMAIN_RE теперь допускает и обычную точку
+            # как разделитель (см. её докстринг), поэтому без этой проверки
+            # он матчил бы любое "слово.слово" обычной прозы письма как
+            # домен. Сигнал "тут что-то депрофанировано" обязателен.
             continue
-        record("domain", refang(raw), raw)
+        if "." in raw.replace("[.]", ""):
+            # ВАЖНО: проверяем на литеральную точку ПОСЛЕ вырезания всех
+            # "[.]" — сама подстрока "[.]" содержит символ "." внутри
+            # скобок, наивная проверка "." in raw сработала бы на КАЖДОМ
+            # домене, а не только на смешанных (реально пойманный баг при
+            # разработке этого фикса).
+            #
+            # Смешанный стиль (не все точки депрофанированы) — паттерн
+            # новее и менее строгий, чем чистый "весь [.]"-домен; первое
+            # время безопаснее показать оператору на глаз, а не доверять
+            # молча (можно снять флаг позже, если практика не даст ложных
+            # срабатываний). См. docs/plans/2026-09-07-ioc-parser-fstec-corpus-audit.md.
+            record("domain", refang(raw), raw, needs_review=True,
+                   note="смешанный стиль депрофанации (не все точки в [.]) — проверьте домен целиком")
+        else:
+            record("domain", refang(raw), raw)
 
 
 # ── CSV/чистые текстовые списки — один индикатор на строку ───────────────
@@ -247,13 +333,29 @@ def classify_clean_line(line):
     домен), только регулярки под реальные (не [.]/hxxp) значения. Строка
     уже .strip()'нута вызывающим кодом.
 
-    Возвращает (kind, value, needs_review, note); kind всегда какой-то —
-    формат обещан "готовым к загрузке" (см. UI-подсказку), поэтому не
-    отбрасываем строку молча даже если не смогли её опознать (needs_review),
-    тем же принципом, что невалидный октет у депрофанированного IP."""
+    Хвостовая пунктуация (";"/"."/","/")"/"]") отсекается тем же
+    TRAIL_PUNCT_RE, что и в депрофанированном пайплайне — реальные списки
+    (в т.ч. в этом самом корпусе писем ФСТЭК, см. design doc) почти всегда
+    заканчивают каждую строку точкой с запятой, а CLEAN_*_RE все требуют
+    ТОЧНОГО совпадения строки целиком ("^...$") — без отсечения любой такой
+    хвост ломал бы распознавание (IP/домен/хэш с ";" на конце не матчился
+    бы вообще ни одним паттерном ниже, проверено вживую).
+
+    Возвращает (kind, value, needs_review, note) либо None, если после
+    отсечения пунктуации строка опустела (была ЦЕЛИКОМ пунктуацией — сама
+    по себе не индикатор, не создавать же пустую запись). Во всех
+    остальных случаях kind какой-то ЕСТЬ — формат обещан "готовым к
+    загрузке" (см. UI-подсказку), поэтому не отбрасываем строку молча даже
+    если не смогли её опознать (needs_review), тем же принципом, что
+    невалидный октет у депрофанированного IP."""
+    line = TRAIL_PUNCT_RE.sub("", line)
+    if not line:
+        return None
     if HASH_RE.fullmatch(line):
-        return "sha256", line.lower(), False, ""
+        return _HASH_KIND_BY_LENGTH[len(line)], line.lower(), False, ""
     if CLEAN_URL_RE.match(line):
+        if _looks_like_glued_urls(line):
+            return "url", line, True, "похоже на несколько склеенных URL — разбейте вручную"
         return "url", line, False, ""
     if CLEAN_IP_RE.match(line):
         if _validate_ip_octets(line):
@@ -307,7 +409,10 @@ def extract_csv_indicators(lines, source_file, indicators):
         if _DEFANGED_MARKER_RE.search(line):
             extract_indicators_from_text([line], source_file, indicators)
             continue
-        kind, value, needs_review, note = classify_clean_line(line)
+        classified = classify_clean_line(line)
+        if classified is None:
+            continue
+        kind, value, needs_review, note = classified
         _record(indicators, kind, value, None, source_file, needs_review=needs_review, note=note)
 
 
@@ -395,12 +500,17 @@ def extract_lines(filename, file_obj_or_path):
         if lines is None:
             return [], f"{filename}: файл повреждён или не открылся как DOCX"
         return lines, None
-    if lower.endswith(".csv"):
+    if lower.endswith((".csv", ".txt")):
+        # .txt — синоним .csv: на практике сотрудники сохраняют ровно тот же
+        # построчный список (чистый или депрофанированный, см.
+        # extract_csv_indicators) обычным Блокнотом, с расширением .txt
+        # вместо .csv — содержимое и разбор идентичны, отдельного пайплайна
+        # не требуется (см. docs/plans/2026-09-07-ioc-parser-fstec-corpus-audit.md).
         lines = extract_csv_lines(file_obj_or_path)
         if lines is None:
             return [], f"{filename}: не удалось прочитать файл (неизвестная кодировка)"
         return lines, None
-    return [], f"{filename}: неподдерживаемый формат (ожидается .pdf/.docx/.csv)"
+    return [], f"{filename}: неподдерживаемый формат (ожидается .pdf/.docx/.csv/.txt)"
 
 
 # ── Обработка одного файла (для веб-эндпоинта — файл уже открыт в памяти) ─
@@ -409,14 +519,15 @@ def parse_file(filename, file_obj, indicators):
     """file_obj — файлоподобный объект (Django UploadedFile или открытый
     файл). Мутирует indicators. Возвращает warning-строку или None.
 
-    CSV — отдельная ветка: значения уже "чистые" (не депрофанированные),
-    join_broken_url_lines/extract_indicators_from_text рассчитаны именно на
-    депрофанированный текст PDF/DOCX (ищут hxxp/[.]/[:]) и просто не нашли
-    бы в CSV ничего — см. extract_csv_indicators."""
+    CSV/.txt — отдельная ветка: extract_csv_indicators() сама решает
+    построчно, депрофанирована строка или уже чистая (см. её докстринг) —
+    join_broken_url_lines() здесь не нужна и не применяется (у построчного
+    списка нет постраничной вёрстки, ломающей его перенос — см. design doc
+    про баг, который это вызывало)."""
     lines, warning = extract_lines(filename, file_obj)
     if warning:
         return warning
-    if filename.lower().endswith(".csv"):
+    if filename.lower().endswith((".csv", ".txt")):
         extract_csv_indicators(lines, filename, indicators)
         return None
     joined = join_broken_url_lines(lines)

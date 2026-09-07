@@ -747,13 +747,21 @@ def regulator_entry_csv_upload(request, document_id):
 
 
 # Порядок вывода типов в превью-таблице разбора документов — тот же, что и
-# везде в UI (IP/FQDN/URL/IOC), не порядок обнаружения в тексте.
-_IOC_KIND_ORDER = ["ip", "domain", "url", "sha256"]
-# ioc_parser использует "domain"/"sha256" (говорящие имена внутри самого
-# парсера, не привязанные к модели), RegulatorEntry — "fqdn"/"hash" (уже
-# устоявшиеся значения kind в остальном приложении, см. models.py). Только
-# на этой границе (парсер -> реестр) и нужно сопоставление.
-_IOC_KIND_TO_ENTRY_KIND = {"ip": "ip", "domain": "fqdn", "url": "url", "sha256": "hash"}
+# везде в UI (IP/FQDN/URL/IOC), не порядок обнаружения в тексте. sha256/
+# sha1/md5 идут подряд — все три отображаются одинаково как "IOC" на
+# уровне записи реестра (см. _IOC_KIND_TO_ENTRY_KIND), порядок между ними
+# внутри превью не имеет значения.
+_IOC_KIND_ORDER = ["ip", "domain", "url", "sha256", "sha1", "md5"]
+# ioc_parser использует "domain"/"sha256"/"sha1"/"md5" (говорящие имена
+# внутри самого парсера, не привязанные к модели), RegulatorEntry —
+# "fqdn"/"hash" (уже устоявшиеся значения kind в остальном приложении, см.
+# models.py) — все три алгоритма хэша ложатся в один и тот же "hash"
+# ("IOC"), в реестре они не различаются. Только на этой границе (парсер ->
+# реестр) и нужно сопоставление.
+_IOC_KIND_TO_ENTRY_KIND = {
+    "ip": "ip", "domain": "fqdn", "url": "url",
+    "sha256": "hash", "sha1": "hash", "md5": "hash",
+}
 
 
 def regulator_document_ioc_parse(request, document_id):

@@ -22,10 +22,10 @@ from ip_plan.services.ioc_parser import scan_folder
 
 
 class Command(BaseCommand):
-    help = "Извлечение IOC (IP/домен/URL/SHA256) из PDF/DOCX (депрофанированные) и CSV (чистые списки) в папке"
+    help = "Извлечение IOC (IP/домен/URL/MD5/SHA1/SHA256) из PDF/DOCX (депрофанированные) и CSV/.txt (чистые или депрофанированные списки) в папке"
 
     def add_arguments(self, parser):
-        parser.add_argument("folder", help="Путь к папке с документами (.pdf/.docx/.csv)")
+        parser.add_argument("folder", help="Путь к папке с документами (.pdf/.docx/.csv/.txt)")
         parser.add_argument(
             "--recursive", action="store_true",
             help="Сканировать вложенные папки (по умолчанию — только сама папка)",

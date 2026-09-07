@@ -119,7 +119,13 @@ class IPAddressForm(forms.Form):
 # --- Реестр блокировок регулятора (models.py: RegulatorDocument/RegulatorEntry) ---
 
 FQDN_RE = re.compile(r"^(?!-)[a-zA-Z0-9-]{1,63}(?<!-)(\.[a-zA-Z0-9-]{1,63})+$")
-SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
+# MD5 (32 hex) / SHA1 (40 hex) / SHA256 (64 hex) — все три реально
+# встречаются в письмах регулятора и ложатся в один kind="hash" ("IOC"),
+# см. ip_plan/services/ioc_parser.py (HASH_RE — тот же набор длин) и
+# docs/plans/2026-09-07-ioc-parser-fstec-corpus-audit.md. Раньше здесь
+# была только 64-символьная SHA256_RE — даже верно распознанный парсером
+# MD5/SHA1 отваливался тут при сохранении.
+HASH_VALUE_RE = re.compile(r"^[a-fA-F0-9]{64}$|^[a-fA-F0-9]{40}$|^[a-fA-F0-9]{32}$")
 
 
 class RegulatorDocumentForm(forms.ModelForm):
@@ -146,7 +152,7 @@ class RegulatorEntryForm(forms.ModelForm):
         widgets = {
             "document": forms.Select(attrs={"class": "field-control"}),
             "kind": forms.Select(attrs={"class": "field-control"}),
-            "value": _text_input(placeholder="IP / example.com / https://example.com/path / SHA256-хэш"),
+            "value": _text_input(placeholder="IP / example.com / https://example.com/path / MD5/SHA1/SHA256-хэш"),
         }
 
     def clean(self):
@@ -171,8 +177,8 @@ class RegulatorEntryForm(forms.ModelForm):
             if "://" not in value:
                 self.add_error("value", "URL должен содержать схему, например https://example.com/path")
         elif kind == "hash":
-            if not SHA256_RE.match(value):
-                self.add_error("value", "Введите SHA256-хэш — 64 hex-символа")
+            if not HASH_VALUE_RE.match(value):
+                self.add_error("value", "Введите MD5 (32), SHA1 (40) или SHA256 (64) hex-символа")
         return cleaned
 
 

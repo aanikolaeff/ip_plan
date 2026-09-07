@@ -47,7 +47,7 @@
       {% csrf_token %}
       <input type="hidden" name="kind" :value="kind">
       <input type="text" name="value" class="field-control regulator-intake-value ip-mono"
-             placeholder="Значение — 1.2.3.4 / example.com / https://example.com/path / SHA256-хэш"
+             placeholder="Значение — 1.2.3.4 / example.com / https://example.com/path / MD5/SHA1/SHA256-хэш"
              autocomplete="off" autofocus>
       <button type="submit" class="btn-add">Добавить</button>
       <span id="quick-add-spinner" class="htmx-indicator">…</span>
@@ -78,9 +78,10 @@
     <div id="csv-upload-error" class="quick-add-error"></div>
   </div>
 
-  <!-- Разбор документов регулятора (PDF/DOCX — депрофанированные, CSV — уже
-       чистый готовый список) — см. ip_plan/services/ioc_parser.py и design
-       doc. В отличие от строки приёма выше — тип определяется АВТОМАТИЧЕСКИ
+  <!-- Разбор документов регулятора (PDF/DOCX — депрофанированные; CSV/.txt —
+       чистый готовый список либо тот же депрофанированный вид) — см.
+       ip_plan/services/ioc_parser.py и design doc. В отличие от строки
+       приёма выше — тип определяется АВТОМАТИЧЕСКИ
        по формату каждого найденного индикатора (не через общий
        kind-переключатель), поэтому это отдельный блок, а не третья форма
        внутри .regulator-intake-bar. Файлы НЕ сохраняются на диск и не
@@ -106,7 +107,7 @@
     <div class="regulator-intake-row">
       <span class="regulator-intake-label">Разбор документов</span>
       <span class="cell-muted" style="font-size:.8125rem;">
-        PDF/DOCX — депрофанированные индикаторы (hxxp/[.]/[:]); CSV —
+        PDF/DOCX — депрофанированные индикаторы (hxxp/[.]/[:]); CSV/TXT —
         любой из двух форматов (или вперемешку по строкам): готовый чистый
         список (по одному значению IP/FQDN/URL в строке) либо тот же
         депрофанированный вид, что в PDF/DOCX — тип определяется
@@ -120,7 +121,7 @@
           class="regulator-intake-csv-form"
           x-data="{ menuOpen: false, selectedCount: 0 }">
       {% csrf_token %}
-      <input type="file" name="ioc_files" accept=".pdf,.docx,.csv" multiple style="display:none"
+      <input type="file" name="ioc_files" accept=".pdf,.docx,.csv,.txt" multiple style="display:none"
              x-ref="filesInput" @change="selectedCount = $event.target.files.length">
       <input type="file" name="ioc_files" webkitdirectory multiple style="display:none"
              x-ref="folderInput" @change="selectedCount = $event.target.files.length">
