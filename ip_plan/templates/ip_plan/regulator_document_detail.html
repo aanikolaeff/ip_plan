@@ -9,106 +9,121 @@
     {% if document.note %}<p class="subtitle">{{ document.note }}</p>{% endif %}
   </section>
 
-  <!-- Строка приёма — сигнатурный элемент страницы (см. design doc):
-       письмо уже известно из URL, дальше — только значение, без модалки и
-       без повторного выбора письма на каждую запись. Тип (kind) больше не
-       выбирается вручную (был kind-toggle IP/FQDN/URL/IOC) — определяется
-       автоматически на сервере той же classify_clean_line(), что и
-       "чистая" ветка общей загрузки файлов ниже (см.
-       regulator_entry_quick_add, ip_plan/services/ioc_parser.py) — всего
-       4 типа, гадать вручную незачем. Отдельная загрузка CSV тоже убрана
-       (была рядом, с тем же radio) — "Разбор документов" ниже уже
-       принимает CSV/.txt с автоопределением типа построчно, дублировать
-       нечего (см. docs/plans/2026-09-07-ioc-parser-fstec-corpus-audit.md).
-       Успех дописывает <tr> в конец таблицы (hx-swap=beforeend в
-       #entry-rows), ошибка не трогает таблицу вообще — только свой слот
-       рядом с формой. -->
-  <div class="regulator-intake-bar">
-    <div class="regulator-intake-row">
-      <span class="regulator-intake-label">Приём</span>
-    </div>
-
-    <!-- Проверяем именно xhr.status, не event.detail.successful — общий
-         htmx:beforeSwap-хук в app.js форсирует isError=false для 400
-         (нужно ip_add/os_catalog-модалкам, чтобы форма с ошибками
-         переотрисовывалась), из-за чего successful был бы true и на
-         ошибке валидации тоже. -->
-    <form hx-post="{% url 'ip_plan:regulator_entry_quick_add' document.id %}"
-          hx-target="#entry-rows" hx-swap="beforeend" hx-indicator="#quick-add-spinner"
-          hx-on::after-request="const v = this.querySelector('[name=value]'); if (event.detail.xhr.status === 200) v.value = ''; v.focus();"
-          class="regulator-intake-form">
-      {% csrf_token %}
-      <input type="text" name="value" class="field-control regulator-intake-value ip-mono"
-             placeholder="Значение — 1.2.3.4 / example.com / https://example.com/path / MD5/SHA1/SHA256-хэш"
-             autocomplete="off" autofocus>
-      <button type="submit" class="btn-add">Добавить</button>
-      <span id="quick-add-spinner" class="htmx-indicator">…</span>
-    </form>
-    <div id="quick-add-error" class="quick-add-error"></div>
-  </div>
-
-  <!-- Разбор документов регулятора (PDF/DOCX — депрофанированные; CSV/.txt —
-       чистый готовый список либо тот же депрофанированный вид) — см.
-       ip_plan/services/ioc_parser.py и design doc. В отличие от строки
-       приёма выше — тип определяется АВТОМАТИЧЕСКИ
-       по формату каждого найденного индикатора (не через общий
-       kind-переключатель), поэтому это отдельный блок, а не третья форма
-       внутри .regulator-intake-bar. Файлы НЕ сохраняются на диск и не
-       пишутся в реестр сразу — сервер только парсит их в памяти и
-       возвращает редактируемый список-превью (#ioc-preview-panel, форма с
-       action на regulator_document_ioc_save) — оператор правит/убирает
-       строки, и только после явного "Сохранить в письмо" список попадает
-       в RegulatorEntry.
-
-       Один видимый контрол вместо прежних отдельных строк "Файлы"/"Папка"
-       (два input'а с ОДНИМ и тем же именем поля ioc_files, оба спрятаны —
-       Django не различает "выбрали папку" (webkitdirectory) от "выбрали
-       несколько файлов" (обычный multiple), оба варианта всё равно
-       приходят одним и тем же плоским списком на сервер): маленькое меню
-       (та же разметка/CSS, что кебаб-меню строки IP-таблицы, .kebab-wrap/
-       .kebab-menu) выбирает, КАКОЙ из двух input'ов открыть — выбор папки
-       рекурсивно захватывает все файлы внутри неё, выбор файлов — только
-       отмеченные. Очистка "чужого" input'а перед открытием — иначе после
-       передумавшего клика ("выбрал файлы, потом решил выбрать папку") оба
-       набора уехали бы на сервер одним request.FILES.getlist('ioc_files'),
-       смешавшись. -->
-  <div class="regulator-intake-bar regulator-ioc-bar">
-    <div class="regulator-intake-row">
-      <span class="regulator-intake-label">Разбор документов</span>
-      <span class="cell-muted" style="font-size:.8125rem;">
-        PDF/DOCX — депрофанированные индикаторы (hxxp/[.]/[:]); CSV/TXT —
-        любой из двух форматов (или вперемешку по строкам): готовый чистый
-        список (по одному значению IP/FQDN/URL в строке) либо тот же
-        депрофанированный вид, что в PDF/DOCX — тип определяется
-        автоматически
-      </span>
-    </div>
-    <form hx-post="{% url 'ip_plan:regulator_document_ioc_parse' document.id %}"
-          hx-target="#ioc-preview-panel" hx-swap="innerHTML" hx-encoding="multipart/form-data"
-          hx-indicator="#ioc-parse-spinner"
-          hx-on::after-request="if (event.detail.xhr.status === 200) { this.reset(); selectedCount = 0; }"
-          class="regulator-intake-csv-form"
-          x-data="{ menuOpen: false, selectedCount: 0 }">
-      {% csrf_token %}
-      <input type="file" name="ioc_files" accept=".pdf,.docx,.csv,.txt" multiple style="display:none"
-             x-ref="filesInput" @change="selectedCount = $event.target.files.length">
-      <input type="file" name="ioc_files" webkitdirectory multiple style="display:none"
-             x-ref="folderInput" @change="selectedCount = $event.target.files.length">
-      <div class="kebab-wrap" @click.outside="menuOpen = false">
-        <button type="button" class="btn-modal-secondary btn-sm" @click="menuOpen = !menuOpen">
-          Выбрать файлы или папку
-        </button>
-        <div class="kebab-menu" :class="{ show: menuOpen }">
-          <button type="button" @click="menuOpen = false; $refs.folderInput.value = ''; $refs.filesInput.click()">Файлы…</button>
-          <button type="button" @click="menuOpen = false; $refs.filesInput.value = ''; $refs.folderInput.click()">Папка…</button>
-        </div>
+  <!-- Ввод данных — два равноправных, но разных по "цене" пути, поэтому
+       рядом, не друг под другом (см. design doc): "Ввести данные" — одно
+       значение, секунды, тип определяется автоматически на сервере той же
+       classify_clean_line(), что и "чистая" ветка загрузки файлов справа
+       (regulator_entry_quick_add, ip_plan/services/ioc_parser.py) — гадать
+       вручную незачем, типов всего 4. "Загрузить файлы" — многошаговый
+       процесс (выбрать → разобрать → проверить превью → сохранить),
+       поэтому карточка спокойнее (без акцентной грани слева) и в сетке ей
+       выделено больше воздуха. Превью распознанных индикаторов
+       (#ioc-preview-panel) сознательно ВЫНЕСЕНО из сетки на всю ширину
+       страницы ниже — таблица с колонками "Тип/Значение/Как в тексте"
+       нуждается в месте, а не в половине экрана. -->
+  <div class="regulator-intake-grid">
+    <div class="regulator-quick-card">
+      <div class="regulator-card-head">
+        <h2 class="regulator-card-title">Ввести данные</h2>
+        <p class="regulator-card-hint">Одно значение — тип определится сам</p>
       </div>
-      <span class="cell-muted" x-show="selectedCount" x-text="'Выбрано: ' + selectedCount"></span>
-      <button type="submit" class="btn-modal-secondary btn-sm" :disabled="!selectedCount">Разобрать</button>
-      <span id="ioc-parse-spinner" class="htmx-indicator">…</span>
-    </form>
-    {% include "ip_plan/_regulator_ioc_preview.html" with rows=None %}
+      <!-- Проверяем именно xhr.status, не event.detail.successful — общий
+           htmx:beforeSwap-хук в app.js форсирует isError=false для 400
+           (нужно ip_add/os_catalog-модалкам, чтобы форма с ошибками
+           переотрисовывалась), из-за чего successful был бы true и на
+           ошибке валидации тоже. -->
+      <form hx-post="{% url 'ip_plan:regulator_entry_quick_add' document.id %}"
+            hx-target="#entry-rows" hx-swap="beforeend" hx-indicator="#quick-add-spinner"
+            hx-on::after-request="const v = this.querySelector('[name=value]'); if (event.detail.xhr.status === 200) v.value = ''; v.focus();"
+            class="regulator-intake-form">
+        {% csrf_token %}
+        <input type="text" name="value" class="field-control regulator-intake-value ip-mono"
+               placeholder="1.2.3.4 / example.com / https://… / MD5, SHA1 или SHA256"
+               autocomplete="off" autofocus>
+        <button type="submit" class="btn-add">Добавить</button>
+        <span id="quick-add-spinner" class="htmx-indicator">…</span>
+      </form>
+      <div id="quick-add-error" class="quick-add-error"></div>
+    </div>
+
+    <!-- Один видимый контрол вместо прежних отдельных строк "Файлы"/"Папка"
+         (два input'а с ОДНИМ и тем же именем поля ioc_files, оба спрятаны —
+         Django не различает "выбрали папку" (webkitdirectory) от "выбрали
+         несколько файлов" (обычный multiple), оба варианта всё равно
+         приходят одним и тем же плоским списком на сервер): маленькое меню
+         (та же разметка/CSS, что кебаб-меню строки IP-таблицы, .kebab-wrap/
+         .kebab-menu) выбирает, КАКОЙ из двух input'ов открыть — выбор папки
+         рекурсивно захватывает все файлы внутри неё, выбор файлов — только
+         отмеченные. Очистка "чужого" input'а перед открытием — иначе после
+         передумавшего клика ("выбрал файлы, потом решил выбрать папку")
+         оба набора уехали бы на сервер одним request.FILES.getlist,
+         смешавшись. -->
+    <div class="regulator-upload-card">
+      <div class="regulator-card-head">
+        <h2 class="regulator-card-title">Загрузить файлы</h2>
+        <p class="regulator-card-hint">PDF, DOCX, CSV или TXT — тип каждой строки определится сам</p>
+      </div>
+      <form hx-post="{% url 'ip_plan:regulator_document_ioc_parse' document.id %}"
+            hx-target="#ioc-preview-panel" hx-swap="innerHTML" hx-encoding="multipart/form-data"
+            hx-indicator="#ioc-parse-spinner"
+            hx-on::after-request="if (event.detail.xhr.status === 200) { this.reset(); selectedCount = 0; }"
+            class="regulator-intake-csv-form"
+            x-data="{ menuOpen: false, selectedCount: 0 }">
+        {% csrf_token %}
+        <input type="file" name="ioc_files" accept=".pdf,.docx,.csv,.txt" multiple style="display:none"
+               x-ref="filesInput" @change="selectedCount = $event.target.files.length">
+        <input type="file" name="ioc_files" webkitdirectory multiple style="display:none"
+               x-ref="folderInput" @change="selectedCount = $event.target.files.length">
+        <div class="kebab-wrap" @click.outside="menuOpen = false">
+          <button type="button" class="btn-modal-secondary btn-sm" @click="menuOpen = !menuOpen">
+            Выбрать файлы или папку
+          </button>
+          <div class="kebab-menu" :class="{ show: menuOpen }">
+            <button type="button" @click="menuOpen = false; $refs.folderInput.value = ''; $refs.filesInput.click()">Файлы…</button>
+            <button type="button" @click="menuOpen = false; $refs.filesInput.value = ''; $refs.folderInput.click()">Папка…</button>
+          </div>
+        </div>
+        <span class="cell-muted" x-show="selectedCount" x-text="'Выбрано: ' + selectedCount"></span>
+        <button type="submit" class="btn-modal-secondary btn-sm" :disabled="!selectedCount">Разобрать</button>
+        <span id="ioc-parse-spinner" class="htmx-indicator">…</span>
+      </form>
+    </div>
   </div>
 
-  {% include "ip_plan/_regulator_document_entries.html" %}
+  {% include "ip_plan/_regulator_ioc_preview.html" with rows=None %}
+
+  <!-- Фильтр/поиск по уже сохранённым записям письма — чисто клиентский
+       (Alpine, без похода на сервер): записей на письмо обычно не тысячи,
+       а x-data вынесен СЮДА, в родительский шаблон, а не внутрь
+       #document-entries-body — тот div целиком заменяется OOB-ответом на
+       "Снять"/"Восстановить"/"Удалить" (hx-target="#document-entries-body"
+       hx-swap="none" + hx-swap-oob в ответе), и любое состояние Alpine
+       внутри него сбросилось бы на дефолт при каждом таком действии.
+       Снаружи — переживает эти свопы. -->
+  <div x-data="{
+    kindFilter: '',
+    search: '',
+    matches(el) {
+      if (this.kindFilter && el.dataset.kind !== this.kindFilter) return false;
+      if (this.search && !el.dataset.value.includes(this.search.toLowerCase())) return false;
+      return true;
+    },
+    anyVisible() {
+      return Array.from($refs.entryRows ? $refs.entryRows.children : []).some(row => this.matches(row));
+    },
+  }">
+    <div class="page-toolbar">
+      <div class="toolbar-left">
+        <select class="toolbar-select" x-model="kindFilter">
+          <option value="">Тип: все</option>
+          <option value="ip">IP</option>
+          <option value="fqdn">FQDN</option>
+          <option value="url">URL</option>
+          <option value="hash">IOC</option>
+        </select>
+        <input type="text" class="toolbar-input" placeholder="Поиск по значению…" x-model="search" autocomplete="off">
+      </div>
+    </div>
+    {% include "ip_plan/_regulator_document_entries.html" %}
+  </div>
 {% endblock %}

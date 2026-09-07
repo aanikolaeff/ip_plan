@@ -525,35 +525,54 @@
       overflow-y: auto;
     }
 
-    /* --- Блокировки регулятора: строка приёма (regulator_document_detail.html) ---
-       Сигнатурный элемент страницы (см. design doc) — единственное место
-       в этой фиче, куда осознанно вложено чуть больше визуального веса:
-       акцентная левая грань (та же роль, что рейка статуса у IP-таблицы,
-       см. table.css) обозначает "сюда приходят новые записи", карточка
-       всегда прямо под заголовком письма, ничего не нужно искать. */
-    .regulator-intake-bar {
+    /* --- Блокировки регулятора: ввод данных (regulator_document_detail.html) ---
+       Сигнатурный элемент страницы (см. design doc) — два равноправных, но
+       разных по "цене" пути ввода, поэтому рядом в сетке, не друг под
+       другом. Левая карточка ("Ввести данные") держит акцентную левую
+       грань (та же роль, что рейка статуса у IP-таблицы, см. table.css) —
+       она отвечает секундным одиночным вводом, акцент здесь уместен.
+       Правая ("Загрузить файлы") — многошаговый процесс (выбрать →
+       разобрать → проверить превью → сохранить), поэтому сознательно БЕЗ
+       акцентной грани: асимметрия по весу вместо второго цвета — в системе
+       только один акцент (var(--accent)), различать карточки цветом
+       нечем, различаем структурой. На узких экранах сетка схлопывается в
+       один столбец. */
+    .regulator-intake-grid {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.5fr);
+      gap: 1.25rem;
+      margin-bottom: 1.5rem;
+      align-items: start;
+    }
+    @media (max-width: 760px) {
+      .regulator-intake-grid { grid-template-columns: 1fr; }
+    }
+    .regulator-quick-card, .regulator-upload-card {
       background: var(--bg-surface);
       border: 1px solid var(--border-soft-strong);
-      border-left: 3px solid var(--accent);
       border-radius: 14px;
       padding: 1rem 1.25rem;
-      margin-bottom: 1.5rem;
     }
-    .regulator-intake-form, .regulator-intake-csv-form, .regulator-intake-row {
+    .regulator-quick-card { border-left: 3px solid var(--accent); }
+    .regulator-card-head { margin-bottom: .85rem; }
+    .regulator-card-title {
+      font-size: .95rem;
+      font-weight: 700;
+      margin: 0 0 .2rem;
+      color: var(--text-main);
+    }
+    .regulator-card-hint {
+      font-size: .8125rem;
+      color: var(--text-muted);
+      margin: 0;
+    }
+    .regulator-intake-form, .regulator-intake-csv-form {
       display: flex;
       align-items: center;
       gap: .75rem;
       flex-wrap: wrap;
     }
-    .regulator-intake-row { margin-bottom: .85rem; }
-    .regulator-intake-label {
-      font-size: .72rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: .06em;
-      color: var(--text-muted);
-    }
-    .regulator-intake-value { flex: 1; min-width: 240px; }
+    .regulator-intake-value { flex: 1; min-width: 200px; }
     .quick-add-error {
       color: var(--color-danger);
       font-size: .8125rem;
@@ -570,10 +589,14 @@
     .csv-error-list li { padding: .15rem 0; }
 
     /* --- Разбор документов регулятора (IOC) на странице письма ---
-       regulator_document_detail.html / _regulator_ioc_preview.html. */
-    .regulator-ioc-bar { margin-top: 1.25rem; display: flex; flex-direction: column; gap: .75rem; }
+       Превью распознанных индикаторов (#ioc-preview-panel) — во всю
+       ширину страницы под сеткой карточек, не внутри неё: таблица с
+       колонками "Тип/Значение/Как в тексте" разрастается и не должна
+       тесниться в половине экрана. См. regulator_document_detail.html /
+       _regulator_ioc_preview.html. */
     .ioc-warning-list { color: var(--text-muted); }
     #ioc-preview-panel:empty { display: none; }
+    #ioc-preview-panel:not(:empty) { margin-bottom: 1.5rem; }
     .ioc-preview-table-wrap { margin-top: .5rem; }
     .ioc-preview-row select, .ioc-preview-row input[type="text"] { min-width: 140px; }
     .ioc-preview-actions { display: flex; align-items: center; gap: .5rem; margin-top: .75rem; }

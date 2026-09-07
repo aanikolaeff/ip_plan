@@ -1,4 +1,4 @@
-<tr id="entry-row-{{ entry.id }}">
+<tr id="entry-row-{{ entry.id }}" data-kind="{{ entry.kind }}" data-value="{{ entry.value|lower }}" x-show="matches($el)">
   <td><span class="tag-chip">{{ entry.get_kind_display }}</span></td>
   <td class="ip-mono">{{ entry.value }}</td>
   <td>

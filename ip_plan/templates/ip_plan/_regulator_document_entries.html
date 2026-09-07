@@ -14,11 +14,25 @@
            hx-swap="beforeend" у строки приёма (regulator_document_detail.html):
            без реального <tbody> в DOM добавление первой же записи в письмо
            без записей ничего не нашло бы и молча ничего бы не сделало. -->
-      <tbody id="entry-rows">
+      <tbody id="entry-rows" x-ref="entryRows">
         {% for entry in entries %}
           {% include "ip_plan/_regulator_entry_row.html" with entry=entry document=document %}
         {% endfor %}
       </tbody>
+      <!-- Вне #entry-rows намеренно: hx-swap="beforeend" строки приёма
+           дописывает новый <tr> в самый конец ИМЕННО этого tbody — если бы
+           строка "ничего не найдено" жила внутри него, htmx рано или
+           поздно вставил бы новую запись ПОСЛЕ неё. Условие ниже — только
+           когда в письме вообще есть записи: иначе сообщение "измените
+           фильтр" было бы неверным для письма, где записей просто ещё нет
+           ни одной. -->
+      {% if entries %}
+        <tfoot>
+          <tr x-show="!anyVisible()" x-cloak>
+            <td colspan="5" class="cell-muted">Ничего не найдено — измените фильтр или поиск</td>
+          </tr>
+        </tfoot>
+      {% endif %}
     </table>
   </div>
 </div>
