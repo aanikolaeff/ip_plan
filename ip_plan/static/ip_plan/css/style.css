@@ -1143,6 +1143,12 @@
     .btn-danger:disabled, .btn-modal-secondary:disabled, .modal-close-btn:disabled {
       opacity: .6; cursor: not-allowed;
     }
+    /* .nav-icon и в шапке (export_excel), и правее выбора типа у таблицы
+       записей письма (regulator_table/TableRoot.jsx — "Скачать CSV") —
+       раньше как кнопка нигде не отключалась, своего disabled-состояния
+       не было вообще. */
+    .nav-icon:disabled { opacity: .4; cursor: not-allowed; }
+    .nav-icon:disabled:hover { color: var(--text-muted); border-color: var(--border-soft-strong); background: var(--bg-surface-soft); }
 
     /* --- Тосты --- */
     .toast-stack { position: fixed; bottom: 1.5rem; right: 1.5rem; display: flex; flex-direction: column; gap: .5rem; z-index: 1100; }

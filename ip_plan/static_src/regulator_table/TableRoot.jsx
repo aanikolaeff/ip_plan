@@ -171,12 +171,18 @@ export default function TableRoot({ documentId }) {
             {KIND_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
           {!!documentId && (
+            // .nav-icon — тот же круглый значок, что "Экспорт в Excel" в
+            // шапке (base.html) — та же SVG-стрелка вниз, тот же класс.
             <button
-              type="button" className="btn-modal-secondary" disabled={!filteredRows.length}
+              type="button" className="nav-icon" disabled={!filteredRows.length}
               onClick={handleDownloadCsv}
               title={kindFilter ? 'Скачать записи выбранного типа в CSV' : 'Скачать все записи в CSV'}
             >
-              Скачать CSV
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3v12"></path>
+                <path d="M7 10l5 5 5-5"></path>
+                <path d="M4 19h16"></path>
+              </svg>
             </button>
           )}
         </div>
