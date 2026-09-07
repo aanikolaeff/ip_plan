@@ -14,8 +14,14 @@
   {% endif %}
 
   {% if rows %}
-    <form hx-post="{% url 'ip_plan:regulator_document_ioc_save' document.id %}"
-          hx-target="#entry-rows" hx-swap="beforeend" hx-indicator="#ioc-save-spinner"
+    <!-- id нужен кнопке "Сохранить в письмо" в regulator_document_detail.html
+         (рядом с "Разобрать", form="ioc-save-form") — она физически не
+         внутри этого <form>, привязана к нему только через form-атрибут
+         (валидно по HTML-спеке), а видима только пока эта форма есть в DOM
+         (см. #ioc-save-button в style.css, :has()). -->
+    <form id="ioc-save-form"
+          hx-post="{% url 'ip_plan:regulator_document_ioc_save' document.id %}"
+          hx-target="#entry-rows" hx-swap="beforeend" hx-indicator="#regulator-busy-overlay"
           class="ioc-preview-form">
       {% csrf_token %}
       <div class="table-wrapper ioc-preview-table-wrap">
@@ -56,10 +62,6 @@
             {% endfor %}
           </tbody>
         </table>
-      </div>
-      <div class="ioc-preview-actions">
-        <button type="submit" class="btn-add">Сохранить в письмо</button>
-        <span id="ioc-save-spinner" class="htmx-indicator">…</span>
       </div>
     </form>
   {% endif %}

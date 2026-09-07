@@ -9,6 +9,14 @@
     {% if document.note %}<p class="subtitle">{{ document.note }}</p>{% endif %}
   </section>
 
+  <!-- Дым+спиннер на весь экран на время разбора файлов и сохранения
+       результата (см. .busy-overlay в style.css) — hx-indicator обеих форм
+       ниже ссылается на этот же элемент. -->
+  <div id="regulator-busy-overlay" class="htmx-indicator busy-overlay">
+    <div class="spinner-ring"></div>
+    <span>Обработка…</span>
+  </div>
+
   <!-- Ввод данных — два равноправных, но разных по "цене" пути, поэтому
        рядом, не друг под другом (см. design doc): "Ввести данные" — одно
        значение, секунды, тип определяется автоматически на сервере той же
@@ -65,7 +73,7 @@
       </div>
       <form hx-post="{% url 'ip_plan:regulator_document_ioc_parse' document.id %}"
             hx-target="#ioc-preview-panel" hx-swap="innerHTML" hx-encoding="multipart/form-data"
-            hx-indicator="#ioc-parse-spinner"
+            hx-indicator="#regulator-busy-overlay"
             hx-on::after-request="if (event.detail.xhr.status === 200) { this.reset(); selectedCount = 0; }"
             class="regulator-intake-csv-form"
             x-data="{ menuOpen: false, selectedCount: 0 }">
@@ -75,7 +83,7 @@
         <input type="file" name="ioc_files" webkitdirectory multiple style="display:none"
                x-ref="folderInput" @change="selectedCount = $event.target.files.length">
         <div class="kebab-wrap" @click.outside="menuOpen = false">
-          <button type="button" class="btn-modal-secondary btn-sm" @click="menuOpen = !menuOpen">
+          <button type="button" class="btn-modal-secondary" @click="menuOpen = !menuOpen">
             Выбрать файлы или папку
           </button>
           <div class="kebab-menu" :class="{ show: menuOpen }">
@@ -84,8 +92,16 @@
           </div>
         </div>
         <span class="cell-muted" x-show="selectedCount" x-text="'Выбрано: ' + selectedCount"></span>
-        <button type="submit" class="btn-modal-secondary btn-sm" :disabled="!selectedCount">Разобрать</button>
-        <span id="ioc-parse-spinner" class="htmx-indicator">…</span>
+        <button type="submit" class="btn-modal-secondary" :disabled="!selectedCount">Разобрать</button>
+        <!-- Живёт здесь, а не у таблицы превью внизу страницы — form=
+             "ioc-save-form" привязывает её к форме превью
+             (_regulator_ioc_preview.html) независимо от расположения в
+             DOM; появляется через CSS :has() сразу, как только эта форма
+             возникает в DOM после успешного разбора (см. #ioc-save-button
+             в style.css) — до этого момента скрыта. -->
+        <button type="submit" class="btn-modal-primary" form="ioc-save-form" id="ioc-save-button">
+          Сохранить в письмо
+        </button>
       </form>
     </div>
   </div>

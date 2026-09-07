@@ -542,7 +542,8 @@
       grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.5fr);
       gap: 1.25rem;
       margin-bottom: 1.5rem;
-      align-items: start;
+      /* Без явного align-items — дефолтный "stretch" у grid-строки сам
+         растягивает обе карточки под высоту более высокой. */
     }
     @media (max-width: 760px) {
       .regulator-intake-grid { grid-template-columns: 1fr; }
@@ -552,6 +553,13 @@
       border: 1px solid var(--border-soft-strong);
       border-radius: 14px;
       padding: 1rem 1.25rem;
+      /* flex-column + margin-top:auto у формы ниже — форма (а с ней и
+         кнопки) прибита к низу карточки независимо от того, сколько места
+         занял заголовок сверху, так что кнопки "Добавить"/"Разобрать" в
+         обеих карточках оказываются на одной высоте, даже когда grid
+         растянул одну из карточек выше её собственного контента. */
+      display: flex;
+      flex-direction: column;
     }
     .regulator-quick-card { border-left: 3px solid var(--accent); }
     .regulator-card-head { margin-bottom: .85rem; }
@@ -571,6 +579,7 @@
       align-items: center;
       gap: .75rem;
       flex-wrap: wrap;
+      margin-top: auto;
     }
     .regulator-intake-value { flex: 1; min-width: 200px; }
     .quick-add-error {
@@ -599,7 +608,52 @@
     #ioc-preview-panel:not(:empty) { margin-bottom: 1.5rem; }
     .ioc-preview-table-wrap { margin-top: .5rem; }
     .ioc-preview-row select, .ioc-preview-row input[type="text"] { min-width: 140px; }
-    .ioc-preview-actions { display: flex; align-items: center; gap: .5rem; margin-top: .75rem; }
+
+    /* "Сохранить в письмо" физически сидит в карточке "Загрузить файлы"
+       (рядом с "Разобрать"), а не у таблицы превью внизу страницы — form=
+       "ioc-save-form" (см. _regulator_ioc_preview.html) привязывает кнопку
+       к форме превью НЕЗАВИСИМО от того, где она лежит в DOM (валидный
+       HTML: form-атрибут переопределяет владельца формы). Видимость —
+       через :has(), без единой строчки JS: форма #ioc-save-form существует
+       в DOM, только пока есть что сохранять (рендерится по {% if rows %}),
+       появилась форма — появилась и кнопка, пропала (после сохранения или
+       если файлы ещё не разбирали) — кнопка снова скрыта. */
+    #ioc-save-button { display: none; }
+    body:has(#ioc-save-form) #ioc-save-button { display: inline-block; }
+
+    /* --- Полноэкранный дым+спиннер на время разбора файлов и сохранения
+       результата (regulator_document_ioc_parse/_save) — обе операции не
+       мгновенные (парсинг PDF/DOCX, запись в БД), пользователю нужно явно
+       видеть "идёт процесс". Тот же переключатель видимости, что и у
+       крошечных инлайн-спиннеров (.htmx-indicator/.htmx-request, см. выше)
+       — просто применён к элементу на весь экран, а не к паре символов
+       рядом с кнопкой; фон/блюр — как у .modal-overlay, чтобы не заводить
+       второй визуальный язык "затемнения" в одном приложении. */
+    .busy-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1600;
+      background: rgba(24, 33, 47, .45);
+      backdrop-filter: blur(4px);
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: .75rem;
+      color: #fff;
+      font-size: .85rem;
+    }
+    /* Базовый цвет кольца у .spinner-ring рассчитан на светлый фон
+       (rgba(24,33,47,.12)) — на тёмном .busy-overlay его почти не видно,
+       остаётся только акцентная дуга. Тут фон затемнения не зависит от
+       темы (всегда rgba(24,33,47,.45)), поэтому и кольцо переопределено
+       без привязки к теме. */
+    .busy-overlay .spinner-ring {
+      width: 40px;
+      height: 40px;
+      border-width: 4px;
+      border-color: rgba(255, 255, 255, .25);
+      border-top-color: var(--accent);
+    }
 
     /* --- Контекстное меню "Столбцы" --- */
     .columns-dropdown-wrap { position: relative; display: inline-block; }
