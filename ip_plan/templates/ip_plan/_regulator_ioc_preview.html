@@ -1,0 +1,66 @@
+<div id="ioc-preview-panel"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {% if error %}
+    <p class="quick-add-error">{{ error }}</p>
+  {% endif %}
+  {% if warnings %}
+    <ul class="csv-error-list ioc-warning-list">
+      {% for w in warnings %}<li>⚠ {{ w }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+  {% if errors %}
+    <ul class="csv-error-list">
+      {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if rows %}
+    <form hx-post="{% url 'ip_plan:regulator_document_ioc_save' document.id %}"
+          hx-target="#entry-rows" hx-swap="beforeend" hx-indicator="#ioc-save-spinner"
+          class="ioc-preview-form">
+      {% csrf_token %}
+      <div class="table-wrapper ioc-preview-table-wrap">
+        <table class="table acl-table">
+          <thead>
+            <tr>
+              <th>Тип</th>
+              <th>Значение</th>
+              <th>Как в тексте / где встречалось</th>
+              <th></th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr class="ioc-preview-row">
+                <td>
+                  <select name="ioc_kind" class="field-control">
+                    {% for value, label in kind_choices %}
+                      <option value="{{ value }}" {% if value == row.entry_kind %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td><input type="text" name="ioc_value" class="field-control ip-mono" value="{{ row.value }}"></td>
+                <td class="cell-muted">
+                  {% if row.value_defanged %}<div class="ip-mono">{{ row.value_defanged }}</div>{% endif %}
+                  {% if row.occurrences %}<div>{{ row.occurrences }}× · {{ row.source_files|join:", " }}</div>{% endif %}
+                </td>
+                <td>
+                  {% if row.needs_review %}
+                    <span class="badge-status" data-status="reserved" title="{{ row.note }}">проверить</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <button type="button" class="btn-danger btn-sm" onclick="this.closest('tr').remove()">Убрать</button>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="ioc-preview-actions">
+        <button type="submit" class="btn-add">Сохранить в письмо</button>
+        <span id="ioc-save-spinner" class="htmx-indicator">…</span>
+      </div>
+    </form>
+  {% endif %}
+</div>

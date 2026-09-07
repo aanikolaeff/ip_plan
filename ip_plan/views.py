@@ -23,7 +23,7 @@ from .forms import (
     RegulatorDocumentForm, RegulatorEntryForm, RegulatorEntryRevokeForm,
 )
 from .models import FirewallObjectName, RegulatorDocument, RegulatorEntry
-from .services import acl_store, firewall_blocklist, os_catalog, sync_log
+from .services import acl_store, firewall_blocklist, ioc_parser, os_catalog, sync_log
 from .services.netbox_client import NetBoxAPIError, NetBoxClient
 from .services.network_tools import NetworkToolError, ping_check, resolve_ptr, scan_ports
 from .templatetags.ip_plan_extras import description_hint, effective_description
@@ -642,6 +642,149 @@ def regulator_entry_csv_upload(request, document_id):
     response = HttpResponse(rows_html + clear_error_html)
     response["HX-Trigger"] = json.dumps(
         {"show-toast": {"message": f"Импортировано записей: {len(created)}", "kind": "success"}}
+    )
+    return response
+
+
+
+# Порядок вывода типов в превью-таблице разбора документов — тот же, что и
+# везде в UI (IP/FQDN/URL/IOC), не порядок обнаружения в тексте.
+_IOC_KIND_ORDER = ["ip", "domain", "url", "sha256"]
+# ioc_parser использует "domain"/"sha256" (говорящие имена внутри самого
+# парсера, не привязанные к модели), RegulatorEntry — "fqdn"/"hash" (уже
+# устоявшиеся значения kind в остальном приложении, см. models.py). Только
+# на этой границе (парсер -> реестр) и нужно сопоставление.
+_IOC_KIND_TO_ENTRY_KIND = {"ip": "ip", "domain": "fqdn", "url": "url", "sha256": "hash"}
+
+
+def regulator_document_ioc_parse(request, document_id):
+    """POST — разбор загруженных PDF/DOCX на детальной странице письма (см.
+    ip_plan/services/ioc_parser.py и design doc). Файлы НЕ сохраняются на
+    диск — parse_file() читает каждый прямо из памяти (Django
+    UploadedFile — тот же файлоподобный объект, что pdfplumber/python-docx
+    принимают напрямую) и тут же забывает; на выходе только СТРУКТУРИРОВАННЫЙ
+    список кандидатов, ничего не пишется в RegulatorEntry — это отдельный
+    шаг (regulator_document_ioc_save), оператор сначала правит список.
+
+    request.FILES.getlist('ioc_files') — одно и то же имя поля что для
+    обычного multi-file input, что для input с webkitdirectory (выбор папки
+    целиком) — с точки зрения Django оба варианта неотличимы, оба отдают
+    плоский список файлов, поэтому один view обслуживает и "выбрать файлы",
+    и "выбрать папку" из брифа."""
+    document = get_object_or_404(RegulatorDocument, pk=document_id)
+    files = request.FILES.getlist("ioc_files")
+    if not files:
+        return render(
+            request, "ip_plan/_regulator_ioc_preview.html",
+            {"document": document, "error": "Файлы не выбраны."},
+        )
+
+    indicators = {}
+    warnings = []
+    for f in files:
+        warning = ioc_parser.parse_file(f.name, f, indicators)
+        if warning:
+            warnings.append(warning)
+
+    rows = []
+    for kind in _IOC_KIND_ORDER:
+        for ind in sorted(indicators.get(kind, {}).values(), key=lambda i: i.value):
+            rows.append({
+                "entry_kind": _IOC_KIND_TO_ENTRY_KIND[kind],
+                "value": ind.value,
+                "value_defanged": ind.value_defanged,
+                "occurrences": ind.occurrences,
+                "source_files": sorted(ind.source_files),
+                "needs_review": ind.needs_review,
+                "note": ind.note,
+            })
+
+    return render(request, "ip_plan/_regulator_ioc_preview.html", {
+        "document": document,
+        "rows": rows,
+        "warnings": warnings,
+        "kind_choices": RegulatorEntry.KIND_CHOICES,
+    })
+
+
+def regulator_document_ioc_save(request, document_id):
+    """POST — сохранение отредактированного оператором превью (см.
+    regulator_document_ioc_parse) в реестр. ioc_kind[]/ioc_value[] —
+    ПАРАЛЛЕЛЬНЫЕ массивы (одноимённые поля формы, i-е значение kind
+    соответствует i-му value — это гарантирует порядок полей в самой
+    форме/DOM, см. _regulator_ioc_preview.html: в каждой строке сначала
+    select "kind", потом input "value", браузер сериализует поля формы в
+    DOM-порядке, так что getlist() возвращает оба списка в одном и том же
+    порядке независимо от того, сколько строк оператор удалил кнopкой
+    «Убрать» до отправки).
+
+    Как и CSV-загрузка — хотя бы одна невалидная строка ПОСЛЕ правок
+    оператором отклоняет ВЕСЬ список целиком (ничего не сохраняется),
+    ошибки показываются построчно в той же превью-форме, ничего в ней не
+    трогая — можно поправить и отправить снова."""
+    document = get_object_or_404(RegulatorDocument, pk=document_id)
+    kinds = request.POST.getlist("ioc_kind")
+    values = request.POST.getlist("ioc_value")
+
+    if not kinds or len(kinds) != len(values):
+        return render(
+            request, "ip_plan/_regulator_ioc_preview.html",
+            {"document": document, "error": "Список пуст или повреждён — попробуйте разобрать документы заново.", "oob": True},
+            status=400,
+        )
+
+    errors = []
+    validated = []
+    for i, (kind, value) in enumerate(zip(kinds, values), start=1):
+        form = RegulatorEntryForm(data={"document": document.id, "kind": kind, "value": value})
+        if form.is_valid():
+            validated.append((form.cleaned_data["kind"], form.cleaned_data["value"]))
+        else:
+            msg = " ".join(form.errors.get("value") or form.errors.get("kind") or ["некорректное значение"])
+            errors.append(f"Строка {i}: «{value}» — {msg}")
+
+    if errors:
+        return render(
+            request, "ip_plan/_regulator_ioc_preview.html",
+            {
+                "document": document, "errors": errors,
+                # Возвращаем то же самое (уже отредактированное оператором)
+                # содержимое обратно в форму — без этого пришлось бы
+                # заново разбирать документы после каждой опечатки.
+                "rows": [
+                    {"entry_kind": k, "value": v, "value_defanged": None,
+                     "occurrences": None, "source_files": [], "needs_review": False, "note": ""}
+                    for k, v in zip(kinds, values)
+                ],
+                "kind_choices": RegulatorEntry.KIND_CHOICES,
+                "oob": True,
+            },
+            status=400,
+        )
+
+    if not validated:
+        return render(
+            request, "ip_plan/_regulator_ioc_preview.html",
+            {"document": document, "error": "Список пуст — нечего сохранять.", "oob": True},
+            status=400,
+        )
+
+    created = []
+    for kind, value in validated:
+        entry = RegulatorEntry(document=document, kind=kind, value=value)
+        entry.save()
+        created.append(entry)
+
+    rows_html = "".join(
+        render_to_string("ip_plan/_regulator_entry_row.html", {"entry": e, "document": document}, request=request)
+        for e in created
+    )
+    clear_preview_html = render_to_string(
+        "ip_plan/_regulator_ioc_preview.html", {"document": document, "rows": [], "oob": True}, request=request
+    )
+    response = HttpResponse(rows_html + clear_preview_html)
+    response["HX-Trigger"] = json.dumps(
+        {"show-toast": {"message": f"Сохранено записей: {len(created)}", "kind": "success"}}
     )
     return response
 

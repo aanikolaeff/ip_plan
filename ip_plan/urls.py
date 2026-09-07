@@ -59,6 +59,14 @@ urlpatterns = [
         "regulator/document/<int:document_id>/entry/csv-upload/",
         views.regulator_entry_csv_upload, name="regulator_entry_csv_upload",
     ),
+    path(
+        "regulator/document/<int:document_id>/ioc/parse/",
+        views.regulator_document_ioc_parse, name="regulator_document_ioc_parse",
+    ),
+    path(
+        "regulator/document/<int:document_id>/ioc/save/",
+        views.regulator_document_ioc_save, name="regulator_document_ioc_save",
+    ),
     path("regulator/entry/<int:entry_id>/revoke/", views.regulator_entry_revoke, name="regulator_entry_revoke"),
     path("regulator/entry/<int:entry_id>/reactivate/", views.regulator_entry_reactivate, name="regulator_entry_reactivate"),
     path("regulator/entry/<int:entry_id>/delete/", views.regulator_entry_delete, name="regulator_entry_delete"),

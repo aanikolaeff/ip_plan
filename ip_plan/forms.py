@@ -119,6 +119,7 @@ class IPAddressForm(forms.Form):
 # --- Реестр блокировок регулятора (models.py: RegulatorDocument/RegulatorEntry) ---
 
 FQDN_RE = re.compile(r"^(?!-)[a-zA-Z0-9-]{1,63}(?<!-)(\.[a-zA-Z0-9-]{1,63})+$")
+SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
 
 
 class RegulatorDocumentForm(forms.ModelForm):
@@ -145,7 +146,7 @@ class RegulatorEntryForm(forms.ModelForm):
         widgets = {
             "document": forms.Select(attrs={"class": "field-control"}),
             "kind": forms.Select(attrs={"class": "field-control"}),
-            "value": _text_input(placeholder="IP / example.com / https://example.com/path"),
+            "value": _text_input(placeholder="IP / example.com / https://example.com/path / SHA256-хэш"),
         }
 
     def clean(self):
@@ -169,6 +170,9 @@ class RegulatorEntryForm(forms.ModelForm):
         elif kind == "url":
             if "://" not in value:
                 self.add_error("value", "URL должен содержать схему, например https://example.com/path")
+        elif kind == "hash":
+            if not SHA256_RE.match(value):
+                self.add_error("value", "Введите SHA256-хэш — 64 hex-символа")
         return cleaned
 
 

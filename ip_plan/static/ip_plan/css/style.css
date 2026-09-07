@@ -546,6 +546,15 @@
     }
     .csv-error-list li { padding: .15rem 0; }
 
+    /* --- Разбор документов регулятора (IOC) на странице письма ---
+       regulator_document_detail.html / _regulator_ioc_preview.html. */
+    .regulator-ioc-bar { margin-top: 1.25rem; display: flex; flex-direction: column; gap: .75rem; }
+    .ioc-warning-list { color: var(--text-muted); }
+    #ioc-preview-panel:empty { display: none; }
+    .ioc-preview-table-wrap { margin-top: .5rem; }
+    .ioc-preview-row select, .ioc-preview-row input[type="text"] { min-width: 140px; }
+    .ioc-preview-actions { display: flex; align-items: center; gap: .5rem; margin-top: .75rem; }
+
     /* Переключатель типа записи — сегментированный контрол на голых
        radio-инпутах (не Alpine, как у переключателя темы в шапке): три
        варианта, состояние не нужно нигде читать программно, чистый CSS

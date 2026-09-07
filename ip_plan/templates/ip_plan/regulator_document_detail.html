@@ -26,6 +26,7 @@
         <label><input type="radio" x-model="kind" value="ip"><span>IP</span></label>
         <label><input type="radio" x-model="kind" value="fqdn"><span>FQDN</span></label>
         <label><input type="radio" x-model="kind" value="url"><span>URL</span></label>
+        <label><input type="radio" x-model="kind" value="hash"><span>IOC</span></label>
       </div>
     </div>
 
@@ -46,7 +47,7 @@
       {% csrf_token %}
       <input type="hidden" name="kind" :value="kind">
       <input type="text" name="value" class="field-control regulator-intake-value ip-mono"
-             placeholder="Значение — 1.2.3.4 / example.com / https://example.com/path"
+             placeholder="Значение — 1.2.3.4 / example.com / https://example.com/path / SHA256-хэш"
              autocomplete="off" autofocus>
       <button type="submit" class="btn-add">Добавить</button>
       <span id="quick-add-spinner" class="htmx-indicator">…</span>
@@ -75,6 +76,50 @@
       <span id="csv-upload-spinner" class="htmx-indicator">…</span>
     </form>
     <div id="csv-upload-error" class="quick-add-error"></div>
+  </div>
+
+  <!-- Разбор документов регулятора (PDF/DOCX) — извлечение депрофанированных
+       IOC (см. ip_plan/services/ioc_parser.py и design doc). В отличие от
+       строки приёма выше — тип определяется АВТОМАТИЧЕСКИ по формату
+       каждого найденного индикатора (не через общий kind-переключатель),
+       поэтому это отдельный блок, а не третья форма внутри
+       .regulator-intake-bar. Файлы НЕ сохраняются на диск и не пишутся в
+       реестр сразу — сервер только парсит их в памяти и возвращает
+       редактируемый список-превью (#ioc-preview-panel, форма с action на
+       regulator_document_ioc_save) — оператор правит/убирает строки, и
+       только после явного "Сохранить в письмо" список попадает в
+       RegulatorEntry. Два input'а с ОДНИМ и тем же именем поля
+       (ioc_files) — Django не различает "выбрали папку" (webkitdirectory)
+       от "выбрали несколько файлов" (обычный multiple), оба варианта
+       приходят одним и тем же плоским списком файлов на сервер. -->
+  <div class="regulator-intake-bar regulator-ioc-bar">
+    <div class="regulator-intake-row">
+      <span class="regulator-intake-label">Разбор документов</span>
+      <span class="cell-muted" style="font-size:.8125rem;">PDF/DOCX — только депрофанированные индикаторы (hxxp/[.]/[:])</span>
+    </div>
+    <form hx-post="{% url 'ip_plan:regulator_document_ioc_parse' document.id %}"
+          hx-target="#ioc-preview-panel" hx-swap="innerHTML" hx-encoding="multipart/form-data"
+          hx-indicator="#ioc-parse-spinner-files"
+          hx-on::after-request="if (event.detail.xhr.status === 200) this.reset();"
+          class="regulator-intake-csv-form">
+      {% csrf_token %}
+      <span class="regulator-intake-label">Файлы</span>
+      <input type="file" name="ioc_files" accept=".pdf,.docx" multiple class="field-control" required>
+      <button type="submit" class="btn-modal-secondary btn-sm">Разобрать</button>
+      <span id="ioc-parse-spinner-files" class="htmx-indicator">…</span>
+    </form>
+    <form hx-post="{% url 'ip_plan:regulator_document_ioc_parse' document.id %}"
+          hx-target="#ioc-preview-panel" hx-swap="innerHTML" hx-encoding="multipart/form-data"
+          hx-indicator="#ioc-parse-spinner-folder"
+          hx-on::after-request="if (event.detail.xhr.status === 200) this.reset();"
+          class="regulator-intake-csv-form">
+      {% csrf_token %}
+      <span class="regulator-intake-label">Папка</span>
+      <input type="file" name="ioc_files" webkitdirectory multiple class="field-control" required>
+      <button type="submit" class="btn-modal-secondary btn-sm">Разобрать</button>
+      <span id="ioc-parse-spinner-folder" class="htmx-indicator">…</span>
+    </form>
+    {% include "ip_plan/_regulator_ioc_preview.html" with rows=None %}
   </div>
 
   {% include "ip_plan/_regulator_document_entries.html" %}
