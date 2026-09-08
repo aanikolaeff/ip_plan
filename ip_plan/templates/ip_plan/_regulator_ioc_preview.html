@@ -25,43 +25,49 @@
           class="ioc-preview-form">
       {% csrf_token %}
       <div class="table-wrapper ioc-preview-table-wrap">
-        <table class="table acl-table">
-          <thead>
-            <tr>
-              <th>Тип</th>
-              <th>Значение</th>
-              <th>Как в тексте / где встречалось</th>
-              <th></th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in rows %}
-              <tr class="ioc-preview-row">
-                <td>
-                  <select name="ioc_kind" class="field-control">
-                    {% for value, label in kind_choices %}
-                      <option value="{{ value }}" {% if value == row.entry_kind %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
-                  </select>
-                </td>
-                <td><input type="text" name="ioc_value" class="field-control ip-mono" value="{{ row.value }}"></td>
-                <td class="cell-muted">
-                  {% if row.value_defanged %}<div class="ip-mono">{{ row.value_defanged }}</div>{% endif %}
-                  {% if row.occurrences %}<div>{{ row.occurrences }}× · {{ row.source_files|join:", " }}</div>{% endif %}
-                </td>
-                <td>
-                  {% if row.needs_review %}
-                    <span class="badge-status" data-status="reserved" title="{{ row.note }}">проверить</span>
-                  {% endif %}
-                </td>
-                <td>
-                  <button type="button" class="btn-danger btn-sm" onclick="this.closest('tr').remove()">Убрать</button>
-                </td>
+        <!-- .ip-table-scroll — тот же скролл-контейнер (max-height +
+             overflow-y:auto), что у таблицы записей письма после
+             сохранения (static_src/regulator_table) — то же поведение
+             прокрутки до и после сохранения, не два разных. -->
+        <div class="ip-table-scroll">
+          <table class="table acl-table">
+            <thead>
+              <tr>
+                <th>Тип</th>
+                <th>Значение</th>
+                <th>Как в тексте / где встречалось</th>
+                <th></th>
+                <th></th>
               </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+                <tr class="ioc-preview-row">
+                  <td>
+                    <select name="ioc_kind" class="field-control">
+                      {% for value, label in kind_choices %}
+                        <option value="{{ value }}" {% if value == row.entry_kind %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td><input type="text" name="ioc_value" class="field-control ip-mono" value="{{ row.value }}"></td>
+                  <td class="cell-muted">
+                    {% if row.value_defanged %}<div class="ip-mono">{{ row.value_defanged }}</div>{% endif %}
+                    {% if row.occurrences %}<div>{{ row.occurrences }}× · {{ row.source_files|join:", " }}</div>{% endif %}
+                  </td>
+                  <td>
+                    {% if row.needs_review %}
+                      <span class="badge-status" data-status="reserved" title="{{ row.note }}">проверить</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <button type="button" class="btn-danger btn-sm" onclick="this.closest('tr').remove()">Убрать</button>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
     </form>
   {% endif %}

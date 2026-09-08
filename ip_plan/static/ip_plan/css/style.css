@@ -607,6 +607,21 @@
     #ioc-preview-panel:empty { display: none; }
     #ioc-preview-panel:not(:empty) { margin-bottom: 1.5rem; }
     .ioc-preview-table-wrap { margin-top: .5rem; }
+    /* До сохранения (это превью) список может быть таким же длинным, как
+       после (таблица записей письма, static_src/regulator_table) — та уже
+       скроллится сама, шапка страницы (карточки ввода) остаётся на месте
+       (см. .ip-table-scroll в ip_table/table.css, тот же max-height, тот
+       же приём). Превью — обычный Django-шаблон, не React, поэтому вместо
+       inline position:sticky из TableRoot.jsx нужно явное CSS-правило на
+       <th>; сам скролл-контейнер переиспользован как есть — его CSS уже
+       грузится на этой странице (main.jsx этой же страницы импортирует
+       ip_table/table.css), заводить копию с теми же значениями незачем. */
+    .ioc-preview-table-wrap thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--bg-page);
+    }
     .ioc-preview-row select, .ioc-preview-row input[type="text"] { min-width: 140px; }
 
     /* "Сохранить в письмо" физически сидит в карточке "Загрузить файлы"
