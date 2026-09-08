@@ -6,14 +6,24 @@
 {% endblock %}
 
 {% block content %}
+  <!-- Структурированный реестр IP/FQDN/URL из писем регулятора — без
+       записи в NetBox, своя таблица, см.
+       docs/plans/2026-09-04-regulator-blocklist-design.md. Вместо описания
+       этого текстом под заголовком — то, что реально нужно оператору с
+       первого взгляда: имя ТЕКУЩЕГО блокирующего листа на firewall
+       отдельно по IP и по DNS (ip_obj/fqdn_obj — см.
+       views._regulator_firewall_context, те же объекты, что во вкладке
+       «Команды для xFW»). Тот же .hero-stats, что у главной страницы
+       IP Плана (см. ip_table.html) — не своя вёрстка ради одной строки. -->
   <section class="hero">
     <div class="hero-title-row">
       <h1 class="title">Блокировки регулятора</h1>
     </div>
-    <p class="subtitle">
-      Структурированный реестр IP/FQDN/URL из писем регулятора — без записи
-      в NetBox, своя таблица (см. docs/plans/2026-09-04-regulator-blocklist-design.md).
-    </p>
+    <div class="hero-stats">
+      <span class="hero-stat"><strong class="ip-mono">@{{ ip_obj.current_name }}</strong> текущий список IP</span>
+      <span class="hero-stat-sep"></span>
+      <span class="hero-stat"><strong class="ip-mono">@{{ fqdn_obj.current_name }}</strong> текущий список DNS</span>
+    </div>
   </section>
 
   <!-- Вкладки «Письма»/«Записи»/«Команды для xFW» — чисто клиентское
