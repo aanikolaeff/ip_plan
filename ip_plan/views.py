@@ -596,6 +596,36 @@ def regulator_document_add(request):
     return render(request, "ip_plan/regulator_document_add_modal.html", {"form": form})
 
 
+def regulator_document_edit(request, document_id):
+    """GET — форма редактирования письма (та же RegulatorDocumentForm и
+    модалка по духу, что у regulator_document_add, просто с instance) —
+    номер/дата/примечание иногда нужно поправить и после того, как в
+    письмо уже внесены записи (опечатка в номере, дата уточнилась). В
+    отличие от add — успех никуда не уводит: список писем обновляется на
+    месте (OOB, тот же приём, что у regulator_document_delete), модалка
+    просто закрывается."""
+    document = get_object_or_404(RegulatorDocument, pk=document_id)
+    if request.method == "POST":
+        form = RegulatorDocumentForm(request.POST, instance=document)
+        if form.is_valid():
+            form.save()
+            context = _regulator_letters_context(request)
+            html = render_to_string(
+                "ip_plan/_regulator_letters_body.html", {**context, "oob": True}, request=request
+            )
+            response = HttpResponse(html)
+            response["HX-Trigger"] = json.dumps(
+                {"close-modal": None, "show-toast": {"message": "Письмо изменено", "kind": "success"}}
+            )
+            return response
+        return render(
+            request, "ip_plan/regulator_document_edit_modal.html",
+            {"form": form, "document": document}, status=400,
+        )
+    form = RegulatorDocumentForm(instance=document)
+    return render(request, "ip_plan/regulator_document_edit_modal.html", {"form": form, "document": document})
+
+
 def regulator_entry_quick_add(request, document_id):
     """POST — строка приёма на детальной странице письма. document уже
     известен из URL (не поле формы, в отличие от прежнего RegulatorEntryForm

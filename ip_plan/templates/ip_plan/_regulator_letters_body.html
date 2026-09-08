@@ -37,7 +37,13 @@
               <td class="cell-muted">{{ doc.note|default:"—" }}</td>
               <td>{{ doc.entries_count }}</td>
               <td>{{ doc.active_count }}</td>
-              <td @click.stop>
+              <td @click.stop class="regulator-entry-actions">
+                <button type="button" class="btn-modal-secondary btn-sm"
+                        hx-get="{% url 'ip_plan:regulator_document_edit' doc.id %}"
+                        hx-target="#modal-content" hx-indicator="#modal-spinner"
+                        @click="$store.modal.dirty = false; $dispatch('open-modal')">
+                  Изменить
+                </button>
                 <form class="regulator-inline-action"
                       hx-post="{% url 'ip_plan:regulator_document_delete' doc.id %}"
                       hx-target="#regulator-letters-body" hx-swap="none"

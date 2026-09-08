@@ -139,7 +139,20 @@ class RegulatorDocumentForm(forms.ModelForm):
         }
         widgets = {
             "reference_no": _text_input(placeholder="Например, 12-34/5678"),
-            "document_date": forms.DateInput(attrs={"class": "field-control", "type": "date"}),
+            # format="%Y-%m-%d" — обязательно явно: LANGUAGE_CODE="ru-ru" даёт
+            # локализованный DATE_INPUT_FORMATS с "%d.%m.%Y" ПЕРВЫМ (см.
+            # settings.py) — именно его use widget.format_value() для
+            # ОТОБРАЖЕНИЯ значения без явного format, а input type="date"
+            # требует строго ISO YYYY-MM-DD в атрибуте value, иначе браузер
+            # тихо показывает поле пустым (сам факт валидной русской даты в
+            # value браузер не распознаёт вообще, не то что бы неправильно
+            # парсил). Разбор ОТПРАВЛЕННОГО значения это не задевает — ISO
+            # уже в конце того же формата-списка, так что POST с value=
+            # "2026-02-02" (что реально шлёт type="date", независимо от
+            # локали) парсился и до этой правки, ломался только показ уже
+            # заполненного поля — не создание письма (там оно пустое до
+            # ввода), а именно правка (regulator_document_edit).
+            "document_date": forms.DateInput(attrs={"class": "field-control", "type": "date"}, format="%Y-%m-%d"),
             "note": forms.Textarea(attrs={"class": "field-control", "rows": 2}),
         }
 

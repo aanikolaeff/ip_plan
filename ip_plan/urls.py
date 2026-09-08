@@ -52,6 +52,7 @@ urlpatterns = [
     path("regulator/entries.json", views.regulator_entries_json, name="regulator_entries_json"),
     path("regulator/document/add/", views.regulator_document_add, name="regulator_document_add"),
     path("regulator/document/<int:document_id>/", views.regulator_document_detail, name="regulator_document_detail"),
+    path("regulator/document/<int:document_id>/edit/", views.regulator_document_edit, name="regulator_document_edit"),
     path("regulator/document/<int:document_id>/delete/", views.regulator_document_delete, name="regulator_document_delete"),
     path(
         "regulator/document/<int:document_id>/entry/quick-add/",
