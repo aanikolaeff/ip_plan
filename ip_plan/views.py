@@ -587,7 +587,9 @@ def regulator_document_add(request):
     if request.method == "POST":
         form = RegulatorDocumentForm(request.POST)
         if form.is_valid():
-            document = form.save()
+            document = form.save(commit=False)
+            document.created_by = request.user.get_username()
+            document.save()
             response = HttpResponse(status=204)
             response["HX-Redirect"] = reverse("ip_plan:regulator_document_detail", args=[document.id])
             return response

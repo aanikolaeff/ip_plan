@@ -12,6 +12,10 @@
       <h1 class="title">№{{ document.reference_no }} <span class="regulator-doc-date">от {{ document.document_date|date:"d.m.Y" }}</span></h1>
     </div>
     {% if document.note %}<p class="subtitle">{{ document.note }}</p>{% endif %}
+    <!-- created_by — пусто у писем, заведённых до появления этого поля
+         (или созданных не через форму, напрямую в БД) — тогда просто не
+         показываем строку, а не "Добавил: " с пустым значением. -->
+    {% if document.created_by %}<p class="cell-muted">Добавил: {{ document.created_by }}</p>{% endif %}
   </section>
 
   <!-- Дым+спиннер на весь экран на время разбора файлов и сохранения

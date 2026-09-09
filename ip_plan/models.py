@@ -26,6 +26,12 @@ class RegulatorDocument(models.Model):
     document_date = models.DateField("Дата письма")
     note = models.TextField("Примечание", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    # CharField с username, не FK на User — тем же принципом, что
+    # LocalAccount.created_by/SettingsAudit.username: письмо не должно
+    # стать нередактируемым (или каскадно не удаляться) только из-за того,
+    # что учётку автора потом удалили/переименовали, а нам нужен просто
+    # факт "кто ввёл письмо в реестр", не связь с текущим состоянием auth_user.
+    created_by = models.CharField("Кем добавлено", max_length=150, blank=True)
 
     class Meta:
         ordering = ["-document_date", "-id"]
