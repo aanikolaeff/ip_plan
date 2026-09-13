@@ -7,11 +7,22 @@
 
 {% block content %}
   <section class="hero">
-    <a href="{% url 'ip_plan:regulator_list' %}" class="regulator-back-link">← Все письма</a>
+    <!-- .btn-back — та же пилюля и то же место в .hero-title-row (справа
+         от заголовка), что у acl_detail.html/acl_object_group_detail.html
+         ("← ACL"), а не отдельная текстовая ссылка над заголовком
+         (.regulator-back-link, убрана) — переход назад должен выглядеть и
+         располагаться как везде в приложении, не как обычная ссылка в
+         тексте. -->
     <div class="hero-title-row">
-      <h1 class="title">№{{ document.reference_no }} <span class="regulator-doc-date">от {{ document.document_date|date:"d.m.Y" }}</span></h1>
+      <h1 class="title">№{{ document.reference_no }} <span class="regulator-doc-date">| от {{ document.document_date|date:"d.m.Y" }}</span></h1>
+      <a href="{% url 'ip_plan:regulator_list' %}" class="btn-back">← Все письма</a>
     </div>
-    {% if document.note %}<p class="subtitle">{{ document.note }}</p>{% endif %}
+    <!-- id + :empty в CSS, не условный рендер тегом if — чтобы
+         regulator_document_ioc_save могла обновить текст через OOB-swap
+         после того, как впишет туда распознанный штамп из шапки письма:
+         OOB нужен УЖЕ существующий в DOM элемент с этим id, а не только
+         условно отрисованный. -->
+    <p id="regulator-note-display" class="subtitle">{{ document.note }}</p>
     <!-- created_by — пусто у писем, заведённых до появления этого поля
          (или созданных не через форму, напрямую в БД) — тогда просто не
          показываем строку, а не "Добавил: " с пустым значением. -->
@@ -31,13 +42,15 @@
        значение, секунды, тип определяется автоматически на сервере той же
        classify_clean_line(), что и "чистая" ветка загрузки файлов справа
        (regulator_entry_quick_add, ip_plan/services/ioc_parser.py) — гадать
-       вручную незачем, типов всего 4. "Загрузить файлы" — многошаговый
-       процесс (выбрать → разобрать → проверить превью → сохранить),
-       поэтому карточка спокойнее (без акцентной грани слева) и в сетке ей
-       выделено больше воздуха. Превью распознанных индикаторов
-       (#ioc-preview-panel) сознательно ВЫНЕСЕНО из сетки на всю ширину
-       страницы ниже — таблица с колонками "Тип/Значение/Как в тексте"
-       нуждается в месте, а не в половине экрана. -->
+       вручную незачем, типов всего 4. "Загрузить файлы" — процесс в два
+       шага (выбрать → проверить превью → сохранить): разбор запускается
+       автоматически сразу после выбора файлов/папки, отдельной кнопки
+       "Разобрать" нет — поэтому карточка спокойнее (без акцентной грани
+       слева) и в сетке ей выделено больше воздуха. Превью распознанных
+       индикаторов (#ioc-preview-panel) сознательно ВЫНЕСЕНО из сетки на
+       всю ширину страницы ниже — таблица с колонками
+       "Тип/Значение/Как в тексте" нуждается в месте, а не в половине
+       экрана. -->
   <div class="regulator-intake-grid">
     <div class="regulator-quick-card">
       <div class="regulator-card-head">
@@ -87,10 +100,17 @@
             class="regulator-intake-csv-form"
             x-data="{ menuOpen: false, selectedCount: 0 }">
         {% csrf_token %}
+        <!-- Отдельной кнопки "Разобрать" нет — @change сразу шлёт форму
+             через requestSubmit(), htmx перехватывает получившийся нативный
+             submit-event точно так же, как клик по кнопке (form=
+             "ioc-save-form" ниже физически привязана к ДРУГОЙ форме и
+             сабмита этой не вызывает). -->
         <input type="file" name="ioc_files" accept=".pdf,.docx,.csv,.txt" multiple style="display:none"
-               x-ref="filesInput" @change="selectedCount = $event.target.files.length">
+               x-ref="filesInput"
+               @change="selectedCount = $event.target.files.length; if (selectedCount) $el.form.requestSubmit()">
         <input type="file" name="ioc_files" webkitdirectory multiple style="display:none"
-               x-ref="folderInput" @change="selectedCount = $event.target.files.length">
+               x-ref="folderInput"
+               @change="selectedCount = $event.target.files.length; if (selectedCount) $el.form.requestSubmit()">
         <div class="kebab-wrap" @click.outside="menuOpen = false">
           <button type="button" class="btn-modal-secondary" @click="menuOpen = !menuOpen">
             Выбрать файлы или папку
@@ -101,7 +121,6 @@
           </div>
         </div>
         <span class="cell-muted" x-show="selectedCount" x-text="'Выбрано: ' + selectedCount"></span>
-        <button type="submit" class="btn-modal-secondary" :disabled="!selectedCount">Разобрать</button>
         <!-- Живёт здесь, а не у таблицы превью внизу страницы — form=
              "ioc-save-form" привязывает её к форме превью
              (_regulator_ioc_preview.html) независимо от расположения в

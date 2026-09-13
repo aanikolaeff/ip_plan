@@ -13,62 +13,81 @@
     </ul>
   {% endif %}
 
-  {% if rows %}
+  {% if rows or stamp_values %}
     <!-- id нужен кнопке "Сохранить в письмо" в regulator_document_detail.html
-         (рядом с "Разобрать", form="ioc-save-form") — она физически не
-         внутри этого <form>, привязана к нему только через form-атрибут
-         (валидно по HTML-спеке), а видима только пока эта форма есть в DOM
-         (см. #ioc-save-button в style.css, :has()). -->
+         (form="ioc-save-form") — она физически не внутри этого <form>,
+         привязана к нему только через form-атрибут (валидно по
+         HTML-спеке), а видима только пока эта форма есть в DOM (см.
+         #ioc-save-button в style.css, :has()). -->
     <form id="ioc-save-form"
           hx-post="{% url 'ip_plan:regulator_document_ioc_save' document.id %}"
           hx-target="#ioc-preview-panel" hx-swap="none" hx-indicator="#regulator-busy-overlay"
           class="ioc-preview-form">
       {% csrf_token %}
-      <div class="table-wrapper ioc-preview-table-wrap">
-        <!-- .ip-table-scroll — тот же скролл-контейнер (max-height +
-             overflow-y:auto), что у таблицы записей письма после
-             сохранения (static_src/regulator_table) — то же поведение
-             прокрутки до и после сохранения, не два разных. -->
-        <div class="ip-table-scroll">
-          <table class="table acl-table">
-            <thead>
-              <tr>
-                <th>Тип</th>
-                <th>Значение</th>
-                <th>Как в тексте / где встречалось</th>
-                <th></th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for row in rows %}
-                <tr class="ioc-preview-row">
-                  <td>
-                    <select name="ioc_kind" class="field-control">
-                      {% for value, label in kind_choices %}
-                        <option value="{{ value }}" {% if value == row.entry_kind %}selected{% endif %}>{{ label }}</option>
-                      {% endfor %}
-                    </select>
-                  </td>
-                  <td><input type="text" name="ioc_value" class="field-control ip-mono" value="{{ row.value }}"></td>
-                  <td class="cell-muted">
-                    {% if row.value_defanged %}<div class="ip-mono">{{ row.value_defanged }}</div>{% endif %}
-                    {% if row.occurrences %}<div>{{ row.occurrences }}× · {{ row.source_files|join:", " }}</div>{% endif %}
-                  </td>
-                  <td>
-                    {% if row.needs_review %}
-                      <span class="badge-status" data-status="reserved" title="{{ row.note }}">проверить</span>
-                    {% endif %}
-                  </td>
-                  <td>
-                    <button type="button" class="btn-danger btn-sm" onclick="this.closest('tr').remove()">Убрать</button>
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+
+      {% if stamp_values %}
+        <!-- Дата/номер, распознанные OCR'ом в шапке PDF (см.
+             ioc_parser.extract_letter_header_stamp) — ПОЛЯ, не статичный
+             текст: сам оператор видит их до сохранения и может поправить
+             или стереть (пустое поле = не попадёт в примечание), т.к. OCR
+             по стилизованному шрифту бланка не эталонный. При сохранении
+             (regulator_document_ioc_save) непустые значения уходят в
+             document.note через запятую. -->
+        <div class="ioc-stamp-block">
+          <div class="ioc-stamp-title">Обнаруженные номера писем — записываем в примечание к письму</div>
+          {% for v in stamp_values %}
+            <input type="text" name="stamp_value" class="field-control ip-mono ioc-stamp-input" value="{{ v }}">
+          {% endfor %}
         </div>
-      </div>
+      {% endif %}
+
+      {% if rows %}
+        <div class="table-wrapper ioc-preview-table-wrap">
+          <!-- .ip-table-scroll — тот же скролл-контейнер (max-height +
+               overflow-y:auto), что у таблицы записей письма после
+               сохранения (static_src/regulator_table) — то же поведение
+               прокрутки до и после сохранения, не два разных. -->
+          <div class="ip-table-scroll">
+            <table class="table acl-table">
+              <thead>
+                <tr>
+                  <th>Тип</th>
+                  <th>Значение</th>
+                  <th>Как в тексте / где встречалось</th>
+                  <th></th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in rows %}
+                  <tr class="ioc-preview-row">
+                    <td>
+                      <select name="ioc_kind" class="field-control">
+                        {% for value, label in kind_choices %}
+                          <option value="{{ value }}" {% if value == row.entry_kind %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                      </select>
+                    </td>
+                    <td><input type="text" name="ioc_value" class="field-control ip-mono" value="{{ row.value }}"></td>
+                    <td class="cell-muted">
+                      {% if row.value_defanged %}<div class="ip-mono">{{ row.value_defanged }}</div>{% endif %}
+                      {% if row.occurrences %}<div>{{ row.occurrences }}× · {{ row.source_files|join:", " }}</div>{% endif %}
+                    </td>
+                    <td>
+                      {% if row.needs_review %}
+                        <span class="badge-status" data-status="reserved" title="{{ row.note }}">проверить</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <button type="button" class="btn-danger btn-sm" onclick="this.closest('tr').remove()">Убрать</button>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {% endif %}
     </form>
   {% endif %}
 </div>

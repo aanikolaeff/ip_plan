@@ -8,17 +8,20 @@ from openpyxl.styles import Font
 
 from django.db.models import Count, Q
 from django.http import Http404, HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.template.loader import render_to_string
 from django.utils import timezone
+from django.conf import settings
+from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.decorators import login_not_required
+from django.contrib.auth.forms import PasswordChangeForm
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 
 from .forms import (
     CUSTOM_FIELD_KEYS, STATUS_CHOICES, IPAddressForm,
-    RegulatorDocumentForm, RegulatorEntryForm,
+    RegulatorDocumentNoteForm, RegulatorEntryForm,
 )
 from .models import FirewallObjectName, RegulatorDocument, RegulatorEntry
 from .services import acl_store, firewall_blocklist, ioc_parser, os_catalog, sync_log
@@ -579,36 +582,59 @@ def regulator_document_detail(request, document_id):
     return render(request, "ip_plan/regulator_document_detail.html", {"document": document})
 
 
+def _next_regulator_reference_no():
+    """Следующий порядковый номер письма — целое, на 1 больше самого
+    большого УЖЕ ЧИСТО ЧИСЛОВОГО reference_no в реестре. Письма, заведённые
+    раньше вручную (до автонумерации), могли содержать произвольный текст
+    вроде "К-22_38525" — такие в подсчёт не идут, чтобы нечисловое
+    старое значение не сломало последовательность для новых писем."""
+    numeric_values = [
+        int(no) for no in RegulatorDocument.objects.values_list("reference_no", flat=True)
+        if no.isdigit()
+    ]
+    return str(max(numeric_values, default=0) + 1)
+
+
+@require_http_methods(["POST"])
 def regulator_document_add(request):
-    """GET — форма добавления письма (для модалки), POST — сохранение.
+    """Создание письма — без формы и без модалки: номер (по порядку) и
+    дата (сегодня) проставляются автоматически, оператору на этом шаге
+    нечего заполнять (см. design doc про переработку создания письма).
+    Реальные номер/дата, которые ФСТЭК печатает в самом письме,
+    распознаются позже из шапки загруженных файлов (см.
+    regulator_document_ioc_parse/_save) и ложатся в примечание — они не
+    заменяют это поле, оно остаётся внутренним порядковым номером СИЦ.
+    Ручная правка по-прежнему доступна (regulator_document_edit), если
+    порядковый номер нужно поправить.
+
     Успех ведёт сразу на детальную страницу нового письма (HX-Redirect) —
-    ровно тот workflow, который и просили: добавил письмо → сразу внутри
-    него вносишь записи, без промежуточного возврата к общему списку."""
-    if request.method == "POST":
-        form = RegulatorDocumentForm(request.POST)
-        if form.is_valid():
-            document = form.save(commit=False)
-            document.created_by = request.user.get_username()
-            document.save()
-            response = HttpResponse(status=204)
-            response["HX-Redirect"] = reverse("ip_plan:regulator_document_detail", args=[document.id])
-            return response
-        return render(request, "ip_plan/regulator_document_add_modal.html", {"form": form}, status=400)
-    form = RegulatorDocumentForm(initial={"document_date": timezone.localdate()})
-    return render(request, "ip_plan/regulator_document_add_modal.html", {"form": form})
+    тот же workflow, что и раньше: добавил письмо → сразу внутри него
+    вносишь записи, без промежуточного возврата к общему списку."""
+    document = RegulatorDocument.objects.create(
+        reference_no=_next_regulator_reference_no(),
+        document_date=timezone.localdate(),
+        created_by=request.user.get_username(),
+    )
+    response = HttpResponse(status=204)
+    response["HX-Redirect"] = reverse("ip_plan:regulator_document_detail", args=[document.id])
+    return response
 
 
 def regulator_document_edit(request, document_id):
-    """GET — форма редактирования письма (та же RegulatorDocumentForm и
-    модалка по духу, что у regulator_document_add, просто с instance) —
-    номер/дата/примечание иногда нужно поправить и после того, как в
-    письмо уже внесены записи (опечатка в номере, дата уточнилась). В
-    отличие от add — успех никуда не уводит: список писем обновляется на
-    месте (OOB, тот же приём, что у regulator_document_delete), модалка
-    просто закрывается."""
+    """GET/POST — модалка правки письма. Только примечание
+    (RegulatorDocumentNoteForm) — номер и дата НЕ редактируются здесь
+    вообще: номер выдаётся один раз при создании (по порядку, см.
+    _next_regulator_reference_no), дата — момент создания записи в
+    реестре, менять их задним числом не должно быть возможности ни у
+    кого. Реальные номер/дата письма ФСТЭК распознаются OCR'ом штампа
+    (regulator_document_ioc_save) и так и лежат в этом же примечании.
+
+    Успех никуда не уводит: список писем обновляется на месте (OOB, тот
+    же приём, что у regulator_document_delete), модалка просто
+    закрывается."""
     document = get_object_or_404(RegulatorDocument, pk=document_id)
     if request.method == "POST":
-        form = RegulatorDocumentForm(request.POST, instance=document)
+        form = RegulatorDocumentNoteForm(request.POST, instance=document)
         if form.is_valid():
             form.save()
             context = _regulator_letters_context(request)
@@ -624,7 +650,7 @@ def regulator_document_edit(request, document_id):
             request, "ip_plan/regulator_document_edit_modal.html",
             {"form": form, "document": document}, status=400,
         )
-    form = RegulatorDocumentForm(instance=document)
+    form = RegulatorDocumentNoteForm(instance=document)
     return render(request, "ip_plan/regulator_document_edit_modal.html", {"form": form, "document": document})
 
 
@@ -750,7 +776,17 @@ def regulator_document_ioc_parse(request, document_id):
     обычного multi-file input, что для input с webkitdirectory (выбор папки
     целиком) — с точки зрения Django оба варианта неотличимы, оба отдают
     плоский список файлов, поэтому один view обслуживает и "выбрать файлы",
-    и "выбрать папку" из брифа."""
+    и "выбрать папку" из брифа.
+
+    Заодно (только для .pdf) — OCR штампа "дата + № письма" из шапки
+    бланка ФСТЭК (см. ioc_parser.extract_letter_header_stamp) —
+    результат ("09.04.2026 № 240/92/2320" и т.п.) идёт не в indicators, а
+    отдельным списком stamp_values в превью: оператор видит его ДО
+    сохранения и может поправить/убрать (это OCR по стилизованному
+    шрифту, не эталон), а при сохранении (regulator_document_ioc_save)
+    значения ложатся в примечание письма через запятую. f.seek(0) перед
+    вызовом обязателен — parse_file() уже дочитал этот же файловый объект
+    до конца, pdfplumber.open() сам не перематывает поток."""
     document = get_object_or_404(RegulatorDocument, pk=document_id)
     files = request.FILES.getlist("ioc_files")
     if not files:
@@ -761,10 +797,16 @@ def regulator_document_ioc_parse(request, document_id):
 
     indicators = {}
     warnings = []
+    stamp_values = []
     for f in files:
         warning = ioc_parser.parse_file(f.name, f, indicators)
         if warning:
             warnings.append(warning)
+        if f.name.lower().endswith(".pdf"):
+            f.seek(0)
+            stamp = ioc_parser.extract_letter_header_stamp(f)
+            if stamp and stamp not in stamp_values:
+                stamp_values.append(stamp)
 
     rows = []
     for kind in _IOC_KIND_ORDER:
@@ -784,6 +826,7 @@ def regulator_document_ioc_parse(request, document_id):
         "rows": rows,
         "warnings": warnings,
         "kind_choices": RegulatorEntry.KIND_CHOICES,
+        "stamp_values": stamp_values,
     })
 
 
@@ -815,12 +858,29 @@ def regulator_document_ioc_save(request, document_id):
     ПОЛНОМУ value, не по match_value — у kind=url match_value обрезан до
     хоста (см. RegulatorEntry.compute_match_value), а разные payload-URL на
     одном хосте (типичный случай в письмах регулятора: .../client32.ini и
-    .../client32.exe на одном сервере) — это разные IOC, не дубли."""
+    .../client32.exe на одном сервере) — это разные IOC, не дубли.
+
+    stamp_value[] — штампы "дата + № письма", распознанные OCR на шаге
+    разбора (см. regulator_document_ioc_parse) и показанные оператору
+    РЕДАКТИРУЕМЫМИ полями в той же превью-форме: сюда приходит то, что
+    оператор реально оставил/поправил, а не сырой результат OCR. Можно
+    сохранять сами по себе, без единой строки IOC (например, письмо
+    оказалось административным, без индикаторов, но штамп всё равно стоит
+    занести) — поэтому "нечего сохранять" проверяется по ОБОИМ спискам
+    сразу, не только по kinds/values."""
     document = get_object_or_404(RegulatorDocument, pk=document_id)
     kinds = request.POST.getlist("ioc_kind")
     values = request.POST.getlist("ioc_value")
+    stamp_values = [v.strip() for v in request.POST.getlist("stamp_value") if v.strip()]
 
-    if not kinds or len(kinds) != len(values):
+    if not kinds and not stamp_values:
+        return render(
+            request, "ip_plan/_regulator_ioc_preview.html",
+            {"document": document, "error": "Список пуст — нечего сохранять.", "oob": True},
+            status=400,
+        )
+
+    if len(kinds) != len(values):
         return render(
             request, "ip_plan/_regulator_ioc_preview.html",
             {"document": document, "error": "Список пуст или повреждён — попробуйте разобрать документы заново.", "oob": True},
@@ -844,22 +904,18 @@ def regulator_document_ioc_save(request, document_id):
                 "document": document, "errors": errors,
                 # Возвращаем то же самое (уже отредактированное оператором)
                 # содержимое обратно в форму — без этого пришлось бы
-                # заново разбирать документы после каждой опечатки.
+                # заново разбирать документы после каждой опечатки. Штампы
+                # (если были) — туда же, чтобы повторная отправка после
+                # исправления опечатки в IOC не потеряла их попутно.
                 "rows": [
                     {"entry_kind": k, "value": v, "value_defanged": None,
                      "occurrences": None, "source_files": [], "needs_review": False, "note": ""}
                     for k, v in zip(kinds, values)
                 ],
                 "kind_choices": RegulatorEntry.KIND_CHOICES,
+                "stamp_values": stamp_values,
                 "oob": True,
             },
-            status=400,
-        )
-
-    if not validated:
-        return render(
-            request, "ip_plan/_regulator_ioc_preview.html",
-            {"document": document, "error": "Список пуст — нечего сохранять.", "oob": True},
             status=400,
         )
 
@@ -883,6 +939,18 @@ def regulator_document_ioc_save(request, document_id):
         entry.save()
         created.append(entry)
 
+    # Штампы "дата + № письма" — в примечание письма через запятую, не
+    # дублируя уже присутствующие там значения (повторная загрузка того же
+    # файла/письма не должна плодить одну и ту же строку в note бесконечно).
+    note_updated = False
+    if stamp_values:
+        existing_note = document.note or ""
+        new_stamp_values = [v for v in stamp_values if v not in existing_note]
+        if new_stamp_values:
+            document.note = (existing_note + ", " if existing_note else "") + ", ".join(new_stamp_values)
+            document.save(update_fields=["note"])
+            note_updated = True
+
     # Таблица записей — React-island (см. её докстринг выше про
     # "regulator-entries-changed"): готовые <tr> вставлять больше некуда,
     # только OOB-очистка превью, а созданные записи React подхватит сам
@@ -890,11 +958,24 @@ def regulator_document_ioc_save(request, document_id):
     clear_preview_html = render_to_string(
         "ip_plan/_regulator_ioc_preview.html", {"document": document, "rows": [], "oob": True}, request=request
     )
-    if skipped_existing:
-        message = f"Сохранено новых: {len(created)}; уже было в этом письме: {skipped_existing}"
-    else:
-        message = f"Сохранено записей: {len(created)}"
-    response = HttpResponse(clear_preview_html)
+    # hx-swap="none" на самой форме (см. _regulator_ioc_preview.html) — весь
+    # "основной" ответ игнорируется, htmx обрабатывает только OOB-фрагменты,
+    # поэтому можно просто склеить второй такой фрагмент следом, не заводя
+    # отдельный запрос за свежим текстом примечания.
+    note_oob_html = (
+        render_to_string("ip_plan/_regulator_document_note.html", {"document": document, "oob": True}, request=request)
+        if note_updated else ""
+    )
+    message_parts = []
+    if created or skipped_existing:
+        if skipped_existing:
+            message_parts.append(f"Сохранено новых: {len(created)}; уже было в этом письме: {skipped_existing}")
+        else:
+            message_parts.append(f"Сохранено записей: {len(created)}")
+    if note_updated:
+        message_parts.append("данные из шапки добавлены в примечание")
+    message = "; ".join(message_parts) if message_parts else "Сохранено"
+    response = HttpResponse(clear_preview_html + note_oob_html)
     response["HX-Trigger"] = json.dumps(
         {"show-toast": {"message": message, "kind": "success"}, "regulator-entries-changed": True}
     )
@@ -1389,3 +1470,41 @@ def ip_resolve_dns(request, ip_id):
         return JsonResponse({"ok": True, "resolved": resolved, "action": "none"})
 
     return JsonResponse({"ok": True, "resolved": resolved, "current": current, "action": "confirm"})
+
+
+# ── Смена собственного пароля ──────────────────────────────────────────────
+# Обычная страница, а не модалка: сюда принудительно приводит
+# ForcePasswordChangeMiddleware локального админа с дефолтным паролем, и в
+# этот момент никакого остального интерфейса вокруг ещё быть не должно.
+
+def password_change(request):
+    """Смена пароля текущего пользователя.
+
+    Только для локальных учёток: у пользователя из FreeIPA пароля в этой
+    системе нет вообще (django-auth-ldap ставит зеркалу unusable password),
+    менять тут нечего — показываем объяснение вместо формы.
+    """
+    account = getattr(request.user, "local_account", None)
+    if account is None:
+        return render(request, "ip_plan/password_change.html", {"ldap_user": True})
+
+    if request.method == "POST":
+        form = PasswordChangeForm(request.user, request.POST)
+        if form.is_valid():
+            user = form.save()
+            # Сессия иначе инвалидируется сменой пароля и пользователя
+            # выкидывает на логин сразу после успешной смены.
+            update_session_auth_hash(request, user)
+            if account.must_change_password:
+                account.must_change_password = False
+                account.save(update_fields=["must_change_password"])
+            logger.info("Пользователь %s сменил свой пароль", user.username)
+            return redirect(settings.PASSWORD_CHANGE_REDIRECT_URL)
+    else:
+        form = PasswordChangeForm(request.user)
+
+    return render(request, "ip_plan/password_change.html", {
+        "form": form,
+        "ldap_user": False,
+        "forced": account.must_change_password,
+    })

@@ -20,8 +20,12 @@ WORKDIR /app
 # python-ldap (C-расширение, компилируется при pip install), в runtime не
 # используются, но удалять после сборки не стали — слой всё равно общий
 # с pip install ниже, выгоды от отдельного builder-stage здесь нет.
+# tesseract-ocr — для распознавания штампа "дата + № письма" в шапке PDF
+# (ioc_parser.extract_letter_header_stamp, см. requirements.txt про
+# pytesseract). Только "eng" (пакет по умолчанию, без tesseract-ocr-rus) —
+# сам штамп это цифры/./−// и "№", кириллица там не встречается.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        fping nmap gcc libldap2-dev libsasl2-dev libssl-dev \
+        fping nmap gcc libldap2-dev libsasl2-dev libssl-dev tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

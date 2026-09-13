@@ -46,14 +46,18 @@
     </div>
 
     <div x-show="tab === 'letters'">
-      <div class="hero-row" style="margin-top: 1.25rem;">
-        <button type="button" class="btn-add"
-                hx-get="{% url 'ip_plan:regulator_document_add' %}"
-                hx-target="#modal-content"
-                hx-indicator="#modal-spinner"
-                @click="$store.modal.dirty = false; $dispatch('open-modal')">
-          + Письмо
-        </button>
+      <div class="hero-row" style="margin-top: 1.25rem; margin-bottom: 1rem;">
+        <!-- Без модалки и без полей — номер (по порядку) и дата (сегодня)
+             проставляются на сервере автоматически (см.
+             views.regulator_document_add), заполнять оператору нечего.
+             Обычная форма (не голый hx-post на <button>) — нужен csrf-тег
+             Django, глобального htmx-хедера с CSRF в этом приложении нет
+             (см. остальные POST-кнопки в _regulator_letters_body.html,
+             тот же приём). -->
+        <form hx-post="{% url 'ip_plan:regulator_document_add' %}" hx-swap="none">
+          {% csrf_token %}
+          <button type="submit" class="btn-add">+ Письмо</button>
+        </form>
       </div>
       {% include "ip_plan/_regulator_letters_body.html" %}
     </div>

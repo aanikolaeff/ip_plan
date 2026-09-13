@@ -1,0 +1,5 @@
+<!-- OOB-обновление примечания письма после regulator_document_ioc_save
+     (штамп из шапки допечатан в document.note) — id должен совпадать с
+     тем, что всегда присутствует в regulator_document_detail.html (см.
+     комментарий там же про :empty вместо условного рендера). -->
+<p id="regulator-note-display" class="subtitle"{% if oob %} hx-swap-oob="true"{% endif %}>{{ document.note }}</p>

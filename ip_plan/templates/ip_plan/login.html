@@ -46,7 +46,8 @@
 
     {% if form.errors %}
       <div class="alert-modal-error">
-        Неверные данные или нет доступа. Убедитесь, что вы входите в группу netbox_users.
+        Неверный логин или пароль. Для входа через FreeIPA нужно ещё и состоять
+        в группе netbox-users.
       </div>
     {% endif %}
 

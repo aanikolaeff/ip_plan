@@ -13,6 +13,12 @@ docs/plans/2026-09-07-ioc-parser-fstec-corpus-audit.md.
 Framework-agnostic: не импортирует Django, пригоден и для management-команды
 (ioc_scan), и для вызова из view (regulator_entry_ioc_parse) напрямую на
 файлах из request.FILES, без сохранения на диск.
+
+Отдельно (не про IOC) — extract_letter_header_stamp(): OCR даты/номера из
+штампа шапки письма ФСТЭК, см. docstring там же и
+docs/plans/2026-09-12-fstec-letter-stamp-ocr.md. Единственное место в этом
+модуле, которому нужен pytesseract/системный tesseract-ocr — остальной
+разбор IOC от них не зависит.
 """
 
 import logging
@@ -440,6 +446,88 @@ def extract_csv_indicators(lines, source_file, indicators):
             continue
         kind, value, needs_review, note = classified
         _record(indicators, kind, value, None, source_file, needs_review=needs_review, note=note)
+
+
+# ── Штамп "дата + № письма" в шапке бланка ФСТЭК ─────────────────────────
+# См. docs/plans/2026-09-12-fstec-letter-stamp-ocr.md: в бланке письма
+# ("___ № ___" / "На № ___") дата и номер почти всегда НЕ текст, а
+# растровая картинка, вклеенная поверх напечатанных подчёркиваний —
+# extract_pdf_lines() её принципиально не видит (читает только векторный
+# текстовый слой). Проверено на 41 реальном письме ФСТЭК: 38 из 41 — со
+# штампом-картинкой, у оставшихся 3 бланк действительно пуст.
+_STAMP_DATE_RE = re.compile(r"(\d{1,2})[-.](\d{1,2})[-.](\d{4})")
+# Разделитель дня/месяца/года у самого штампа — дефис ("09-04-2026"), не
+# точка, но OCR на нечёткой картинке иногда путает "-" с ".", поэтому
+# разрешаем оба. Отдельно от CLEAN_IP_SHAPED_RE/DOMAIN_RE выше — это дата,
+# не адрес, своя регулярка.
+#
+# Номер письма ("240/92/2320", иногда с суффиксом "-1") — специально
+# нестрогий паттерн (просто "цифры/цифры" произвольной длины, а не ровно
+# три группы через "/"): OCR на этом мелком стилизованном шрифте регулярно
+# теряет один из двух "/" (см. design doc, реальные примеры), а поскольку
+# результат в любом случае показывается оператору РЕДАКТИРУЕМЫМ полем
+# перед сохранением (см. regulator_document_ioc_parse), лучше отдать
+# частично распознанное значение на правку, чем молча ничего не найти.
+_STAMP_NUMBER_RE = re.compile(r"(\d[\d/]{2,16}\d)")
+
+
+def extract_letter_header_stamp(file_obj_or_path):
+    """OCR даты/номера штампа на ПЕРВОЙ странице PDF (см. блок регулярок
+    выше). Возвращает строку вида "09.04.2026 № 240/92/2320" (может быть
+    только дата, только номер, либо неполный/кривой фрагмент — качество
+    зависит от скана, поэтому это ЧЕРНОВОЕ значение, не итоговое), либо
+    None — если картинки в области штампа нет вообще (часть писем
+    действительно приходит без него), OCR ничего не распознал, или
+    pytesseract/системный tesseract-ocr недоступен (тихо пропускаем эту
+    необязательную возможность, а не роняем весь разбор письма из-за
+    отсутствующей зависимости — тем же принципом, что остальной парсер).
+
+    file_obj_or_path должен быть в начале потока (вызывающий код отвечает
+    за seek(0), если этот же файл уже читался, например, parse_file() чуть
+    выше в том же request — pdfplumber.open() не перематывает сам)."""
+    try:
+        import pdfplumber
+        import pytesseract
+    except ImportError:
+        return None
+
+    try:
+        with pdfplumber.open(file_obj_or_path) as pdf:
+            if not pdf.pages:
+                return None
+            page = pdf.pages[0]
+            # Сам штамп — небольшая картинка чуть ниже контактного блока
+            # (E-mail/тел./факс) и выше темы письма; лого ФСТЭК в углу
+            # страницы всегда заметно выше (top ~55-120pt). Расположение
+            # штампа гуляет между годами (у писем 2024-2025 картинка шире и
+            # выше ~232×23pt, у 2026-х — компактнее ~129×12pt), поэтому
+            # ищем по диапазону top, а не по фиксированным пикселям/индексу
+            # в списке.
+            candidates = [im for im in page.images if 200 < im["top"] < 320]
+            if not candidates:
+                return None
+            im = candidates[0]
+            bbox = (im["x0"], im["top"], im["x1"], im["bottom"])
+            cropped = page.crop(bbox).to_image(resolution=300).original
+            # psm 7 — "одна строка текста", ровно формат самого штампа;
+            # без него tesseract иногда пытается разложить короткую строку
+            # на несколько "блоков" и путает порядок даты/номера.
+            ocr_text = pytesseract.image_to_string(cropped, config="--psm 7")
+    except Exception as exc:
+        logger.warning("Не удалось распознать штамп даты/номера письма: %s", exc)
+        return None
+
+    date_match = _STAMP_DATE_RE.search(ocr_text)
+    remainder = ocr_text[date_match.end():] if date_match else ocr_text
+    number_match = _STAMP_NUMBER_RE.search(remainder)
+
+    parts = []
+    if date_match:
+        day, month, year = date_match.groups()
+        parts.append(f"{int(day):02d}.{int(month):02d}.{year}")
+    if number_match:
+        parts.append(f"№ {number_match.group(1)}")
+    return " ".join(parts) if parts else None
 
 
 # ── Извлечение текста из файлов ──────────────────────────────────────────

@@ -7,5 +7,15 @@ whitenoise==6.8.2
 openpyxl==3.1.5
 django-auth-ldap==4.8.0
 python-ldap==3.4.4
+# Шифрование bind-пароля LDAP в БД (ip_plan/services/secretbox.py). В образе
+# библиотека и так присутствовала как транзитивная зависимость, но полагаться
+# на это нельзя: обновление pdfplumber/python-ldap могло бы её убрать, и
+# приложение перестало бы стартовать не в момент сборки, а при первом входе.
+cryptography==50.0.1
 pdfplumber==0.11.4
 python-docx==1.1.2
+# OCR штампа "дата + № письма" в шапке PDF (ioc_parser.extract_letter_header_stamp)
+# — сам текст там не векторный, а картинка. Обёртка над системным
+# tesseract-ocr (см. Dockerfile) — без него в системе просто выключается
+# (except ImportError: return None), не роняя остальной разбор IOC.
+pytesseract==0.3.13

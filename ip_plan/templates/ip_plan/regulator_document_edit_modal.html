@@ -1,6 +1,6 @@
 <div class="modal-title-bar">
   <h5>Изменить письмо №{{ document.reference_no }}</h5>
-  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть">✕</button>
+  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
 </div>
 <form hx-post="{% url 'ip_plan:regulator_document_edit' document.id %}" hx-target="#modal-content" hx-swap="innerHTML" hx-indicator="#modal-spinner">
   {% csrf_token %}
@@ -8,21 +8,15 @@
     {% if form.non_field_errors %}
       <div class="alert-modal-error">{{ form.non_field_errors }}</div>
     {% endif %}
+    <!-- Только примечание — номер и дата не редактируются нигде (номер
+         выдаётся один раз по порядку при создании, дата — момент создания
+         записи в реестре, см. views.regulator_document_edit). -->
     <div class="field-group">
       <div class="row g-2">
-        <div class="col-md-6">
-          <label class="field-label">{{ form.reference_no.label }}</label>
-          {{ form.reference_no }}
-          {{ form.reference_no.errors }}
-        </div>
-        <div class="col-md-6">
-          <label class="field-label">{{ form.document_date.label }}</label>
-          {{ form.document_date }}
-          {{ form.document_date.errors }}
-        </div>
         <div class="col-12">
           <label class="field-label">{{ form.note.label }}</label>
           {{ form.note }}
+          {{ form.note.errors }}
         </div>
       </div>
     </div>

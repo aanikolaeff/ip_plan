@@ -2,7 +2,7 @@ from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_not_required
 from django.urls import path
 
-from . import views
+from . import views, views_settings
 
 app_name = "ip_plan"
 
@@ -16,6 +16,7 @@ urlpatterns = [
         name="login",
     ),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
+    path("password/", views.password_change, name="password_change"),
     path("", views.ip_list, name="ip_list"),
     path("ip/list.json", views.ip_list_json, name="ip_list_json"),
     path("csrf/", views.csrf_refresh, name="csrf_refresh"),
@@ -45,6 +46,35 @@ urlpatterns = [
         views.os_catalog_entry_delete, name="os_catalog_entry_delete",
     ),
     path("export/", views.export_excel, name="export_excel"),
+
+    # --- Раздел "Настройки" (ip_plan/views_settings.py) ---
+    path("settings/", views_settings.settings_page, name="settings"),
+    path("settings/tab/<str:tab>/", views_settings.settings_page, name="settings_tab"),
+    path("settings/devices/add/", views_settings.device_form, name="settings_device_add"),
+    path("settings/devices/add/save/", views_settings.device_save, name="settings_device_add_save"),
+    path("settings/devices/<str:name>/edit/", views_settings.device_form, name="settings_device_edit"),
+    path("settings/devices/<str:name>/save/", views_settings.device_save, name="settings_device_save"),
+    path("settings/devices/<str:name>/delete/", views_settings.device_delete, name="settings_device_delete"),
+    path("settings/models/add/", views_settings.device_type_form, name="settings_type_add"),
+    path("settings/models/add/save/", views_settings.device_type_save, name="settings_type_add_save"),
+    path("settings/models/<str:name>/edit/", views_settings.device_type_form, name="settings_type_edit"),
+    path("settings/models/<str:name>/save/", views_settings.device_type_save, name="settings_type_save"),
+    path("settings/models/<str:name>/delete/", views_settings.device_type_delete, name="settings_type_delete"),
+    path("settings/sources/<str:kind>/add/", views_settings.source_form, name="settings_source_add"),
+    path("settings/sources/<str:kind>/add/save/", views_settings.source_save, name="settings_source_add_save"),
+    path("settings/sources/<str:kind>/<int:index>/edit/", views_settings.source_form, name="settings_source_edit"),
+    path("settings/sources/<str:kind>/<int:index>/save/", views_settings.source_save, name="settings_source_save"),
+    path("settings/sources/<str:kind>/<int:index>/delete/", views_settings.source_delete, name="settings_source_delete"),
+    path("settings/scan/save/", views_settings.scan_save, name="settings_scan_save"),
+    path("settings/environment/<str:env>/edit/", views_settings.environment_form, name="settings_env_edit"),
+    path("settings/environment/<str:env>/save/", views_settings.environment_save, name="settings_env_save"),
+    path("settings/ldap/save/", views_settings.ldap_save, name="settings_ldap_save"),
+    path("settings/ldap/test/", views_settings.ldap_test, name="settings_ldap_test"),
+    path("settings/users/add/", views_settings.user_form, name="settings_user_add"),
+    path("settings/users/add/save/", views_settings.user_save, name="settings_user_add_save"),
+    path("settings/users/<int:user_id>/edit/", views_settings.user_form, name="settings_user_edit"),
+    path("settings/users/<int:user_id>/save/", views_settings.user_save, name="settings_user_save"),
+    path("settings/users/<int:user_id>/delete/", views_settings.user_delete, name="settings_user_delete"),
     path("acl/", views.acl_lookup, name="acl_lookup"),
     path("acl/<str:device>/object-group/<str:name>/", views.acl_object_group_detail, name="acl_object_group_detail"),
     path("acl/<str:device>/<str:acl_name>/", views.acl_detail, name="acl_detail"),

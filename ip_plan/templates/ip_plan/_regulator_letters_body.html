@@ -33,9 +33,12 @@
         <tbody>
           {% for doc in documents %}
             <tr class="regulator-doc-row" @click="location.href='{% url 'ip_plan:regulator_document_detail' doc.id %}'">
-              <td><a href="{% url 'ip_plan:regulator_document_detail' doc.id %}">№{{ doc.reference_no }}</a></td>
+              <td><a href="{% url 'ip_plan:regulator_document_detail' doc.id %}">{{ doc.reference_no }}</a></td>
               <td>{{ doc.document_date|date:"d.m.Y" }}</td>
-              <td class="cell-muted">{{ doc.note|default:"—" }}</td>
+              <!-- title дублирует текст для нативного тултипа при наведении —
+                   на случай, если примечание не помещается в одну строку
+                   (обрезается многоточием, см. .cell-truncate в style.css). -->
+              <td class="cell-muted cell-truncate" title="{{ doc.note }}">{{ doc.note|default:"—" }}</td>
               <td>{{ doc.entries_count }}</td>
               <td>{{ doc.active_count }}</td>
               <td class="cell-muted">{{ doc.created_by|default:"—" }}</td>

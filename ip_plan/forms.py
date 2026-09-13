@@ -128,31 +128,18 @@ FQDN_RE = re.compile(r"^(?!-)[a-zA-Z0-9-]{1,63}(?<!-)(\.[a-zA-Z0-9-]{1,63})+$")
 HASH_VALUE_RE = re.compile(r"^[a-fA-F0-9]{64}$|^[a-fA-F0-9]{40}$|^[a-fA-F0-9]{32}$")
 
 
-class RegulatorDocumentForm(forms.ModelForm):
+class RegulatorDocumentNoteForm(forms.ModelForm):
+    """Только примечание — используется regulator_document_edit. Номер и
+    дата больше не редактируются вручную нигде: reference_no проставляется
+    один раз при создании (см. views._next_regulator_reference_no),
+    document_date — всегда дата создания записи в реестре, не дата самого
+    письма ФСТЭК (та распознаётся OCR'ом штампа и уходит как раз в это же
+    примечание, см. regulator_document_ioc_save)."""
     class Meta:
         model = RegulatorDocument
-        fields = ["reference_no", "document_date", "note"]
-        labels = {
-            "reference_no": "Номер письма",
-            "document_date": "Дата письма",
-            "note": "Примечание",
-        }
+        fields = ["note"]
+        labels = {"note": "Примечание"}
         widgets = {
-            "reference_no": _text_input(placeholder="Например, 12-34/5678"),
-            # format="%Y-%m-%d" — обязательно явно: LANGUAGE_CODE="ru-ru" даёт
-            # локализованный DATE_INPUT_FORMATS с "%d.%m.%Y" ПЕРВЫМ (см.
-            # settings.py) — именно его use widget.format_value() для
-            # ОТОБРАЖЕНИЯ значения без явного format, а input type="date"
-            # требует строго ISO YYYY-MM-DD в атрибуте value, иначе браузер
-            # тихо показывает поле пустым (сам факт валидной русской даты в
-            # value браузер не распознаёт вообще, не то что бы неправильно
-            # парсил). Разбор ОТПРАВЛЕННОГО значения это не задевает — ISO
-            # уже в конце того же формата-списка, так что POST с value=
-            # "2026-02-02" (что реально шлёт type="date", независимо от
-            # локали) парсился и до этой правки, ломался только показ уже
-            # заполненного поля — не создание письма (там оно пустое до
-            # ввода), а именно правка (regulator_document_edit).
-            "document_date": forms.DateInput(attrs={"class": "field-control", "type": "date"}, format="%Y-%m-%d"),
             "note": forms.Textarea(attrs={"class": "field-control", "rows": 2}),
         }
 
