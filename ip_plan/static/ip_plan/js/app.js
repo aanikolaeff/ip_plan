@@ -147,6 +147,17 @@
       }
     });
 
+    // "2026-09-10 03:00:01" (см. sync_log.py: header.started, формат
+    // full_sync.sh — date '+%Y-%m-%d %H:%M:%S') -> "10.09 03:00" — для
+    // постоянно видимого индикатора в шапке секунды не нужны, полная
+    // строка по-прежнему видна в развёрнутом дропдауне/логе.
+    function formatSyncStarted(raw) {
+      const m = raw && raw.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/);
+      if (!m) return raw || '—';
+      const [, , month, day, hour, minute] = m;
+      return `${day}.${month} ${hour}:${minute}`;
+    }
+
     document.addEventListener('alpine:init', () => {
       // Глобальное состояние модалки: открыта/закрыта, есть ли несохранённые изменения.
       Alpine.store('modal', {
@@ -159,40 +170,63 @@
         },
       });
 
-      // Dropdown "Настройки" в шапке — тема + сводка последнего прогона
-      // netbox-sync (ip_plan/services/sync_log.py). Именованный компонент,
-      // а не инлайн x-data прямо в base.html (как раньше, пока там была
-      // только тема) — комментарий там же объяснял, что дальнейшие
-      // настройки будут добавляться в ЭТОТ ЖЕ блок, не меняя место в шапке;
-      // с логикой фетча/форматирования инлайн-объект в атрибуте стал бы
-      // нечитаемым.
-      Alpine.data('navSettings', () => ({
-        open: false,
-        theme: (localStorage.getItem('ip_plan_theme') === 'dark' ? 'dark' : 'light'),
-        syncLog: null,
-        syncLogLoading: false,
-        syncLogError: null,
-        toggle() {
-          this.open = !this.open;
-          // Фетчим один раз при первом открытии за сессию страницы — не на
-          // каждый клик (то же самое значение проще перечитать кнопкой
-          // "Обновить", раз мы сознательно отказались от live-опроса, см.
-          // design doc). !syncLogLoading — чтобы двойной быстрый клик не
-          // запускал два параллельных запроса.
-          if (this.open && !this.syncLog && !this.syncLogLoading) this.refreshSyncLog();
-        },
-        async refreshSyncLog() {
-          this.syncLogLoading = true;
-          this.syncLogError = null;
+      // Сводка последнего прогона netbox-sync (ip_plan/services/sync_log.py).
+      // Глобальный $store, а не локальное состояние компонента — читается
+      // сразу в ДВУХ разных местах шапки: постоянный индикатор рядом с
+      // вкладками (.nav-sync-status, nav-left) и развёрнутый дропдаун
+      // "Настройки" (тема + шаги, nav-right) — компонентное состояние
+      // означало бы либо дублировать fetch на каждое место, либо тянуть
+      // x-data одного в разметку другого через разные ветки шапки.
+      Alpine.store('sync', {
+        log: null,
+        loading: false,
+        error: null,
+        async refresh() {
+          this.loading = true;
+          this.error = null;
           try {
             const resp = await fetch((window.URL_PREFIX || '') + '/sync-log/summary.json', { credentials: 'same-origin' });
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
-            this.syncLog = await resp.json();
+            this.log = await resp.json();
           } catch (e) {
-            this.syncLogError = 'Не удалось загрузить сводку netbox-sync';
+            this.error = 'Не удалось загрузить сводку netbox-sync';
           } finally {
-            this.syncLogLoading = false;
+            this.loading = false;
           }
+        },
+        // Текст времени в постоянном индикаторе — компактная дата без
+        // секунд ("10.09 03:00"), полная строка с env/шагами по-прежнему
+        // только в развёрнутом дропдауне/модалке лога.
+        timeLabel() {
+          if (this.loading && !this.log) return 'загрузка…';
+          if (this.error) return 'ошибка';
+          if (!this.log || !this.log.available) return 'нет прогонов';
+          return formatSyncStarted(this.log.started_at);
+        },
+        // Статус рядом со временем — тот же overall (OK/FAILED/RUNNING/
+        // UNKNOWN), что и .sync-log-badge внутри дропдауна; null, пока
+        // время само по себе ещё не готово показывать статус отдельно
+        // (загрузка/ошибка/нет прогонов — это уже видно по тексту времени).
+        statusText() {
+          return this.log && this.log.available ? this.log.overall : null;
+        },
+        statusClass() {
+          if (this.error || !this.log || !this.log.available) return 'unknown';
+          return this.log.overall.toLowerCase();
+        },
+      });
+      Alpine.store('sync').refresh();
+
+      // Dropdown "Настройки" в шапке — тема + сводка netbox-sync (сводка —
+      // через $store.sync выше, здесь только open/close и переключатель
+      // темы). Именованный компонент, а не инлайн x-data прямо в base.html
+      // (как раньше, пока там была только тема) — дальнейшие настройки
+      // будут добавляться в ЭТОТ ЖЕ блок, не меняя место в шапке.
+      Alpine.data('navSettings', () => ({
+        open: false,
+        theme: (localStorage.getItem('ip_plan_theme') === 'dark' ? 'dark' : 'light'),
+        toggle() {
+          this.open = !this.open;
         },
       }));
 

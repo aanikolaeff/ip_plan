@@ -8,7 +8,7 @@ Chip-инпут для поля "Тэги" на Alpine.js. Ожидает в к�
     <template x-for="(tag, idx) in items" :key="idx">
       <span class="tag-chip">
         <span x-text="tag"></span>
-        <span class="tag-remove" @click="removeItem(idx)">✕</span>
+        <span class="tag-remove" @click="removeItem(idx)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
       </span>
     </template>
   </div>

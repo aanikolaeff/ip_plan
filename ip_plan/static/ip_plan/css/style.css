@@ -22,9 +22,34 @@
       --accent-strong: #1558c4;
       --text-main: #18212f;
       --text-muted: #657287;
-      --text-faint: #92a0b5;
+      /* Было #92a0b5 (2.49:1 на --bg-page, 2.65:1 на --bg-surface — фейл
+         WCAG AA даже для крупного текста). #748095 даёт ~3.6-4:1 —
+         достаточно для декоративных элементов/иконок/disabled-полей, для
+         которых этот токен и остался (см. design audit, "IP Plan Design
+         Audit", раздел про контраст). Реальный читаемый контент
+         (.cell-muted и т.п.) на этот токен больше не завязан — переведён
+         на --text-muted (4.58:1, уже проходил). */
+      --text-faint: #748095;
       --color-danger: #dc2626;
       --color-danger-strong: #b91c1c;
+      /* Шкала кегля — раньше 30+ значений font-size было разбросано по
+         обоим CSS-файлам как попало (.775rem рядом с .78rem, .855rem
+         рядом с .85rem и т.п., см. design audit). Здесь — реально
+         употребимые величины, названные и сведённые: близкие "соседи"
+         (в пределах ~0.02rem, разница на глаз незаметна) объединены в
+         один шаг, самостоятельные заголовочные размеры (1.02/1.05/1.2/
+         1.3/1.45/1.875rem — каждый у одного конкретного заголовка) в
+         шкалу намеренно не включены, чтобы не сглаживать реальную
+         иерархию между ними. */
+      --fs-3xs: .68rem;
+      --fs-2xs: .72rem;
+      --fs-xs: .75rem;
+      --fs-sm: .78rem;
+      --fs-base: .8rem;
+      --fs-md: .8125rem;
+      --fs-lg: .85rem;
+      --fs-xl: .875rem;
+      --fs-2xl: .9375rem;
       --body-gradient-from: #f8fbff;
       --body-gradient-to: #f4f7fb;
     }
@@ -105,11 +130,31 @@
        обозначен активным табом в .app-nav. */
     .hero-row { display: flex; align-items: center; gap: 1rem; }
     .hero .title { font-size: 1.875rem; line-height: 1.1; font-weight: 700; margin: 0; letter-spacing: -.02em; }
-    .hero .subtitle { margin: .5rem 0 0; max-width: 70ch; color: var(--text-muted); font-size: .9375rem; }
+    .hero .subtitle { margin: .5rem 0 0; max-width: 70ch; color: var(--text-muted); font-size: var(--fs-2xl); }
+    /* #regulator-note-display рендерится всегда (не по {% if %}), чтобы
+       было куда прилетать OOB-обновлению из regulator_document_ioc_save —
+       пустое примечание просто не должно занимать место. Светло-серая
+       плашка + моноширинный шрифт — примечание часто содержит номера
+       писем ФСТЭК (штамп, распознанный OCR'ом, см.
+       ioc_parser.extract_letter_header_stamp), такие значения читаются
+       как код/идентификатор, не как обычная проза. */
+    #regulator-note-display {
+      /* --bg-surface-muted тут почти не отличается от --bg-page страницы
+         (тот токен рассчитан на белую карточку-подложку, не на hero) —
+         вместо него --border-soft: полупрозрачная тёмная плашка, которая
+         реально видна и на светлой, и на тёмной теме, не хардкод одного
+         оттенка серого под одну тему. */
+      background: var(--border-soft);
+      border-radius: 8px;
+      padding: .5rem .75rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: var(--fs-xs); /* на 25% меньше базового шрифта страницы (1rem) */
+    }
+    #regulator-note-display:empty { display: none; margin: 0; padding: 0; }
 
     .hero-stats { display: flex; align-items: baseline; gap: .9rem; margin-top: .65rem; }
     .hero-row .hero-stats { margin-top: 0; }
-    .hero-stat { color: var(--text-muted); font-size: .85rem; }
+    .hero-stat { color: var(--text-muted); font-size: var(--fs-lg); }
     .hero-stat strong { color: var(--text-main); font-size: 1.2rem; font-weight: 700; margin-right: .35rem; }
     .hero-stat-sep { width: 1px; height: 1rem; background: var(--border-soft-strong); }
 
@@ -132,7 +177,7 @@
       color: var(--text-main);
       padding: 0 1rem;
       font-family: inherit;
-      font-size: .875rem;
+      font-size: var(--fs-xl);
       box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset;
       transition: all .15s ease;
     }
@@ -143,7 +188,7 @@
       border-radius: 10px;
       padding: .4rem .7rem;
       font-family: inherit;
-      font-size: .8125rem;
+      font-size: var(--fs-md);
       transition: all .15s ease;
       /* Без этого textarea (Описание/Комментарии) рендерится дефолтной
          ширины браузера (~20 символов), а не на всю ширину своей колонки —
@@ -191,7 +236,7 @@
       border-radius: 999px;
       padding: .6rem 1.3rem;
       font-weight: 600;
-      font-size: .875rem;
+      font-size: var(--fs-xl);
       cursor: pointer;
       transition: all .15s ease;
     }
@@ -205,7 +250,7 @@
       border-radius: 999px;
       padding: .6rem 1.3rem;
       font-weight: 600;
-      font-size: .875rem;
+      font-size: var(--fs-xl);
       cursor: pointer;
       flex-shrink: 0;
       transition: all .15s ease;
@@ -213,9 +258,13 @@
     .btn-add:hover { background: rgba(31, 111, 235, .1); color: var(--accent-strong); border-color: var(--accent-strong); transform: translateY(-1px); }
 
     /* .hero-actions-row/.btn-help (⇩/🖴/?/🛡 в одну строку со статистикой)
-       убраны — те же действия (ОС-справочник/Справка/Экспорт) теперь в
-       постоянной шапке .app-nav (nav.css: .nav-ghost/.nav-icon), см.
-       maket/README.md про критику emoji-иконок без подписи вне навигации. */
+       убраны — ОС-справочник/Справка остались в постоянной шапке .app-nav
+       (nav.css: .nav-ghost/.nav-icon), см. maket/README.md про критику
+       emoji-иконок без подписи вне навигации. Экспорт в Excel переехал
+       ещё раз — из шапки в тулбар самой IP-таблицы, рядом со "Столбцы"
+       (static_src/ip_table/TableRoot.jsx): в шапке кнопка висела на всех
+       страницах (ACL/Блокировки тоже), хотя экспортирует всегда только
+       IP-таблицу. */
 
     .btn-modal-secondary {
       background: var(--bg-surface-soft);
@@ -224,13 +273,24 @@
       border-radius: 999px;
       padding: .6rem 1.3rem;
       font-weight: 600;
-      font-size: .875rem;
+      font-size: var(--fs-xl);
       cursor: pointer;
+      /* Класс вешают и на <button>, и на <a> (экспорт в Excel, "Вернуться
+         к IP-плану" на странице смены пароля) — без явного сброса
+         браузерное подчёркивание ссылки просвечивало сквозь пилюлю,
+         единственную во всём приложении с таким видом. */
+      text-decoration: none;
       transition: all .15s ease;
     }
     .btn-modal-secondary:hover { border-color: var(--text-faint); transform: translateY(-1px); }
+    /* Иконка+текст в пилюльной кнопке (та же роль, что .nav-ghost-mark в
+       постоянной шапке, см. nav.css) — для "Столбцы"/"Экспорт в Excel" и
+       подобных, которые раньше несли эмодзи-глиф прямо в тексте вместо
+       inline-SVG, см. design audit. */
+    .btn-icon-label { display: inline-flex; align-items: center; gap: .4rem; }
+    .btn-icon-mark { width: 15px; height: 15px; display: flex; flex: none; }
 
-    .records-counter { color: var(--text-muted); font-size: .8rem; }
+    .records-counter { color: var(--text-muted); font-size: var(--fs-base); }
 
     /* --- Таблица --- */
     .table-wrapper {
@@ -287,7 +347,7 @@
       gap: .75rem;
       background: var(--bg-page);
       color: var(--text-muted);
-      font-size: .85rem;
+      font-size: var(--fs-lg);
     }
     .table-loading-overlay .spinner-ring { width: 28px; height: 28px; }
     table.dataTable {
@@ -321,7 +381,7 @@
       color: var(--text-muted);
       border-bottom: 1px solid var(--border-soft) !important;
       font-weight: 600;
-      font-size: .72rem;
+      font-size: var(--fs-2xs);
       text-transform: uppercase;
       letter-spacing: .06em;
       padding: .85rem .9rem;
@@ -342,7 +402,7 @@
     table.dataTable tbody td {
       border-bottom: 1px solid var(--border-soft) !important;
       padding: .65rem .9rem;
-      font-size: .875rem;
+      font-size: var(--fs-xl);
       transition: background .15s ease;
       vertical-align: middle;
     }
@@ -363,7 +423,7 @@
       background: var(--accent); color: #fff !important; border-color: var(--accent);
     }
     div.dt-container .dt-paging .dt-paging-button { color: var(--text-muted); }
-    div.dt-container .dt-info, div.dt-container .dt-length, div.dt-container .dt-search { color: var(--text-muted); font-size: .8rem; }
+    div.dt-container .dt-info, div.dt-container .dt-length, div.dt-container .dt-search { color: var(--text-muted); font-size: var(--fs-base); }
 
     /* --- Липкий футер таблицы: "Показано X из Y" + пагинация + выбор
        количества строк. Висит у низа экрана при скролле длинной таблицы. --- */
@@ -387,7 +447,7 @@
       display: inline-flex;
       align-items: center;
       gap: .45rem;
-      font-size: .8rem;
+      font-size: var(--fs-base);
       color: var(--text-muted);
       flex-shrink: 0;
       white-space: nowrap;
@@ -396,7 +456,7 @@
       border: 1px solid var(--border-soft-strong);
       border-radius: 8px;
       padding: .25rem .5rem;
-      font-size: .8rem;
+      font-size: var(--fs-base);
       color: var(--text-main);
       background: var(--bg-surface);
       cursor: pointer;
@@ -436,7 +496,7 @@
     }
     .bulk-delete-group.show { opacity: 1; transform: translateX(0); pointer-events: auto; }
     .bulk-delete-count {
-      font-size: .8rem;
+      font-size: var(--fs-base);
       color: var(--color-danger-strong);
       white-space: nowrap;
     }
@@ -447,7 +507,7 @@
       border: none;
       border-radius: 8px;
       padding: .3rem .75rem;
-      font-size: .8rem;
+      font-size: var(--fs-base);
       font-weight: 600;
       cursor: pointer;
       white-space: nowrap;
@@ -460,7 +520,7 @@
        .btn-modal-secondary/.btn-danger в базовом размере (рассчитаны на
        футер модалки) выглядели непропорционально крупно внутри узкой
        ячейки таблицы. */
-    .btn-sm { padding: .25rem .6rem; font-size: .75rem; }
+    .btn-sm { padding: .25rem .6rem; font-size: var(--fs-xs); }
     .regulator-entry-actions { display: flex; gap: .4rem; white-space: nowrap; }
 
     /* --- Блокировки регулятора: вкладки "Письма"/"Записи" (regulator_lookup.html) ---
@@ -478,7 +538,7 @@
       background: none;
       border: none;
       font-family: inherit;
-      font-size: .9375rem;
+      font-size: var(--fs-2xl);
       font-weight: 600;
       color: var(--text-muted);
       cursor: pointer;
@@ -493,15 +553,6 @@
     /* --- Блокировки регулятора: список писем (regulator_lookup.html) --- */
     .regulator-doc-row { cursor: pointer; }
     .regulator-doc-row:hover td { background: var(--bg-row-hover); }
-    .regulator-back-link {
-      display: inline-block;
-      font-size: .8125rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      text-decoration: none;
-      margin-bottom: .6rem;
-    }
-    .regulator-back-link:hover { color: var(--accent); }
     .regulator-doc-date { font-weight: 400; color: var(--text-muted); font-size: .65em; }
 
     /* --- Блокировки регулятора: вкладка "Команды для xFW" (раньше была
@@ -515,7 +566,7 @@
     }
     .firewall-cmd {
       font-family: 'JetBrains Mono', monospace;
-      font-size: .78rem;
+      font-size: var(--fs-sm);
       line-height: 1.5;
       white-space: pre-wrap;
       word-break: break-all;
@@ -564,13 +615,13 @@
     .regulator-quick-card { border-left: 3px solid var(--accent); }
     .regulator-card-head { margin-bottom: .85rem; }
     .regulator-card-title {
-      font-size: .95rem;
+      font-size: var(--fs-2xl);
       font-weight: 700;
       margin: 0 0 .2rem;
       color: var(--text-main);
     }
     .regulator-card-hint {
-      font-size: .8125rem;
+      font-size: var(--fs-md);
       color: var(--text-muted);
       margin: 0;
     }
@@ -584,7 +635,7 @@
     .regulator-intake-value { flex: 1; min-width: 200px; }
     .quick-add-error {
       color: var(--color-danger);
-      font-size: .8125rem;
+      font-size: var(--fs-md);
       margin-top: .6rem;
     }
     .quick-add-error:empty { display: none; }
@@ -606,6 +657,29 @@
     .ioc-warning-list { color: var(--text-muted); }
     #ioc-preview-panel:empty { display: none; }
     #ioc-preview-panel:not(:empty) { margin-bottom: 1.5rem; }
+
+    /* Штамп "дата + № письма", распознанный OCR'ом в шапке PDF (см.
+       ioc_parser.extract_letter_header_stamp) — редактируемые поля НАД
+       таблицей индикаторов, не внутри неё: это не индикатор блокировки, а
+       атрибут самого письма (уйдёт в примечание), два разных смысла не
+       должны смешиваться в одной таблице. */
+    .ioc-stamp-block {
+      border: 1px dashed var(--border-soft-strong);
+      border-radius: 12px;
+      padding: .75rem .9rem;
+      margin-bottom: 1rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .5rem .75rem;
+    }
+    .ioc-stamp-title {
+      flex-basis: 100%;
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .ioc-stamp-input { width: auto; min-width: 220px; flex: 0 1 auto; }
     .ioc-preview-table-wrap { margin-top: .5rem; }
     /* До сохранения (это превью) список может быть таким же длинным, как
        после (таблица записей письма, static_src/regulator_table) — та уже
@@ -655,7 +729,7 @@
       flex-direction: column;
       gap: .75rem;
       color: #fff;
-      font-size: .85rem;
+      font-size: var(--fs-lg);
     }
     /* Базовый цвет кольца у .spinner-ring рассчитан на светлый фон
        (rgba(24,33,47,.12)) — на тёмном .busy-overlay его почти не видно,
@@ -688,7 +762,7 @@
     }
     .columns-dropdown.show { display: block; }
     .columns-dropdown-title {
-      font-size: .72rem; color: var(--text-muted); font-weight: 700;
+      font-size: var(--fs-2xs); color: var(--text-muted); font-weight: 700;
       text-transform: uppercase; letter-spacing: .04em; margin-bottom: .6rem;
     }
     /* minmax(max-content, 1fr), не minmax(0, 1fr) — иначе колонка может
@@ -698,7 +772,7 @@
     .columns-checklist { display: grid; grid-template-columns: repeat(2, minmax(max-content, 1fr)); gap: .1rem .5rem; }
     .column-check {
       display: flex; align-items: center; gap: .5rem;
-      font-size: .8125rem; color: var(--text-main); cursor: pointer;
+      font-size: var(--fs-md); color: var(--text-main); cursor: pointer;
       padding: .35rem .4rem; border-radius: 8px; transition: background .15s ease;
       white-space: nowrap;
     }
@@ -710,7 +784,7 @@
     }
     .columns-reset-btn {
       background: transparent; border: none; color: var(--accent);
-      font-size: .8rem; font-weight: 600; cursor: pointer; padding: .3rem .5rem; border-radius: 6px;
+      font-size: var(--fs-base); font-weight: 600; cursor: pointer; padding: .3rem .5rem; border-radius: 6px;
     }
     .columns-reset-btn:hover { background: var(--accent-soft, #eaf2ff); }
 
@@ -722,7 +796,18 @@
       white-space: nowrap;
       vertical-align: middle;
     }
-    .cell-muted { color: var(--text-faint); }
+    /* --text-muted (4.58:1), не --text-faint — это реальные значения ячеек
+       (описания, примечания и т.п.), не декор, см. design audit. */
+    .cell-muted { color: var(--text-muted); }
+    /* Примечание письма в списке (_regulator_letters_body.html) — в одну
+       строку с многоточием, если не помещается; полный текст — в title
+       (нативный тултип браузера при наведении), без JS. */
+    .cell-truncate {
+      max-width: 360px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
 
     /* --- Жёсткие размеры колонок (min/max из требований).
        Цепочка авторитетности ширины в table-layout:fixed оказалась длиннее
@@ -867,7 +952,7 @@
       gap: .4rem;
       padding: .3rem .7rem;
       border-radius: 999px;
-      font-size: .72rem;
+      font-size: var(--fs-2xs);
       font-weight: 700;
       letter-spacing: .02em;
       white-space: nowrap;
@@ -887,7 +972,7 @@
     }
     .td-assignment .cell-value {
       color: var(--text-main);
-      font-size: .8125rem;
+      font-size: var(--fs-md);
     }
 
     /* --- Колонка "Роль" (device/VM role, read-only, 100px) --- */
@@ -900,7 +985,7 @@
       background: #eef0f3;
       color: #4b5563;
       font-family: 'JetBrains Mono', monospace;
-      font-size: .68rem;
+      font-size: var(--fs-3xs);
       font-weight: 600;
       text-transform: lowercase;
       white-space: nowrap;
@@ -917,7 +1002,7 @@
       color: #35506f;
       padding: .25rem .6rem;
       border-radius: 999px;
-      font-size: .72rem;
+      font-size: var(--fs-2xs);
       font-weight: 600;
       margin: 0 .25rem .25rem 0;
     }
@@ -973,7 +1058,7 @@
       border-radius: 10px;
       padding: .35rem .55rem;
       cursor: pointer;
-      font-size: .9rem;
+      font-size: var(--fs-xl);
     }
     .btn-kebab:hover { background: var(--bg-surface); color: var(--text-main); border-color: var(--text-faint); }
     .kebab-menu {
@@ -1004,7 +1089,7 @@
     .kebab-menu.kebab-menu-fixed { position: fixed !important; top: 0; right: auto; bottom: auto; margin: 0; }
     .kebab-menu button {
       display: block; width: 100%; text-align: left; background: transparent; border: none;
-      color: var(--text-main); padding: .55rem .8rem; font-size: .8rem; cursor: pointer;
+      color: var(--text-main); padding: .55rem .8rem; font-size: var(--fs-base); cursor: pointer;
     }
     .kebab-menu button:hover { background: var(--accent-soft, #eaf2ff); }
     .kebab-menu .kebab-divider { height: 1px; margin: .25rem 0; background: var(--border-soft); }
@@ -1033,12 +1118,12 @@
       padding: .4rem .6rem;
       border: 1px solid var(--border-soft);
       border-radius: 8px;
-      font-size: .85rem;
+      font-size: var(--fs-lg);
     }
     .os-menu-list { overflow-y: auto; padding: .25rem 0 .5rem; }
     .os-menu-group-label {
       padding: .4rem .8rem .2rem;
-      font-size: .68rem;
+      font-size: var(--fs-3xs);
       color: var(--accent);
       font-weight: 700;
       text-transform: uppercase;
@@ -1051,13 +1136,14 @@
       justify-content: space-between;
       gap: .4rem;
       padding: .5rem .8rem;
-      font-size: .85rem;
+      font-size: var(--fs-lg);
       color: var(--text-main);
       cursor: pointer;
     }
     .os-menu-item:hover, .os-menu-item.os-menu-item-active { background: var(--accent-soft, #eaf2ff); }
-    .os-menu-arrow { color: var(--text-faint); font-size: .75rem; }
-    .os-menu-empty, .os-menu-custom-row { padding: .5rem .8rem; font-size: .8rem; color: var(--text-faint); }
+    .os-menu-arrow { color: var(--text-faint); font-size: var(--fs-xs); }
+    /* --text-muted — читаемый текст пункта меню ("Нет результатов" и т.п.), не декор. */
+    .os-menu-empty, .os-menu-custom-row { padding: .5rem .8rem; font-size: var(--fs-base); color: var(--text-muted); }
     .os-menu-custom-row { cursor: pointer; color: var(--accent); }
     .os-menu-custom-row:hover { background: var(--accent-soft, #eaf2ff); }
     .os-menu-submenu {
@@ -1116,17 +1202,17 @@
       background: var(--bg-surface);
     }
     .field-group { border: 1px solid var(--border-soft); border-radius: 14px; padding: .75rem .9rem; margin-bottom: .65rem; }
-    .field-group-title { font-size: .72rem; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin-bottom: .55rem; }
+    .field-group-title { font-size: var(--fs-2xs); color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin-bottom: .55rem; }
     /* Текстовые блоки справки (help_modal.html) внутри .field-group */
-    .field-group p { margin: 0 0 .5rem; font-size: .85rem; color: var(--text-main); line-height: 1.5; }
+    .field-group p { margin: 0 0 .5rem; font-size: var(--fs-lg); color: var(--text-main); line-height: 1.5; }
     .field-group p:last-child { margin-bottom: 0; }
     .field-group kbd {
       background: var(--bg-page); border: 1px solid var(--border-soft-strong);
-      border-radius: 4px; padding: .05rem .35rem; font-size: .78rem; font-family: inherit;
+      border-radius: 4px; padding: .05rem .35rem; font-size: var(--fs-sm); font-family: inherit;
     }
-    .field-label { display: block; font-size: .7rem; color: var(--text-muted); margin-bottom: .2rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
-    .alert-modal-error { background: #ffefe8; border: 1px solid rgba(194, 65, 12, .25); color: #c2410c; border-radius: 10px; padding: .65rem .9rem; font-size: .85rem; margin-bottom: 1rem; }
-    .errorlist { color: #c2410c; font-size: .78rem; list-style: none; padding-left: 0; margin: .25rem 0 0; }
+    .field-label { display: block; font-size: var(--fs-2xs); color: var(--text-muted); margin-bottom: .2rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+    .alert-modal-error { background: #ffefe8; border: 1px solid rgba(194, 65, 12, .25); color: #c2410c; border-radius: 10px; padding: .65rem .9rem; font-size: var(--fs-lg); margin-bottom: 1rem; }
+    .errorlist { color: #c2410c; font-size: var(--fs-sm); list-style: none; padding-left: 0; margin: .25rem 0 0; }
 
     /* --- Адрес + Статус + DNS-имя в одну строку: Bootstrap-сетка тут не
        подходит (адресу нужен фиксированный небольшой максимум, статусу —
@@ -1167,7 +1253,7 @@
 
     /* --- Тосты --- */
     .toast-stack { position: fixed; bottom: 1.5rem; right: 1.5rem; display: flex; flex-direction: column; gap: .5rem; z-index: 1100; }
-    .toast-item { padding: .75rem 1.1rem; border-radius: 12px; color: #fff; font-size: .875rem; box-shadow: 0 8px 24px rgba(22, 29, 37, .2); }
+    .toast-item { padding: .75rem 1.1rem; border-radius: 12px; color: #fff; font-size: var(--fs-xl); box-shadow: 0 8px 24px rgba(22, 29, 37, .2); }
     .toast-success { background: #0f9d6c; }
     .toast-error { background: #c2410c; }
     .toast-info { background: #1f6feb; }
@@ -1182,7 +1268,7 @@
       border-top: 1px solid var(--border-soft);
       background: linear-gradient(180deg, rgba(255,255,255,.6), rgba(248,250,252,.85));
       color: var(--text-muted);
-      font-size: .8125rem;
+      font-size: var(--fs-md);
       /* последний элемент карточки — скругление нижних углов теперь тут,
          а не на .table-wrapper (см. комментарий там про position:sticky) */
       border-radius: 0 0 24px 24px;
@@ -1206,7 +1292,7 @@
        пока пользователь не проскроллит до конца. Кнопка должна стоять
        сразу рядом с надписью, у левого края, где обычно смотрит пользователь. */
     .free-range-content { display: flex; align-items: center; gap: 12px; }
-    .free-range-label { color: #16a34a; font-size: 13px; font-weight: 500; }
+    .free-range-label { color: #16a34a; font-size: var(--fs-md); font-weight: 500; } /* 13px = .8125rem */
     .free-range-add-btn {
       width: 28px; height: 28px;
       border-radius: 50%;
@@ -1224,7 +1310,7 @@
     /* --- Иконка-подсказка ⓘ в заголовках колонок --- */
     .col-info-icon {
       display: inline-block;
-      font-size: .72rem;
+      font-size: var(--fs-2xs);
       font-style: normal;
       color: var(--text-faint);
       cursor: help;
@@ -1244,7 +1330,7 @@
       max-width: 300px;
       background: #1a2436;
       color: #d8e3f0;
-      font-size: .775rem;
+      font-size: var(--fs-sm);
       font-weight: 400;
       line-height: 1.5;
       padding: .55rem .85rem;
@@ -1264,7 +1350,7 @@
       max-width: 420px;
       background: #1a2436;
       color: #d8e3f0;
-      font-size: .775rem;
+      font-size: var(--fs-sm);
       line-height: 1.5;
       padding: .55rem .85rem;
       border-radius: 8px;
@@ -1278,7 +1364,7 @@
     .dns-tip-group:last-child { margin-bottom: 0; }
     .dns-tip-label {
       display: block;
-      font-size: .7rem;
+      font-size: var(--fs-2xs);
       font-weight: 600;
       letter-spacing: .04em;
       text-transform: uppercase;
@@ -1291,13 +1377,27 @@
     }
     .dns-records-tooltip li { word-break: break-all; }
 
-/* ── Кнопка очистки строки поиска ─────────────────────────────────────────── */
+/* ── Иконка-лупа и кнопка очистки строки поиска ───────────────────────────
+   Раньше лупа была эмодзи 🔍 прямо в тексте placeholder — native
+   placeholder не принимает разметку, так что единственный способ дать ей
+   тот же inline-SVG stroke-язык, что у остальных иконок шапки (nav.css),
+   — вынести её отдельным декоративным элементом поверх поля (position:
+   absolute, pointer-events:none, чтобы не перехватывать клики по инпуту),
+   а не пытаться вставить SVG внутрь placeholder. См. design audit,
+   раздел про два языка иконок. */
 .toolbar-input-wrap {
   position: relative;
   display: inline-flex;
   align-items: center;
 }
-.toolbar-input-wrap .toolbar-input { padding-right: 2.2rem; }
+.toolbar-search-icon {
+  position: absolute;
+  left: .9rem;
+  display: flex;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+.toolbar-input-wrap .toolbar-input { padding-left: 2.35rem; padding-right: 2.2rem; }
 .toolbar-clear-btn {
   position: absolute;
   right: .6rem;
@@ -1342,8 +1442,8 @@ tr:hover .cell-clear-btn { opacity: 1; }
 .dt-scroll-body thead tr td { padding: 0 !important; border: 0 !important; height: 0 !important; line-height: 0 !important; font-size: 0 !important; overflow: hidden !important; }
 
 /* --- Страница "ACL" (acl_lookup.html) --- */
-.acl-table th, .acl-table td { vertical-align: middle; font-size: .8125rem; }
-.acl-hint { color: var(--text-muted); margin: .75rem 0; font-size: .875rem; }
+.acl-table th, .acl-table td { vertical-align: middle; font-size: var(--fs-md); }
+.acl-hint { color: var(--text-muted); margin: .75rem 0; font-size: var(--fs-xl); }
 .acl-hint-error { color: #c2410c; }
 /* Правила "permit ip any any" / "deny ip any any" в хвосте ACL матчят
    буквально любой IP — search_ip() сортирует их в конец, здесь только
@@ -1359,7 +1459,7 @@ tr:hover .cell-clear-btn { opacity: 1; }
   border-radius: 5px;
   background: #eef0f3;
   color: #4b5563;
-  font-size: .68rem;
+  font-size: var(--fs-3xs);
   text-transform: uppercase;
 }
 .badge-acl-log {
@@ -1369,9 +1469,9 @@ tr:hover .cell-clear-btn { opacity: 1; }
   border-radius: 5px;
   background: #f3eefd;
   color: #7c3aed;
-  font-size: .68rem;
+  font-size: var(--fs-3xs);
 }
-.acl-port { color: var(--text-muted); font-size: .78rem; }
+.acl-port { color: var(--text-muted); font-size: var(--fs-sm); }
 .badge-status[data-status="permit"] { background: #e7f7f0; color: #0f9d6c; }
 .badge-status[data-status="deny"] { background: #fdeaea; color: #d13a3a; }
 .badge-status[data-status="remark"] { background: #eef0f3; color: #4b5563; }
@@ -1392,7 +1492,7 @@ tr:hover .cell-clear-btn { opacity: 1; }
   border: 1px solid var(--border-soft-strong);
   background: var(--bg-surface-soft);
   color: var(--text-muted);
-  font-size: .8125rem;
+  font-size: var(--fs-md);
   font-weight: 600;
   white-space: nowrap;
   text-decoration: none;
@@ -1431,7 +1531,7 @@ tr:hover .cell-clear-btn { opacity: 1; }
   color: var(--text-main);
   padding: 0 1rem;
   font-family: inherit;
-  font-size: .8125rem;
+  font-size: var(--fs-md);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset;
 }
 .dt-container.dt-bootstrap5 .form-control.form-control-sm { min-width: 220px; }
@@ -1441,7 +1541,7 @@ tr:hover .cell-clear-btn { opacity: 1; }
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(31, 111, 235, .15);
 }
-.dt-container.dt-bootstrap5 .dt-info { color: var(--text-muted); font-size: .8rem; }
+.dt-container.dt-bootstrap5 .dt-info { color: var(--text-muted); font-size: var(--fs-base); }
 .dt-container.dt-bootstrap5 .dt-paging-button .page-link {
   border-radius: 8px;
   margin: 0 .1rem;

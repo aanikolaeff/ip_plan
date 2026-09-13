@@ -69,6 +69,19 @@
             <a class="nav-tab{% if url_name == 'acl_lookup' or url_name == 'acl_detail' or url_name == 'acl_object_group_detail' %} active{% endif %}" href="{% url 'ip_plan:acl_lookup' %}">ACL</a>
             <a class="nav-tab{% if url_name == 'regulator_list' %} active{% endif %}" href="{% url 'ip_plan:regulator_list' %}">Блокировки</a>
           </nav>
+
+          <!-- Когда была последняя синхронизация netbox-sync и в каком она
+               статусе — постоянно видно, без клика (данные из того же
+               $store.sync, что и развёрнутый дропдаун в шапке справа, см.
+               app.js: Alpine.store('sync', ...)). Здесь, а не в nav-right —
+               ближе к вкладке "Блокировки"/остальной навигации, не среди
+               иконок аккаунта/настроек. -->
+          <div class="nav-sync-status" title="netbox-sync — последний прогон">
+            <span class="nav-sync-time">Синк: <span x-text="$store.sync.timeLabel()"></span></span>
+            <template x-if="$store.sync.statusText()">
+              <span class="nav-sync-pill" :class="'nav-sync-pill-' + $store.sync.statusClass()" x-text="$store.sync.statusText()"></span>
+            </template>
+          </div>
         </div>
         <div class="nav-right">
           <button type="button" class="nav-ghost"
@@ -93,14 +106,6 @@
             <span class="nav-ghost-mark">?</span>
             Справка
           </button>
-          <a class="nav-icon" href="{% url 'ip_plan:export_excel' %}" title="Экспорт в Excel">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 3v12"></path>
-              <path d="M7 10l5 5 5-5"></path>
-              <path d="M4 19h16"></path>
-            </svg>
-          </a>
-
           <!-- Настройки — тема + сводка netbox-sync. Отдельная кнопка (не
                сразу toggle по клику), чтобы было куда добавить остальные
                клиентские настройки позже, не меняя место в шапке. Логика —
@@ -116,6 +121,22 @@
               </svg>
             </button>
             <div class="nav-settings-dropdown" x-show="open" x-cloak x-transition.duration.120ms>
+              {% comment %}
+                Раздел настроек синхронизации живёт под этой же шестерёнкой:
+                отдельная вкладка в основной навигации ставила бы его в один
+                ряд с рабочими экранами (IP-план, ACL, Блокировки), хотя
+                открывают его редко и не для работы, а для настройки. Виден
+                только is_staff — там пароли от firewall, коммутаторов и
+                гипервизоров.
+              {% endcomment %}
+              {% if user.is_staff %}
+                <a class="nav-settings-link" href="{% url 'ip_plan:settings' %}">
+                  <span>Настройки синхронизации</span>
+                  <span class="nav-settings-link-sub">оборудование, гипервизоры, скан, доступ</span>
+                </a>
+                <div class="nav-settings-sep"></div>
+              {% endif %}
+
               <div class="nav-settings-title">Тема</div>
               <div class="nav-theme-toggle">
                 <button type="button" :class="{ active: theme === 'light' }"
@@ -128,33 +149,33 @@
 
               <div class="nav-settings-title">netbox-sync</div>
 
-              <template x-if="syncLogLoading && !syncLog">
+              <template x-if="$store.sync.loading && !$store.sync.log">
                 <div class="sync-log-note">Загрузка…</div>
               </template>
-              <template x-if="syncLogError">
-                <div class="sync-log-note sync-log-note-error" x-text="syncLogError"></div>
+              <template x-if="$store.sync.error">
+                <div class="sync-log-note sync-log-note-error" x-text="$store.sync.error"></div>
               </template>
-              <template x-if="syncLog && !syncLog.available">
+              <template x-if="$store.sync.log && !$store.sync.log.available">
                 <div class="sync-log-note">Логи не найдены — netbox-sync ещё ни разу не запускался на этом хосте.</div>
               </template>
-              <template x-if="syncLog && syncLog.available">
+              <template x-if="$store.sync.log && $store.sync.log.available">
                 <div>
                   <div class="sync-log-meta">
-                    <span x-text="syncLog.started_at"></span>
-                    <template x-if="syncLog.env"><span> · env=<span x-text="syncLog.env"></span></span></template>
-                    <span class="sync-log-badge" :class="'sync-log-badge-' + syncLog.overall.toLowerCase()" x-text="syncLog.overall"></span>
+                    <span x-text="$store.sync.log.started_at"></span>
+                    <template x-if="$store.sync.log.env"><span> · env=<span x-text="$store.sync.log.env"></span></span></template>
+                    <span class="sync-log-badge" :class="'sync-log-badge-' + $store.sync.log.overall.toLowerCase()" x-text="$store.sync.log.overall"></span>
                   </div>
                   <div class="sync-log-steps">
-                    <template x-for="step in syncLog.steps" :key="step.name">
+                    <template x-for="step in $store.sync.log.steps" :key="step.name">
                       <div class="sync-log-step">
                         <span class="sync-log-step-name" x-text="step.name"></span>
                         <span class="sync-log-step-status"
                               :class="{
                                 'sync-log-step-ok': step.status === 'OK',
                                 'sync-log-step-failed': step.status === 'FAILED' || step.status === 'TIMEOUT',
-                                'sync-log-step-running': !step.status && syncLog.running_step === step.name,
+                                'sync-log-step-running': !step.status && $store.sync.log.running_step === step.name,
                               }"
-                              x-text="step.status ? (step.status + ' (' + step.elapsed + 'с)') : (syncLog.running_step === step.name ? 'выполняется…' : '—')"></span>
+                              x-text="step.status ? (step.status + ' (' + step.elapsed + 'с)') : ($store.sync.log.running_step === step.name ? 'выполняется…' : '—')"></span>
                       </div>
                     </template>
                   </div>
@@ -162,7 +183,7 @@
               </template>
 
               <div class="sync-log-actions">
-                <button type="button" class="btn-modal-secondary" @click="refreshSyncLog()" :disabled="syncLogLoading">Обновить</button>
+                <button type="button" class="btn-modal-secondary" @click="$store.sync.refresh()" :disabled="$store.sync.loading">Обновить</button>
                 <button type="button" class="btn-modal-secondary"
                         hx-get="{% url 'ip_plan:sync_log_modal' %}"
                         hx-target="#modal-content"
@@ -173,7 +194,19 @@
           </div>
 
           <div class="nav-sep"></div>
-          <span class="nav-user">{{ user.get_full_name|default:user.username }}</span>
+          {% comment %}
+            Ссылка на смену пароля — только локальным учёткам: у пришедших
+            из FreeIPA пароль хранится в каталоге, здесь менять нечего.
+            {% comment %}, а не {# #}: однострочный комментарий Django не
+            умеет переноситься на несколько строк (в регулярке лексера нет
+            re.DOTALL), и такой текст молча уезжает в HTML как есть.
+          {% endcomment %}
+          {% if user.local_account %}
+            <a class="nav-user nav-user-link" href="{% url 'ip_plan:password_change' %}"
+               title="Сменить пароль">{{ user.get_full_name|default:user.username }}</a>
+          {% else %}
+            <span class="nav-user">{{ user.get_full_name|default:user.username }}</span>
+          {% endif %}
           <form method="post" action="{% url 'ip_plan:logout' %}">
             {% csrf_token %}
             <button type="submit" class="nav-logout">Выйти</button>

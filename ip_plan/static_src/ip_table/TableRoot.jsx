@@ -282,12 +282,18 @@ export default function TableRoot() {
       <div className="page-toolbar">
         <div className="toolbar-left">
           <div className="toolbar-input-wrap">
+            <svg className="toolbar-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"></circle>
+              <path d="m21 21-4.3-4.3"></path>
+            </svg>
             <input
-              className="toolbar-input" type="text" placeholder="🔍 Поиск..."
+              className="toolbar-input" type="text" placeholder="Поиск..."
               value={search} onChange={(e) => setSearch(e.target.value)}
             />
             {search && (
-              <button type="button" className="toolbar-clear-btn" onClick={() => setSearch('')} title="Очистить поиск">✕</button>
+              <button type="button" className="toolbar-clear-btn" onClick={() => setSearch('')} title="Очистить поиск">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
             )}
           </div>
           <select className="toolbar-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
@@ -307,6 +313,20 @@ export default function TableRoot() {
           <div className="columns-dropdown-wrap">
             <ColumnsDropdown table={table} />
           </div>
+
+          {/* Раньше жила иконкой в постоянной шапке (.app-nav) рядом со
+              "Справкой" — но экспортирует всегда именно эту таблицу
+              целиком (все IP, независимо от текущих фильтров/видимых
+              столбцов), поэтому логичнее в тулбаре самой таблицы, а не в
+              шапке, общей для ACL/Блокировок, где кнопка не имела смысла. */}
+          <a href={`${window.URL_PREFIX || ''}/export/`} className="btn-modal-secondary btn-icon-label" title="Выгрузить все IP-адреса в .xlsx">
+            <svg className="btn-icon-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 3v12"></path>
+              <path d="M7 10l5 5 5-5"></path>
+              <path d="M4 19h16"></path>
+            </svg>
+            Экспорт в Excel
+          </a>
 
           {selectedIds.length > 0 && (
             <div className="bulk-delete-group show">
@@ -457,7 +477,17 @@ function ColumnsDropdown({ table }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" className="btn-modal-secondary" onClick={() => setOpen((v) => !v)}>⚙ Столбцы</button>
+      <button type="button" className="btn-modal-secondary btn-icon-label" onClick={() => setOpen((v) => !v)}>
+        {/* Не шестерёнка "Настроек" (base.html) — это переключение видимых
+            колонок таблицы, не приложения; своя, отдельная по смыслу
+            иконка. */}
+        <svg className="btn-icon-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+          <line x1="9" y1="4" x2="9" y2="20"></line>
+          <line x1="15" y1="4" x2="15" y2="20"></line>
+        </svg>
+        Столбцы
+      </button>
       {open && (
         <div className="columns-dropdown show">
           <div className="columns-dropdown-title">Видимые столбцы</div>

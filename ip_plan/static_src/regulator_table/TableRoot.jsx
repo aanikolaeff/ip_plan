@@ -157,13 +157,19 @@ export default function TableRoot({ documentId }) {
       <div className="page-toolbar">
         <div className="toolbar-left">
           <div className="toolbar-input-wrap">
+            <svg className="toolbar-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"></circle>
+              <path d="m21 21-4.3-4.3"></path>
+            </svg>
             <input
               className="toolbar-input" type="text"
-              placeholder={documentId ? '🔍 Поиск по значению...' : '🔍 Поиск по значению/письму...'}
+              placeholder={documentId ? 'Поиск по значению...' : 'Поиск по значению/письму...'}
               value={search} onChange={(e) => setSearch(e.target.value)}
             />
             {search && (
-              <button type="button" className="toolbar-clear-btn" onClick={() => setSearch('')} title="Очистить поиск">✕</button>
+              <button type="button" className="toolbar-clear-btn" onClick={() => setSearch('')} title="Очистить поиск">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
             )}
           </div>
           <select className="toolbar-select" value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}>
