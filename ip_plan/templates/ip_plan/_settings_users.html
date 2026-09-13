@@ -1,0 +1,76 @@
+<div class="set-panel">
+  <div class="set-panel-head">
+    <div>
+      <h2 class="set-panel-title">Учётные записи</h2>
+      <p class="set-panel-desc">
+        Локальные учётки — это аварийный вход: когда каталог недоступен или настроен
+        неверно, попасть в приложение можно только ими. Пользователи из FreeIPA показаны
+        для полноты картины, но правятся в каталоге.
+      </p>
+    </div>
+    <div class="set-panel-actions">
+      <button type="button" class="btn-modal-primary"
+              hx-get="{% url 'ip_plan:settings_user_add' %}"
+              hx-target="#modal-content" hx-indicator="#modal-spinner"
+              @click="$store.modal.dirty = false; $dispatch('open-modal')">Добавить локальную учётку</button>
+    </div>
+  </div>
+
+  <div class="set-panel-body set-panel-body-flush">
+    <table class="set-table">
+      <thead>
+        <tr><th>Пользователь</th><th>Откуда</th><th>Права</th><th>Состояние</th><th>Последний вход</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for row in user_rows %}
+          <tr>
+            <td>
+              <span class="set-name">{{ row.user.username }}</span>
+              {% if row.user.get_full_name %}<span class="set-sub">{{ row.user.get_full_name }}</span>{% endif %}
+            </td>
+            <td>{% if row.is_local %}локальная{% else %}FreeIPA{% endif %}</td>
+            <td>
+              <div class="set-chips">
+                {% if row.user.is_superuser %}<span class="set-chip set-chip-accent">суперпользователь</span>{% endif %}
+                {% if row.user.is_staff %}<span class="set-chip">настройки</span>{% endif %}
+                {% if not row.user.is_staff and not row.user.is_superuser %}<span class="set-muted">только просмотр</span>{% endif %}
+              </div>
+            </td>
+            <td>
+              {% if not row.user.is_active %}
+                <span class="set-muted">отключена</span>
+              {% elif row.account.must_change_password %}
+                <span class="set-chip">нужна смена пароля</span>
+              {% else %}
+                активна
+              {% endif %}
+            </td>
+            <td class="set-mono set-muted">{{ row.user.last_login|date:"d.m.Y H:i"|default:"—" }}</td>
+            <td>
+              <div class="set-row-actions">
+                {% if row.is_local %}
+                  <button type="button" class="btn-modal-secondary btn-pill-sm"
+                          hx-get="{% url 'ip_plan:settings_user_edit' row.user.id %}"
+                          hx-target="#modal-content" hx-indicator="#modal-spinner"
+                          @click="$store.modal.dirty = false; $dispatch('open-modal')">Изменить</button>
+                  {% if row.user.id != user.id %}
+                    <form hx-post="{% url 'ip_plan:settings_user_delete' row.user.id %}"
+                          hx-target="#modal-content"
+                          hx-confirm="Удалить учётную запись «{{ row.user.username }}»?">
+                      {% csrf_token %}
+                      <button type="submit" class="btn-danger-quiet">Удалить</button>
+                    </form>
+                  {% endif %}
+                {% else %}
+                  <span class="set-muted">правится в FreeIPA</span>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="set-empty">Пользователей нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

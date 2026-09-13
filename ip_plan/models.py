@@ -145,3 +145,144 @@ class FirewallObjectName(models.Model):
             prefix, num = m.group(1), int(m.group(2))
             return f"{prefix}{num + 1}"
         return f"{self.current_name}_2"
+
+
+class LocalAccount(models.Model):
+    """Отметка "это локальная учётка, а не зеркало LDAP-пользователя".
+
+    django-auth-ldap кладёт вошедших через FreeIPA в ту же таблицу
+    auth_user, что и локальных, — отличить их по самой User нечем (у
+    зеркала стоит unusable password, но это косвенный признак, который
+    сломается, если кто-то руками задаст LDAP-пользователю пароль). Явная
+    запись надёжнее и заодно хранит must_change_password.
+
+    Локальный вход существует не ради удобства, а как аварийный: настройки
+    LDAP будут править из UI (см. design doc, фаза 4), и неудачная правка
+    не должна оставлять снаружи вообще всех.
+    """
+
+    user = models.OneToOneField(
+        "auth.User", on_delete=models.CASCADE,
+        related_name="local_account", verbose_name="Пользователь",
+    )
+    # Ставится при засеве admin/admin (ensure_local_admin) и при сбросе
+    # пароля администратором. Пока флаг стоит, middleware никуда, кроме
+    # страницы смены пароля, пользователя не пускает — иначе дефолтная
+    # учётка живёт в проде годами.
+    must_change_password = models.BooleanField("Требуется смена пароля", default=False)
+    created_by = models.CharField("Кем создана", max_length=150, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Локальная учётная запись"
+        verbose_name_plural = "Локальные учётные записи"
+
+    def __str__(self):
+        return self.user.username
+
+
+class SettingsAudit(models.Model):
+    """Журнал изменений, сделанных из раздела "Настройки".
+
+    Файлы netbox-sync хранят историю версий сами (conf/.history/, см.
+    services/sync_config.py), но по файлу не видно, КТО его поменял — а
+    речь про SSH-пароли боевого firewall и коммутаторов. Здесь именно эта
+    часть: кто, когда, что именно и с каким результатом.
+
+    Значения секретов сюда не попадают никогда — в details пишется факт
+    "пароль изменён", а не сам пароль.
+    """
+
+    ACTION_CHOICES = [
+        ("create", "Создание"),
+        ("update", "Изменение"),
+        ("delete", "Удаление"),
+    ]
+
+    username = models.CharField("Пользователь", max_length=150)
+    created_at = models.DateTimeField(auto_now_add=True)
+    scope = models.CharField("Раздел", max_length=50)
+    target = models.CharField("Объект", max_length=200, blank=True)
+    action = models.CharField("Действие", max_length=10, choices=ACTION_CHOICES)
+    details = models.TextField("Что изменилось", blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = "Изменение настроек"
+        verbose_name_plural = "Журнал изменений настроек"
+
+    def __str__(self):
+        return f"{self.created_at:%d.%m.%Y %H:%M} {self.username} {self.scope}/{self.target}"
+
+
+class LdapConfig(models.Model):
+    """Настройки подключения к FreeIPA — синглтон (всегда строка с pk=1).
+
+    Раньше жили в ip_plan/ldap_settings.json, который читается один раз при
+    импорте settings.py и лежит ВНУТРИ образа. Значит править его из UI было
+    нельзя дважды: запись терялась бы при пересборке контейнера и всё равно
+    не применилась бы без рестарта. Здесь — БД (том sqlite_data переживает
+    `up -d --build`), а применение без рестарта обеспечивает
+    ip_plan/auth_backends.py.
+
+    Файл ldap_settings.json остаётся как сид: миграция 0007 переносит из
+    него значения при первом применении, дальше он не читается.
+
+    Чего здесь намеренно НЕТ: пути к CA-сертификату LDAPS. Опции
+    OPT_X_TLS_* в python-ldap глобальны для процесса и должны быть
+    выставлены до первого соединения, поэтому сертификат меняется файлом и
+    требует перезапуска контейнера (см. ip_plan/ldap_config.py).
+    """
+
+    enabled = models.BooleanField("Вход через LDAP включён", default=True)
+    servers = models.TextField("Серверы", help_text="По одному URI в строке, например ldaps://ipa.example.local:636")
+    bind_dn = models.CharField("Bind DN", max_length=400, blank=True)
+    # Зашифровано (services/secretbox.py) — в открытом виде не хранится и в
+    # интерфейс не отдаётся.
+    bind_password_encrypted = models.TextField("Пароль bind (шифр.)", blank=True)
+    user_search_base = models.CharField("База поиска пользователей", max_length=400)
+    user_search_filter = models.CharField("Фильтр поиска пользователя", max_length=400,
+                                          default="(uid=%(user)s)")
+    group_search_base = models.CharField("База поиска групп", max_length=400, blank=True)
+    require_group = models.CharField("Группа, дающая вход", max_length=400, blank=True)
+    staff_group = models.CharField("Группа администраторов (is_staff)", max_length=400, blank=True)
+    superuser_group = models.CharField("Группа суперпользователей (is_superuser)", max_length=400, blank=True)
+    cache_timeout = models.PositiveIntegerField("Кеш групп, секунд", default=3600)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.CharField("Кем изменено", max_length=150, blank=True)
+
+    class Meta:
+        verbose_name = "Настройки LDAP"
+        verbose_name_plural = "Настройки LDAP"
+
+    def __str__(self):
+        return f"LDAP: {self.server_list()[:1]}"
+
+    @classmethod
+    def load(cls):
+        """Единственная строка. Создаётся миграцией, но get_or_create здесь
+        на случай пустой БД (например, свежий том без миграции-сида)."""
+        obj, _ = cls.objects.get_or_create(pk=1, defaults={
+            "enabled": False, "servers": "", "user_search_base": "",
+        })
+        return obj
+
+    def server_list(self):
+        return [line.strip() for line in (self.servers or "").splitlines() if line.strip()]
+
+    @property
+    def bind_password(self):
+        from .services import secretbox
+        return secretbox.decrypt(self.bind_password_encrypted)
+
+    def set_bind_password(self, value):
+        from .services import secretbox
+        self.bind_password_encrypted = secretbox.encrypt(value)
+
+    def flags_by_group(self):
+        flags = {}
+        if self.staff_group:
+            flags["is_staff"] = self.staff_group
+        if self.superuser_group:
+            flags["is_superuser"] = self.superuser_group
+        return flags

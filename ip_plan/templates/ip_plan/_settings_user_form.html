@@ -1,0 +1,59 @@
+<div class="modal-title-bar">
+  <h5>{% if target %}{{ target.username }}{% else %}Новая локальная учётная запись{% endif %}</h5>
+  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+</div>
+
+<form hx-post="{% if target %}{% url 'ip_plan:settings_user_save' target.id %}{% else %}{% url 'ip_plan:settings_user_add_save' %}{% endif %}"
+      hx-target="#modal-content" hx-indicator="#modal-spinner">
+  {% csrf_token %}
+
+  <div class="modal-body-pad">
+    <div class="field-group">
+      <div class="field-group-title">Учётная запись</div>
+      <div class="set-field">
+        <label class="field-label" for="u-name">Имя пользователя</label>
+        <input class="field-control set-mono" id="u-name" name="username" value="{{ target.username|default:'' }}" required autofocus>
+        {% if not target %}
+          <div class="set-hint">
+            Не должно совпадать с именем в FreeIPA — локальная учётка перекрыла бы человеку
+            вход через каталог. Проверяется при сохранении.
+          </div>
+        {% endif %}
+      </div>
+      <div class="set-field" style="margin-top:.7rem">
+        <label class="field-label" for="u-pw">Пароль</label>
+        <input class="field-control" id="u-pw" name="password" type="password" autocomplete="new-password"
+               {% if not target %}required{% endif %}>
+        <div class="set-hint">
+          {% if target %}Оставьте пустым, чтобы не менять.
+          {% else %}Не короче 10 символов, не только цифры, не из списка частых.{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <div class="field-group-title">Что разрешено</div>
+      <label class="set-check">
+        <input type="checkbox" name="is_staff" {% if target.is_staff %}checked{% endif %}>
+        <span>Настройки синхронизации <span class="set-muted">— оборудование, гипервизоры, сканирование</span></span>
+      </label>
+      <label class="set-check">
+        <input type="checkbox" name="is_superuser" {% if target.is_superuser %}checked{% endif %}>
+        <span>Суперпользователь <span class="set-muted">— вход, учётные записи, токен NetBox</span></span>
+      </label>
+      <label class="set-check">
+        <input type="checkbox" name="is_active" {% if not target or target.is_active %}checked{% endif %}>
+        <span>Учётная запись активна</span>
+      </label>
+      <label class="set-check">
+        <input type="checkbox" name="must_change_password" {% if target.local_account.must_change_password %}checked{% endif %}>
+        <span>Потребовать смену пароля при следующем входе</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="modal-footer-bar">
+    <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Отмена</button>
+    <button type="submit" class="btn-modal-primary">Сохранить</button>
+  </div>
+</form>

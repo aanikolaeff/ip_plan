@@ -1,0 +1,71 @@
+{% extends "ip_plan/base.html" %}
+
+{% block content %}
+<div class="set-page">
+  <div class="set-head">
+    <h1>Настройки синхронизации</h1>
+    <p>
+      Отсюда правятся конфигурационные файлы netbox-sync и доступ к самому приложению.
+      Обходить их через SSH на хосте больше не нужно.
+    </p>
+  </div>
+
+  {% comment %}
+    Полоса применения. Отвечает на вопрос, который иначе задаёт каждый, кто
+    впервые здесь что-то сохранил: «почему в NetBox ничего не изменилось».
+  {% endcomment %}
+  <div class="set-apply{% if sync_running %} set-apply-running{% endif %}">
+    <span class="set-apply-dot"></span>
+    {% if sync_running %}
+      <span><strong>Синхронизация идёт прямо сейчас.</strong>
+        Сохранять можно — запись атомарна, — но шаги, которые уже отработали, останутся
+        на прежних настройках.</span>
+    {% else %}
+      <span>Правки записываются на диск сразу, а на оборудование и в NetBox попадают
+        <strong>на следующем прогоне синхронизации</strong> — по расписанию в 03:00 или при
+        ручном запуске <code class="set-mono">full_sync.sh</code>.</span>
+    {% endif %}
+  </div>
+
+  {% if not conf_available %}
+    <div class="set-panel">
+      <div class="set-panel-body">
+        <div class="set-note set-note-error">
+          Каталог конфигурации netbox-sync недоступен: <code>{{ conf_dir }}</code>.
+          Проверьте, что в <code>docker-compose.yml</code> смонтирован
+          <code>${NETBOX_SYNC_DIR}/conf</code> и что этот каталог существует на хосте.
+        </div>
+      </div>
+    </div>
+  {% else %}
+    <div class="set-layout">
+      <nav class="set-rail">
+        {% for t in tabs %}
+          <a class="set-rail-item{% if t.key == active_tab %} active{% endif %}"
+             href="{% url 'ip_plan:settings_tab' t.key %}">
+            <span class="set-rail-title">{{ t.title }}</span>
+            <span class="set-rail-file">{{ t.file }}</span>
+          </a>
+        {% endfor %}
+      </nav>
+
+      <div>
+        {% if load_error %}
+          <div class="set-panel"><div class="set-panel-body">
+            <div class="set-note set-note-error">{{ load_error }}</div>
+          </div></div>
+        {% else %}
+          {% if active_tab == 'devices' %}{% include "ip_plan/_settings_devices.html" %}
+          {% elif active_tab == 'models' %}{% include "ip_plan/_settings_models.html" %}
+          {% elif active_tab == 'hypervisors' %}{% include "ip_plan/_settings_hypervisors.html" %}
+          {% elif active_tab == 'scan' %}{% include "ip_plan/_settings_scan.html" %}
+          {% elif active_tab == 'ldap' %}{% include "ip_plan/_settings_ldap.html" %}
+          {% elif active_tab == 'users' %}{% include "ip_plan/_settings_users.html" %}
+          {% elif active_tab == 'audit' %}{% include "ip_plan/_settings_audit.html" %}
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

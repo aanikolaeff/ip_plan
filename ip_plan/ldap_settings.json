@@ -10,5 +10,7 @@
   "user_search_filter": "(uid=%(user)s)",
   "group_search_base": "cn=groups,cn=accounts,dc=sicmt,dc=local",
   "require_group": "cn=netbox-users,cn=groups,cn=accounts,dc=sicmt,dc=local",
+  "staff_group": "cn=netbox-admins,cn=groups,cn=accounts,dc=sicmt,dc=local",
+  "superuser_group": "",
   "cache_timeout": 3600
 }

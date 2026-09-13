@@ -1,0 +1,156 @@
+<div class="set-panel">
+  <div class="set-panel-head">
+    <div>
+      <h2 class="set-panel-title">Вход через FreeIPA</h2>
+      <p class="set-panel-desc">
+        Кто и как попадает в приложение. Изменения действуют со следующего входа —
+        перезапускать контейнер не нужно.
+      </p>
+    </div>
+  </div>
+
+  <div class="set-panel-body">
+    {% if ldap_password_broken %}
+      <div class="set-note set-note-error">
+        <strong>Пароль сервисной учётной записи не читается.</strong>
+        Почти всегда это значит, что сменился <code>SECRET_KEY</code> — им зашифрован пароль
+        в базе. Вход через каталог сейчас не работает: введите пароль заново и сохраните.
+      </div>
+    {% endif %}
+    {% if not ldap.enabled %}
+      <div class="set-note set-note-warn">
+        <strong>Вход через LDAP выключен.</strong>
+        Попасть в приложение можно только локальными учётными записями.
+      </div>
+    {% endif %}
+
+    <form class="set-form" id="ldap-form"
+          hx-post="{% url 'ip_plan:settings_ldap_save' %}"
+          hx-target="#modal-content" hx-indicator="#modal-spinner">
+      {% csrf_token %}
+
+      <label class="set-check">
+        <input type="checkbox" name="enabled" {% if ldap.enabled %}checked{% endif %}>
+        <span>Разрешить вход через FreeIPA</span>
+      </label>
+
+      <div class="set-field">
+        <label class="field-label" for="l-servers">Серверы каталога</label>
+        <textarea class="field-control set-mono" id="l-servers" name="servers" rows="3">{{ ldap.servers }}</textarea>
+        <div class="set-hint">По одному адресу в строке. Перебираются по порядку, пока один не ответит.</div>
+      </div>
+
+      <div class="set-form-row">
+        <div class="set-field">
+          <label class="field-label" for="l-bind-dn">Сервисная учётная запись (bind DN)</label>
+          <input class="field-control set-mono" id="l-bind-dn" name="bind_dn" value="{{ ldap.bind_dn }}">
+        </div>
+        <div class="set-field">
+          <label class="field-label" for="l-bind-pw">Её пароль</label>
+          <input class="field-control" id="l-bind-pw" name="bind_password" type="password"
+                 placeholder="{{ ldap_password_mask }}" autocomplete="new-password">
+          <div class="set-hint">Оставьте пустым, чтобы не менять.</div>
+        </div>
+      </div>
+
+      <div class="set-form-row">
+        <div class="set-field">
+          <label class="field-label" for="l-ubase">Где искать пользователей</label>
+          <input class="field-control set-mono" id="l-ubase" name="user_search_base" value="{{ ldap.user_search_base }}">
+        </div>
+        <div class="set-field">
+          <label class="field-label" for="l-ufilter">Фильтр поиска</label>
+          <input class="field-control set-mono" id="l-ufilter" name="user_search_filter" value="{{ ldap.user_search_filter }}">
+          <div class="set-hint">Имя подставляется вместо <code>%(user)s</code>.</div>
+        </div>
+      </div>
+
+      <div class="set-field">
+        <label class="field-label" for="l-gbase">Где искать группы</label>
+        <input class="field-control set-mono" id="l-gbase" name="group_search_base" value="{{ ldap.group_search_base }}">
+      </div>
+
+      <div class="set-field">
+        <label class="field-label" for="l-require">Группа, дающая право входа</label>
+        <input class="field-control set-mono" id="l-require" name="require_group" value="{{ ldap.require_group }}">
+        <div class="set-hint">Пусто — войдёт любой, кто прошёл проверку пароля.</div>
+      </div>
+
+      <div class="set-form-row">
+        <div class="set-field">
+          <label class="field-label" for="l-staff">Группа с доступом к настройкам</label>
+          <input class="field-control set-mono" id="l-staff" name="staff_group" value="{{ ldap.staff_group }}">
+        </div>
+        <div class="set-field">
+          <label class="field-label" for="l-super">Группа суперпользователей</label>
+          <input class="field-control set-mono" id="l-super" name="superuser_group" value="{{ ldap.superuser_group }}">
+        </div>
+        <div class="set-field set-field-narrow">
+          <label class="field-label" for="l-cache">Кеш групп, с</label>
+          <input class="field-control" id="l-cache" name="cache_timeout" value="{{ ldap.cache_timeout }}">
+        </div>
+      </div>
+      <div class="set-hint">
+        Членство пересчитывается при каждом входе: исключили человека из группы — права
+        снимутся, как только он войдёт снова.
+      </div>
+
+      <div class="set-note">
+        <strong>Проверка перед сохранением.</strong>
+        Повторяет ровно те шаги, что делает вход: подключиться, найти пользователя,
+        забиндиться его паролем, сверить группы. Ничего не сохраняет и никого не заводит в базе.
+        <div class="set-form-row" style="margin-top:.7rem">
+          <div class="set-field">
+            <label class="field-label" for="l-tu">Проверить вход пользователя</label>
+            <input class="field-control" id="l-tu" name="test_username" autocomplete="off" placeholder="имя в каталоге">
+          </div>
+          <div class="set-field">
+            <label class="field-label" for="l-tp">Его пароль</label>
+            <input class="field-control" id="l-tp" name="test_password" type="password" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="set-form-actions" style="margin-top:.6rem">
+          <button type="button" class="btn-modal-secondary btn-pill-sm"
+                  hx-post="{% url 'ip_plan:settings_ldap_test' %}"
+                  hx-include="#ldap-form"
+                  hx-target="#ldap-test-result"
+                  hx-indicator="#modal-spinner">Проверить подключение</button>
+        </div>
+        <div id="ldap-test-result"></div>
+      </div>
+
+      <label class="set-check">
+        <input type="checkbox" name="skip_check">
+        <span>Сохранить, даже если проверка не прошла</span>
+      </label>
+      <div class="set-hint">
+        Нужно, только когда каталог недоступен, а поля поправить надо. Непроверенные
+        настройки закрывают вход всем, кто ходит через FreeIPA.
+      </div>
+
+      <div class="set-form-actions">
+        <button type="submit" class="btn-modal-primary">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="set-panel">
+  <div class="set-panel-head">
+    <div>
+      <h2 class="set-panel-title">Что сюда не вынесено</h2>
+      <p class="set-panel-desc">Два ограничения, о которые проще споткнуться, чем догадаться.</p>
+    </div>
+  </div>
+  <div class="set-panel-body">
+    <div class="set-note">
+      <strong>Сертификат LDAPS</strong> — <code>{{ ldap_ca_cert }}</code>.
+      Настройки TLS в python-ldap общие на весь процесс и применяются до первого
+      соединения, поэтому смена сертификата — это замена файла и перезапуск контейнера.
+    </div>
+    <div class="set-note" style="margin-top:.7rem">
+      <strong>Локальных суперпользователей: {{ local_superusers }}.</strong>
+      Пока их нет, выключить вход через LDAP нельзя — иначе войти станет нечем.
+    </div>
+  </div>
+</div>

@@ -1,0 +1,80 @@
+<div class="set-panel">
+  <div class="set-panel-head">
+    <div>
+      <h2 class="set-panel-title">Сканирование и DNS</h2>
+      <p class="set-panel-desc">
+        Что nmap пропускает при обходе сетей и через какие серверы резолвятся имена.
+      </p>
+    </div>
+  </div>
+
+  <div class="set-panel-body">
+    <form class="set-form" hx-post="{% url 'ip_plan:settings_scan_save' %}"
+          hx-target="#modal-content" hx-indicator="#modal-spinner">
+      {% csrf_token %}
+      <input type="hidden" name="file_hash" value="{{ file_hash }}">
+
+      <div class="set-field">
+        <label class="field-label" for="c-dns">DNS-серверы</label>
+        <textarea class="field-control set-mono" id="c-dns" name="dns_servers" rows="4">{% for s in dns_servers %}{{ s }}
+{% endfor %}</textarea>
+        <div class="set-hint">По одному в строке. Используются при сканировании с включённым резолвом имён.</div>
+      </div>
+
+      <div class="set-field">
+        <label class="field-label" for="c-skip">Имена, которые не резолвим</label>
+        <input class="field-control set-mono" id="c-skip" name="dns_skip_pattern" value="{{ dns_skip_pattern }}">
+        <div class="set-hint">Регулярное выражение. Подходящие под него имена пропускаются.</div>
+      </div>
+
+      <div class="set-field">
+        <label class="field-label" for="c-excl">Сети, исключённые из сканирования</label>
+        <textarea class="field-control set-mono" id="c-excl" name="scan_exclude_prefixes" rows="5">{% for p in scan_exclude_prefixes %}{{ p }}
+{% endfor %}</textarea>
+        <div class="set-hint">По одной сети в строке, в формате CIDR — например <code>10.1.0.0/24</code>.</div>
+      </div>
+
+      <div class="set-form-actions">
+        <button type="submit" class="btn-modal-primary">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="set-panel">
+  <div class="set-panel-head">
+    <div>
+      <h2 class="set-panel-title">Подключение к NetBox</h2>
+      <p class="set-panel-desc">
+        Куда синхронизация записывает результат. Ошибка здесь останавливает весь прогон,
+        поэтому правку доверяем только суперпользователю.
+      </p>
+    </div>
+  </div>
+  <div class="set-panel-body set-panel-body-flush">
+    <table class="set-table">
+      <thead><tr><th>Окружение</th><th>Адрес</th><th>Токен</th><th></th></tr></thead>
+      <tbody>
+        {% for e in environments %}
+          <tr>
+            <td><span class="set-name">{{ e.name }}</span></td>
+            <td class="set-mono">{{ e.url }}</td>
+            <td>{% if e.has_token %}<span class="set-chip">задан</span>{% else %}<span class="set-muted">не задан</span>{% endif %}</td>
+            <td>
+              <div class="set-row-actions">
+                {% if user.is_superuser %}
+                  <button type="button" class="btn-modal-secondary btn-pill-sm"
+                          hx-get="{% url 'ip_plan:settings_env_edit' e.name %}"
+                          hx-target="#modal-content" hx-indicator="#modal-spinner"
+                          @click="$store.modal.dirty = false; $dispatch('open-modal')">Изменить</button>
+                {% else %}
+                  <span class="set-muted">нужен доступ суперпользователя</span>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

@@ -1,0 +1,35 @@
+<div class="modal-title-bar">
+  <h5>Подключение к NetBox — {{ env }}</h5>
+  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+</div>
+
+<form hx-post="{% url 'ip_plan:settings_env_save' env %}" hx-target="#modal-content" hx-indicator="#modal-spinner">
+  {% csrf_token %}
+  <input type="hidden" name="file_hash" value="{{ file_hash }}">
+
+  <div class="modal-body-pad">
+    <div class="set-note set-note-warn" style="margin-bottom:.9rem">
+      Этим подключением пользуется синхронизация. Ошибка здесь останавливает все девять
+      шагов прогона.
+    </div>
+
+    <div class="field-group">
+      <div class="field-group-title">Окружение {{ env }}</div>
+      <div class="set-field">
+        <label class="field-label" for="e-url">Адрес NetBox</label>
+        <input class="field-control set-mono" id="e-url" name="netbox_url" value="{{ netbox_url }}" required autofocus>
+      </div>
+      <div class="set-field" style="margin-top:.7rem">
+        <label class="field-label" for="e-token">Токен API</label>
+        <input class="field-control" id="e-token" name="token" type="password"
+               placeholder="{{ token_mask }}" autocomplete="new-password">
+        <div class="set-hint">Оставьте пустым, чтобы не менять.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-footer-bar">
+    <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Отмена</button>
+    <button type="submit" class="btn-modal-primary">Сохранить</button>
+  </div>
+</form>

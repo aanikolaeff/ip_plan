@@ -1,0 +1,49 @@
+<div class="modal-title-bar">
+  <h5>{% if index is not None %}{{ item.name }}{% else %}Новый источник — {{ kind_title }}{% endif %}</h5>
+  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+</div>
+
+<form hx-post="{% if index is not None %}{% url 'ip_plan:settings_source_save' kind index %}{% else %}{% url 'ip_plan:settings_source_add_save' kind %}{% endif %}"
+      hx-target="#modal-content" hx-indicator="#modal-spinner">
+  {% csrf_token %}
+  <input type="hidden" name="file_hash" value="{{ file_hash }}">
+
+  <div class="modal-body-pad">
+    <div class="field-group">
+      <div class="field-group-title">{{ kind_title }}</div>
+      <div class="set-field">
+        <label class="field-label" for="s-name">Имя</label>
+        <input class="field-control" id="s-name" name="name" value="{{ item.name|default:'' }}" required autofocus>
+      </div>
+      <div class="set-field" style="margin-top:.7rem">
+        <label class="field-label" for="s-url">Адрес</label>
+        <input class="field-control set-mono" id="s-url" name="url" value="{{ item.url|default:'' }}"
+               placeholder="{{ url_hint }}" required>
+        <div class="set-hint">Например: <code>{{ url_hint }}</code></div>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <div class="field-group-title">Учётные данные</div>
+      <div class="set-form-row">
+        <div class="set-field">
+          <label class="field-label" for="s-user">Пользователь</label>
+          <input class="field-control set-mono" id="s-user" name="user" value="{{ item.user|default:'' }}" required>
+        </div>
+        <div class="set-field">
+          <label class="field-label" for="s-password">Пароль</label>
+          <input class="field-control" id="s-password" name="password" type="password"
+                 placeholder="{{ password_mask }}" autocomplete="new-password">
+          <div class="set-hint">
+            {% if password_mask %}Оставьте пустым, чтобы не менять.{% else %}Обязателен.{% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-footer-bar">
+    <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Отмена</button>
+    <button type="submit" class="btn-modal-primary">Сохранить</button>
+  </div>
+</form>

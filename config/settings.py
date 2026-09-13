@@ -65,6 +65,13 @@ MIDDLEWARE = [
     # @login_required каждую view-функцию — новую view, если забыть
     # декоратор, тут защитит сама middleware. Доступно с Django 5.1.
     "django.contrib.auth.middleware.LoginRequiredMiddleware",
+    # Строго после LoginRequiredMiddleware: анонимов та уже развернула на
+    # страницу входа, здесь остаются только вошедшие. Держит локального
+    # пользователя с флагом must_change_password на странице смены пароля,
+    # пока он его не сменит (см. ip_plan/middleware.py и команду
+    # ensure_local_admin — учётка admin/admin засевается именно с этим
+    # флагом).
+    "ip_plan.middleware.ForcePasswordChangeMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -158,6 +165,20 @@ NETBOX_DNS_SKIP_PATTERN = config("NETBOX_DNS_SKIP_PATTERN", default=r"\.vipnet$"
 # доставки через ACL_CONFIG_BACKUPS_DIR напрямую.
 ACL_CONFIG_BACKUPS_DIR = config("ACL_CONFIG_BACKUPS_DIR", default=str(BASE_DIR / "config_backups"))
 
+# --- Редактируемые конфиги netbox-sync (раздел "Настройки") ---
+# Директория conf/ репозитория netbox-sync, смонтированная НА ЗАПИСЬ (см.
+# docker-compose.yml). Здесь лежат devices.json, config.json и оба
+# sources_*.json — те самые файлы, которые netbox-sync вынес из git именно
+# для того, чтобы их можно было править отсюда (см. conf_loader.py в
+# netbox-sync и docs/plans/2026-09-07-netbox-sync-settings-editor-design.md).
+NETBOX_SYNC_CONF_DIR = config("NETBOX_SYNC_CONF_DIR", default=str(BASE_DIR / "netbox_sync_conf"))
+# Лок-файл full_sync.sh — лежит в КОРНЕ netbox-sync, на уровень выше conf/.
+# Нужен только для предупреждения в UI ("синк идёт прямо сейчас"), поэтому
+# отсутствие директории не является ошибкой.
+NETBOX_SYNC_LOCK_FILE = config(
+    "NETBOX_SYNC_LOCK_FILE", default=str(Path(NETBOX_SYNC_CONF_DIR).parent / ".full_sync.lock")
+)
+
 # --- Раздел "Настройки" (шапка) — сводка последнего прогона netbox-sync ---
 # Тот же принцип и тот же NETBOX_SYNC_DIR, что и у ACL_CONFIG_BACKUPS_DIR
 # выше — только подпапка sync_logs вместо config_backups. См.
@@ -188,17 +209,53 @@ DATA_UPLOAD_MAX_NUMBER_FIELDS = 20000
 # auth в целом, а не конкретно к LDAP-бэкенду.
 from ip_plan.ldap_config import *  # noqa: F401,F403  — см. комментарий выше
 
+# ModelBackend ПЕРВЫМ, LDAP вторым — порядок не косметический. В
+# AUTH_LDAP_GLOBAL_OPTIONS стоят таймауты по 15 секунд на сервер, серверов
+# два: при недоступном или неверно настроенном LDAP обратный порядок
+# заставлял бы локального администратора ждать эти таймауты на каждом входе
+# — ровно в тот момент, когда локальный вход и нужен. Зеркала
+# LDAP-пользователей ModelBackend отбраковывает мгновенно (у них unusable
+# password), так что для обычного входа через FreeIPA порядок ничего не
+# меняет.
+#
+# Побочный эффект: локальная учётка с именем существующего
+# LDAP-пользователя перекрыла бы ему вход. Поэтому создание локальных
+# учёток проверяет, что такого uid нет в LDAP (см. ensure_local_admin и
+# вкладку "Пользователи").
 AUTHENTICATION_BACKENDS = [
-    "django_auth_ldap.backend.LDAPBackend",
-    # Fallback на локального суперюзера (manage.py createsuperuser) — на
-    # случай, если LDAP временно недоступен/неправильно настроен и нужен
-    # доступ "в обход" для диагностики.
     "django.contrib.auth.backends.ModelBackend",
+    # Не штатный LDAPBackend: настройки FreeIPA правятся из раздела
+    # "Настройки" и лежат в БД, а не здесь (см. ip_plan/auth_backends.py).
+    "ip_plan.auth_backends.DbLDAPBackend",
+]
+
+# Django по умолчанию НЕ включает ни одного валидатора (пустой список —
+# это дефолт самого фреймворка, набор из четырёх появляется только в
+# шаблоне startproject, которого тут не было). Пока вход был исключительно
+# через FreeIPA, это ничего не значило: пароли живут в каталоге и правила
+# задаёт он. С появлением локальных учёток проверять стало что — и учётка
+# это не рядовая, у неё is_superuser и доступ к паролям всего сетевого
+# периметра. MinimumLength поднят с дефолтных 8 до 10 по той же причине.
+# CommonPasswordValidator заодно закрывает возврат к "admin": это слово
+# есть в поставляемом с Django списке частых паролей.
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 10},
+    },
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
 LOGIN_URL = "ip_plan:login"
 LOGIN_REDIRECT_URL = "ip_plan:ip_list"
 LOGOUT_REDIRECT_URL = "ip_plan:login"
+# Куда PasswordChangeView уводит после успешной смены. Именно ip_list, а не
+# отдельная страница "готово": для локального админа, которого сюда пригнал
+# ForcePasswordChangeMiddleware, смена пароля — препятствие на пути в
+# приложение, а не самостоятельная задача.
+PASSWORD_CHANGE_REDIRECT_URL = "ip_plan:ip_list"
 
 LOGGING = {
     "version": 1,

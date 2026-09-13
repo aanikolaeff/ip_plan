@@ -1,0 +1,73 @@
+<div class="set-panel">
+  <div class="set-panel-head">
+    <div>
+      <h2 class="set-panel-title">Сетевое оборудование</h2>
+      <p class="set-panel-desc">
+        Адреса и учётные данные, по которым синхронизация ходит на устройства по SSH:
+        снимает интерфейсы и VLAN-ы, сохраняет конфигурации, читает списки блокировок.
+      </p>
+    </div>
+    <div class="set-panel-actions">
+      <button type="button" class="btn-modal-primary"
+              hx-get="{% url 'ip_plan:settings_device_add' %}"
+              hx-target="#modal-content" hx-indicator="#modal-spinner"
+              @click="$store.modal.dirty = false; $dispatch('open-modal')">Добавить устройство</button>
+    </div>
+  </div>
+
+  <div class="set-panel-body set-panel-body-flush">
+    <table class="set-table">
+      <thead>
+        <tr>
+          <th>Устройство</th><th>Адрес</th><th>Модель</th><th>Логин</th>
+          <th>Синхронизируется</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in devices %}
+          <tr>
+            <td>
+              <span class="set-name">{{ d.name }}</span>
+              <span class="set-sub">{{ d.cfg.site|default:"без площадки" }} · {{ d.cfg.status|default:"active" }}</span>
+            </td>
+            <td class="set-mono">{{ d.cfg.host }}{% if d.cfg.port and d.cfg.port != 22 %}:{{ d.cfg.port }}{% endif %}</td>
+            <td>{{ d.cfg.model }}</td>
+            <td class="set-mono">{{ d.cfg.username }}</td>
+            <td>
+              <div class="set-chips">
+                {% if d.cfg.sync_interfaces %}<span class="set-chip">интерфейсы</span>{% endif %}
+                {% if d.cfg.import_vlans %}<span class="set-chip">VLAN</span>{% endif %}
+                {% if d.cfg.import_prefixes %}<span class="set-chip">префиксы</span>{% endif %}
+                {% if d.cfg.sync_macs %}<span class="set-chip">MAC</span>{% endif %}
+                {% if d.cfg.backup_config %}<span class="set-chip">конфигурация</span>{% endif %}
+                {% if d.cfg.sync_blocklist %}<span class="set-chip set-chip-accent">блокировки</span>{% endif %}
+                {% if not d.cfg.sync_interfaces and not d.cfg.import_vlans and not d.cfg.import_prefixes and not d.cfg.sync_macs and not d.cfg.backup_config and not d.cfg.sync_blocklist %}
+                  <span class="set-muted">ничего</span>
+                {% endif %}
+              </div>
+            </td>
+            <td>
+              <div class="set-row-actions">
+                <button type="button" class="btn-modal-secondary btn-pill-sm"
+                        hx-get="{% url 'ip_plan:settings_device_edit' d.name %}"
+                        hx-target="#modal-content" hx-indicator="#modal-spinner"
+                        @click="$store.modal.dirty = false; $dispatch('open-modal')">Изменить</button>
+                <form hx-post="{% url 'ip_plan:settings_device_delete' d.name %}"
+                      hx-target="#modal-content"
+                      hx-confirm="Убрать «{{ d.name }}» из синхронизации? Объекты, уже заведённые в NetBox, останутся — они просто перестанут обновляться.">
+                  {% csrf_token %}
+                  <input type="hidden" name="file_hash" value="{{ file_hash }}">
+                  <button type="submit" class="btn-danger-quiet">Убрать</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="set-empty">
+            Устройств нет. Добавьте первое — синхронизация начнёт ходить на него со следующего прогона.
+          </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

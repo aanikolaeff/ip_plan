@@ -1,0 +1,71 @@
+<div class="set-panel">
+  <div class="set-panel-head">
+    <div>
+      <h2 class="set-panel-title">Профили моделей</h2>
+      <p class="set-panel-desc">
+        Что и какими командами синхронизация спрашивает у каждой модели устройства.
+        Устройство ссылается на профиль полем «Модель».
+      </p>
+    </div>
+    <div class="set-panel-actions">
+      <button type="button" class="btn-modal-primary"
+              hx-get="{% url 'ip_plan:settings_type_add' %}"
+              hx-target="#modal-content" hx-indicator="#modal-spinner"
+              @click="$store.modal.dirty = false; $dispatch('open-modal')">Добавить модель</button>
+    </div>
+  </div>
+
+  <div class="set-panel-body">
+    <div class="set-note set-note-warn">
+      Поля профиля — это команды, которые выполняются на боевом оборудовании.
+      Ошибка здесь ломает синхронизацию для всех устройств этой модели сразу, и увидите
+      вы это только утром в логе прогона.
+    </div>
+  </div>
+
+  <div class="set-panel-body set-panel-body-flush">
+    <table class="set-table">
+      <thead>
+        <tr><th>Модель</th><th>Производитель</th><th>Роль в NetBox</th><th>Парсер</th><th>Устройства</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for t in device_type_rows %}
+          <tr>
+            <td><span class="set-name">{{ t.name }}</span></td>
+            <td>{{ t.cfg.manufacturer }}</td>
+            <td>{{ t.cfg.role }}</td>
+            <td class="set-mono">{{ t.cfg.interfaces_parser|default:"—" }}</td>
+            <td>
+              {% if t.used_by %}
+                <div class="set-chips">
+                  {% for d in t.used_by %}<span class="set-chip">{{ d }}</span>{% endfor %}
+                </div>
+              {% else %}
+                <span class="set-muted">не используется</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="set-row-actions">
+                <button type="button" class="btn-modal-secondary btn-pill-sm"
+                        hx-get="{% url 'ip_plan:settings_type_edit' t.name %}"
+                        hx-target="#modal-content" hx-indicator="#modal-spinner"
+                        @click="$store.modal.dirty = false; $dispatch('open-modal')">Изменить</button>
+                {% if not t.used_by %}
+                  <form hx-post="{% url 'ip_plan:settings_type_delete' t.name %}"
+                        hx-target="#modal-content"
+                        hx-confirm="Удалить профиль «{{ t.name }}»?">
+                    {% csrf_token %}
+                    <input type="hidden" name="file_hash" value="{{ file_hash }}">
+                    <button type="submit" class="btn-danger-quiet">Удалить</button>
+                  </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="set-empty">Профилей нет.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
