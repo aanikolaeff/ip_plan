@@ -14,6 +14,9 @@
 import logging
 
 import ldap
+# ldap.filter — отдельный подмодуль: сам по себе «import ldap» его не тянет,
+# и обращение к ldap.filter.escape_filter_chars падало с AttributeError.
+import ldap.filter
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -28,8 +31,17 @@ class LdapCheckError(Exception):
 def _connect(uri):
     # Те же глобальные TLS-опции, что и у боевого бэкенда: иначе проверка
     # соединялась бы на других условиях, чем реальный вход, и её результат
-    # ничего не значил бы. OPT_X_TLS_NEWCTX обязателен после установки
-    # опций TLS — иначе python-ldap продолжит использовать старый контекст.
+    # ничего не значил бы.
+    #
+    # OPT_X_TLS_NEWCTX здесь сознательно НЕ вызывается. Опция пересоздаёт
+    # TLS-контекст соединения из опций, выставленных на самом соединении, а
+    # путь к CA у нас глобальный (AUTH_LDAP_GLOBAL_OPTIONS) — в новом
+    # контексте его не оказывается, и bind к FreeIPA падает с SERVER_DOWN
+    # «certificate verify failed», хотя реальный вход в это же время
+    # работает. Именно из-за этого проверка раньше всегда отвечала «ни один
+    # сервер не отвечает». django_auth_ldap NEWCTX тоже не вызывает: он
+    # применяет глобальные опции один раз за процесс и полагается на то,
+    # что соединение наследует контекст при initialize.
     for option, value in (settings.AUTH_LDAP_GLOBAL_OPTIONS or {}).items():
         try:
             ldap.set_option(option, value)
@@ -38,11 +50,6 @@ def _connect(uri):
     conn = ldap.initialize(uri)
     conn.set_option(ldap.OPT_NETWORK_TIMEOUT, TIMEOUT)
     conn.set_option(ldap.OPT_TIMEOUT, TIMEOUT)
-    if uri.lower().startswith("ldaps://"):
-        try:
-            conn.set_option(ldap.OPT_X_TLS_NEWCTX, 0)
-        except ldap.LDAPError:
-            pass
     return conn
 
 

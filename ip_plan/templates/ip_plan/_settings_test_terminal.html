@@ -1,0 +1,76 @@
+{% comment %}
+  Ход проверки одного объекта.
+
+  Шаблон работает в двух режимах: modal=True — целое окно (первое открытие),
+  modal=False — только тело, им себя обновляет опрос, пока проверка идёт.
+{% endcomment %}
+{% if modal %}
+<div class="modal-title-bar">
+  <h5>Проверка: {{ key }}</h5>
+  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+</div>
+<div class="modal-body-pad">
+{% endif %}
+
+<div class="test-term"
+     {% if test and test.is_running %}
+       hx-get="{% url 'ip_plan:settings_test_terminal_body' kind key %}"
+       hx-trigger="every 1s"
+       hx-swap="outerHTML"
+     {% endif %}>
+
+  {% if not test %}
+    <div class="set-note">
+      Тест ещё не запускался. Нажмите ▶ рядом с объектом — здесь появится ход проверки.
+    </div>
+  {% else %}
+    <div class="test-term-head">
+      {% if test.is_running %}
+        <span class="test-state test-state-running"><span class="test-dot"></span>
+          <span class="test-label">выполняется</span></span>
+        <span class="set-sub">запущена {{ test.started_at|date:'H:i:s' }}{% if test.started_by %}, {{ test.started_by }}{% endif %}</span>
+      {% else %}
+        <span class="test-state test-state-{{ test.status }}"><span class="test-dot"></span>
+          <span class="test-label">{% if test.status == 'ok' %}успешно{% else %}ошибка{% endif %}</span></span>
+        <span class="set-sub">
+          {{ test.finished_at|date:'d.m.Y H:i:s' }}{% if test.duration %}, {{ test.duration|floatformat:1 }} с{% endif %}{% if test.started_by %}, {{ test.started_by }}{% endif %}
+        </span>
+      {% endif %}
+    </div>
+
+    {% if test.steps %}
+      <ol class="test-steps">
+        {% for step in test.steps %}
+          <li class="test-step test-step-{{ step.status }}">
+            <span class="test-step-name">{{ step.name }}</span>
+            <span class="test-step-detail">{{ step.detail }}</span>
+            <span class="test-step-time">{{ step.elapsed }} с</span>
+          </li>
+        {% endfor %}
+      </ol>
+    {% elif test.is_running %}
+      <div class="set-hint">Проверка идёт, шаги появятся по мере выполнения…</div>
+    {% endif %}
+
+    {% if test.summary and not test.is_running %}
+      <div class="set-note {% if test.status == 'ok' %}set-note-ok{% else %}set-note-error{% endif %}">
+        {{ test.summary }}
+      </div>
+    {% endif %}
+  {% endif %}
+</div>
+
+{% if modal %}
+</div>
+<div class="modal-footer-bar">
+  <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Закрыть</button>
+  {% if not test or not test.is_running %}
+    <button type="button" class="btn-modal-primary"
+            hx-post="{% url 'ip_plan:settings_test_start' kind key %}"
+            hx-vals='{"from": "terminal"}'
+            hx-target=".test-term" hx-swap="outerHTML">
+      Запустить ещё раз
+    </button>
+  {% endif %}
+</div>
+{% endif %}

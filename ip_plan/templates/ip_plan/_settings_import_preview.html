@@ -1,0 +1,117 @@
+{% comment %}
+  Шаг 2 импорта: что именно изменится. Ничего ещё не записано.
+
+  Новые записи отмечены заранее — это обычный случай переноса. Конфликты
+  сняты: перезаписать существующую запись можно только осознанно.
+{% endcomment %}
+<div class="modal-title-bar">
+  <h5>Импорт: предварительный результат</h5>
+  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+</div>
+
+<form hx-post="{% url 'ip_plan:settings_import_apply' %}"
+      hx-target="#modal-content" hx-indicator="#modal-spinner">
+  {% csrf_token %}
+
+  <div class="modal-body-pad">
+    <div class="set-hint" style="margin-bottom:.8rem">
+      Загружено: {% for s in sources %}<code class="set-mono">{{ s }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}
+    </div>
+
+    <div class="stat-row imp-summary">
+      <div class="stat"><b>{{ summary.add }}</b><span>добавится</span></div>
+      <div class="stat"><b>{{ summary.same }}</b><span>уже совпадает</span></div>
+      <div class="stat"><b>{{ summary.conflict }}</b><span>расхождений</span></div>
+    </div>
+
+    {% if not items %}
+      <div class="set-note">В загруженных файлах нет записей для импорта.</div>
+    {% else %}
+      <table class="set-table imp-table">
+        <thead>
+          <tr><th style="width:2rem"></th><th>Запись</th><th>Тип</th><th>Что будет</th></tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+            <tr class="{% if item.blocked %}imp-blocked{% endif %}">
+              <td>
+                {% if item.action == 'same' or item.blocked %}
+                  <input type="checkbox" disabled title="{% if item.blocked %}{{ item.blocked }}{% else %}нечего менять{% endif %}">
+                {% else %}
+                  <input type="checkbox" name="apply" value="{{ item.kind }}:{{ item.key }}"
+                         {% if item.action == 'add' %}checked{% endif %}>
+                {% endif %}
+              </td>
+              <td><span class="set-name">{{ item.label }}</span></td>
+              <td>
+                {% if item.kind == 'device' %}устройство
+                {% elif item.kind == 'model' %}модель
+                {% elif item.kind == 'redvirt' %}RedVirt
+                {% elif item.kind == 'vcenter' %}vCenter{% endif %}
+              </td>
+              <td>
+                {% if item.blocked %}
+                  <span class="imp-tag imp-tag-blocked">не импортируется</span>
+                  <span class="set-sub">{{ item.blocked }}</span>
+                {% elif item.action == 'add' %}
+                  <span class="imp-tag imp-tag-add">новая</span>
+                {% elif item.action == 'same' %}
+                  <span class="imp-tag imp-tag-same">без изменений</span>
+                {% else %}
+                  <span class="imp-tag imp-tag-conflict">расхождение</span>
+                  <span class="set-sub">
+                    {% for ch in item.changes %}{{ ch.field }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                  </span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+
+    <div class="field-group" style="margin-top:.9rem">
+      <div class="field-group-title">Как поступить с паролями</div>
+      <label class="set-check">
+        <input type="checkbox" name="replace_secrets">
+        <span>Заменить пароли у существующих записей
+          <span class="set-muted">— по умолчанию сохраняются текущие</span></span>
+      </label>
+      <div class="set-hint">
+        У новых записей пароль берётся из файла в любом случае. Этот флажок
+        касается только записей, которые уже есть: без него рабочий доступ к
+        оборудованию остаётся прежним.
+      </div>
+    </div>
+
+    {% if optional %}
+      <div class="field-group">
+        <div class="field-group-title">Настройки этой установки</div>
+        {% if 'config' in optional %}
+          <label class="set-check">
+            <input type="checkbox" name="apply_config">
+            <span>Применить <code class="set-mono">config.json</code>
+              <span class="set-muted">— адрес NetBox, токен, окружения, DNS</span></span>
+          </label>
+        {% endif %}
+        {% if 'ldap' in optional %}
+          <label class="set-check">
+            <input type="checkbox" name="apply_ldap">
+            <span>Применить настройки входа через FreeIPA
+              <span class="set-muted">— серверы, группы, bind-пароль</span></span>
+          </label>
+        {% endif %}
+        <div class="set-hint">
+          Эти настройки привязаны к конкретной установке. Если вы переносите
+          подключения с другого стенда, адрес NetBox и токен там свои —
+          применять их обычно не нужно.
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="modal-footer-bar">
+    <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Отмена</button>
+    <button type="submit" class="btn-modal-primary">Применить отмеченное</button>
+  </div>
+</form>

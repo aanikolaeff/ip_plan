@@ -286,3 +286,62 @@ class LdapConfig(models.Model):
         if self.superuser_group:
             flags["is_superuser"] = self.superuser_group
         return flags
+
+
+class ConnectionTest(models.Model):
+    """Результат проверки доступности устройства или гипервизора.
+
+    Состояние живёт в базе, а не в памяти процесса: gunicorn запускает
+    несколько воркеров, и следующий запрос браузера легко попадёт в другой —
+    тот, который проверку не запускал.
+
+    Запись на объект одна: она же текущий прогон, она же последний результат.
+    Так кнопка всегда знает, что показывать, а история проверок не копится —
+    она никому не нужна, важен только последний итог.
+    """
+
+    KIND_CHOICES = [
+        ("device", "Сетевое устройство"),
+        ("redvirt", "RedVirt"),
+        ("vcenter", "vCenter"),
+    ]
+    STATUS_RUNNING = "running"
+    STATUS_OK = "ok"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_RUNNING, "Выполняется"),
+        (STATUS_OK, "Успешно"),
+        (STATUS_FAILED, "Ошибка"),
+    ]
+
+    target_kind = models.CharField("Тип объекта", max_length=20, choices=KIND_CHOICES)
+    target_key = models.CharField("Объект", max_length=300)
+    status = models.CharField("Состояние", max_length=10, choices=STATUS_CHOICES)
+    started_at = models.DateTimeField("Начата", auto_now_add=True)
+    finished_at = models.DateTimeField("Завершена", null=True, blank=True)
+    started_by = models.CharField("Кем запущена", max_length=150, blank=True)
+    # [{"name": ..., "status": "ok|failed|skipped", "detail": ..., "elapsed": 0.42}]
+    # Секретов здесь быть не должно: шаги пишет connection_test.py, и он
+    # кладёт в detail только адреса, коды ответов и текст ошибок.
+    steps = models.JSONField("Шаги", default=list, blank=True)
+    summary = models.CharField("Итог", max_length=300, blank=True)
+
+    class Meta:
+        verbose_name = "Проверка подключения"
+        verbose_name_plural = "Проверки подключений"
+        constraints = [
+            models.UniqueConstraint(fields=["target_kind", "target_key"],
+                                    name="uniq_connection_test_target"),
+        ]
+
+    def __str__(self):
+        return f"{self.target_kind}:{self.target_key} — {self.status}"
+
+    @property
+    def is_running(self):
+        return self.status == self.STATUS_RUNNING
+
+    def duration(self):
+        if not self.finished_at:
+            return None
+        return (self.finished_at - self.started_at).total_seconds()

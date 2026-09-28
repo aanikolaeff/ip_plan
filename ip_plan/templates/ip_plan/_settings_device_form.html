@@ -49,6 +49,16 @@
       </div>
       <div class="set-form-row" style="margin-top:.7rem">
         <div class="set-field">
+          <label class="field-label" for="f-mgmt-ip">Адрес управления в NetBox</label>
+          <input class="field-control set-mono" id="f-mgmt-ip" name="mgmt_ip" value="{{ cfg.mgmt_ip|default:'' }}">
+          <div class="set-hint">
+            Заполняется, только если отличается от адреса подключения — как у криптошлюзов,
+            к которым ходят через ViPNet-туннель. Пусто — в NetBox попадёт адрес выше.
+          </div>
+        </div>
+      </div>
+      <div class="set-form-row" style="margin-top:.7rem">
+        <div class="set-field">
           <label class="field-label" for="f-username">Логин</label>
           <input class="field-control set-mono" id="f-username" name="username" value="{{ cfg.username|default:'' }}" required>
         </div>
@@ -92,7 +102,8 @@
       <label class="set-check"><input type="checkbox" name="sync_interfaces" {% if cfg.sync_interfaces %}checked{% endif %}> <span>Интерфейсы и адрес управления</span></label>
       <label class="set-check"><input type="checkbox" name="import_vlans" {% if cfg.import_vlans %}checked{% endif %}> <span>VLAN-ы</span></label>
       <label class="set-check"><input type="checkbox" name="import_prefixes" {% if cfg.import_prefixes %}checked{% endif %}> <span>Префиксы сетей</span></label>
-      <label class="set-check"><input type="checkbox" name="sync_macs" {% if cfg.sync_macs %}checked{% endif %}> <span>MAC-таблицу <span class="set-muted">— умеют только Eltex и Maipu</span></span></label>
+      <label class="set-check"><input type="checkbox" name="sync_macs" {% if cfg.sync_macs %}checked{% endif %}> <span>MAC-таблицу <span class="set-muted">— Eltex, Maipu, Huawei; у ViPNet это ARP-таблица</span></span></label>
+      <label class="set-check"><input type="checkbox" name="sync_lldp" {% if cfg.sync_lldp %}checked{% endif %}> <span>LLDP-соседей <span class="set-muted">— не умеет только xFW; команда задаётся на вкладке «Модели»</span></span></label>
       <label class="set-check"><input type="checkbox" name="backup_config" {% if cfg.backup_config %}checked{% endif %}> <span>Резервную копию конфигурации</span></label>
       <label class="set-check"><input type="checkbox" name="sync_blocklist" {% if cfg.sync_blocklist %}checked{% endif %}> <span>Списки блокировок firewall</span></label>
     </div>

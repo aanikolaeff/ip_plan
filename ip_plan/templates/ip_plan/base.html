@@ -48,7 +48,13 @@
      @click (ОС-справочник/Справка), а она специально ВНЕ .container-fluid
      (свой full-bleed фон на всю ширину, без горизонтальных отступов
      контейнера). -->
-<body x-data>
+<!-- hx-headers на <body> — htmx кладёт CSRF-токен в тело запроса только
+     когда элемент сидит внутри <form> с {% csrf_token %}. Одиночные
+     hx-post-кнопки (например ▶ в «Настройках») формы не имеют, и без этого
+     заголовка Django отвечает им 403, что снаружи выглядит как «кнопка не
+     нажимается». Атрибут наследуется всеми потомками, добавлять его к
+     каждой такой кнопке не нужно. -->
+<body x-data hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
   {% if user.is_authenticated %}
     {% with url_name=request.resolver_match.url_name %}
       <header class="app-nav">

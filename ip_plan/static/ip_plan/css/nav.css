@@ -386,7 +386,12 @@
 .set-panel-desc { margin: .28rem 0 0; color: var(--text-muted); font-size: var(--fs-lg); max-width: 68ch; line-height: 1.5; }
 .set-panel-actions { display: flex; gap: .5rem; flex-shrink: 0; }
 .set-panel-body { padding: 1.1rem 1.3rem 1.3rem; }
-.set-panel-body-flush { padding: 0; }
+/* overflow-x у тела панели, а не clip у самой .set-panel: у панели
+   overflow:hidden ради скругления углов, и без прокрутки здесь таблица,
+   переставшая влезать по ширине, теряла последнюю колонку молча — именно
+   так пропали кнопки «Изменить»/«Убрать» после появления колонки
+   «Проверка». */
+.set-panel-body-flush { padding: 0; overflow-x: auto; }
 
 /* ── Таблица ──────────────────────────────────────────────────────────── */
 .set-table { width: 100%; border-collapse: collapse; font-size: var(--fs-xl); }

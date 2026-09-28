@@ -3,11 +3,29 @@
 {% block content %}
 <div class="set-page">
   <div class="set-head">
-    <h1>Настройки синхронизации</h1>
-    <p>
-      Отсюда правятся конфигурационные файлы netbox-sync и доступ к самому приложению.
-      Обходить их через SSH на хосте больше не нужно.
-    </p>
+    <div class="set-head-text">
+      <h1>Настройки синхронизации</h1>
+      <p>
+        Отсюда правятся конфигурационные файлы netbox-sync и доступ к самому приложению.
+        Обходить их через SSH на хосте больше не нужно.
+      </p>
+    </div>
+    {% comment %}
+      Экспорт переносит подключения на чистую установку, импорт дополняет
+      текущую конфигурацию. Обе кнопки открывают модалку.
+    {% endcomment %}
+    <div class="set-head-actions">
+    <button type="button" class="btn-modal-secondary set-head-action"
+            hx-get="{% url 'ip_plan:settings_export_confirm' %}"
+            hx-target="#modal-content" hx-indicator="#modal-spinner"
+            @click="$store.modal.dirty = false; $dispatch('open-modal')"
+            title="Скачать архив с настройками подключения">Экспорт</button>
+    <button type="button" class="btn-modal-secondary set-head-action"
+            hx-get="{% url 'ip_plan:settings_import_form' %}"
+            hx-target="#modal-content" hx-indicator="#modal-spinner"
+            @click="$store.modal.dirty = false; $dispatch('open-modal')"
+            title="Загрузить настройки из архива или JSON-файлов">Импорт</button>
+    </div>
   </div>
 
   {% comment %}

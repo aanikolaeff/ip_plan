@@ -56,9 +56,17 @@ _SECRET_PARTS = ("password", "token", "secret")
 # Парсеры интерфейсов, реально реализованные в netbox_devices_sync.py
 # (жёсткий if/elif в sync_device). Любое другое значение = шаг "Interfaces"
 # молча пропускается, поэтому в UI это строго выпадающий список.
-INTERFACE_PARSERS = ["xfw", "eltex_status", "cisco_ios", "maipu"]
-# Снятие MAC-таблицы поддержано только для этих парсеров (_mac_dispatch).
-MAC_CAPABLE_PARSERS = {"eltex_status", "maipu"}
+INTERFACE_PARSERS = ["xfw", "eltex_status", "cisco_ios", "maipu", "huawei_vrp"]
+# Снятие MAC-таблицы поддержано для этих парсеров. У Eltex, Maipu и Huawei
+# это таблица коммутации (кто за каким портом), у ViPNet — ARP-таблица:
+# команда там называется «inet show mac-address-table», но отдаёт вывод
+# arp -n, поэтому в NetBox такие записи помечаются отдельным маркером
+# (см. _ARP_DESCRIPTION в netbox_devices_sync.py). ViPNet снимается не
+# отдельным проходом, а вместе с интерфейсами кластера, одним логином.
+MAC_CAPABLE_PARSERS = {"eltex_status", "maipu", "huawei_vrp", "xfw"}
+# LLDP умеют Cisco, Eltex, Maipu и Huawei — у xFW 5000 протокола нет вовсе,
+# так что включённый на нём флаг означал бы шаг, который нечем выполнить.
+LLDP_CAPABLE_PARSERS = {"eltex_status", "cisco_ios", "maipu", "huawei_vrp"}
 
 DEVICE_STATUSES = ["active", "planned", "staged", "failed", "inventory", "offline"]
 

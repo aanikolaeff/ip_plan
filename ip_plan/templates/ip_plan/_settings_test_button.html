@@ -1,0 +1,72 @@
+{% comment %}
+  Кнопка «Тест» и индикатор последнего результата.
+
+  Четыре состояния: ни разу не запускался, идёт, последний успешен, последний
+  с ошибкой. Пока проверка идёт, показываются песочные часы, кнопка
+  заблокирована, а предыдущий результат сохраняется — он остаётся у
+  индикатора до появления нового.
+
+  Цвет не единственный носитель смысла: состояние передаётся ещё и формой
+  знака (✓ / ✕ / – / …), а полный текст — в title и в подписи для
+  скрин-ридера. Словами («успешно», «ошибка») статус подписан в окне хода
+  проверки, где на это есть место; здесь подпись сделала бы колонку такой
+  широкой, что таблица перестала бы влезать в панель. Пока тест идёт, блок
+  сам опрашивает состояние раз в секунду и заменяет себя ответом.
+{% endcomment %}
+<div class="test-cell"
+     {% if test and test.is_running %}
+       hx-get="{% url 'ip_plan:settings_test_status' kind key %}"
+       hx-trigger="every 1s"
+       hx-swap="outerHTML"
+     {% endif %}>
+
+  {% if test and test.is_running %}
+    <button type="button" class="test-btn test-btn-running" disabled
+            title="Проверка выполняется">
+      <span aria-hidden="true">⏳</span>
+      <span class="sr-only">Проверка выполняется</span>
+    </button>
+  {% else %}
+    <button type="button" class="test-btn"
+            hx-post="{% url 'ip_plan:settings_test_start' kind key %}"
+            hx-target="closest .test-cell" hx-swap="outerHTML"
+            title="Запустить тест">
+      <span aria-hidden="true">▶</span>
+      <span class="sr-only">Запустить тест</span>
+    </button>
+  {% endif %}
+
+  {% comment %} Результат последнего завершённого теста. {% endcomment %}
+  {% if test and not test.is_running and test.finished_at %}
+    <span class="test-state test-state-{{ test.status }}"
+          title="Последний тест: {% if test.status == 'ok' %}успешно{% else %}ошибка{% endif %}, {{ test.finished_at|date:'d.m.Y H:i' }}{% if test.summary %} — {{ test.summary }}{% endif %}">
+      <span class="test-mark" aria-hidden="true">{% if test.status == 'ok' %}✓{% else %}✕{% endif %}</span>
+      <span class="sr-only">Последний тест: {% if test.status == 'ok' %}успешно{% else %}ошибка{% endif %}, {{ test.finished_at|date:'d.m.Y H:i' }}</span>
+    </span>
+  {% elif test and test.is_running and test.finished_at %}
+    {% comment %} Идёт новая проверка, но прошлый итог ещё показываем. {% endcomment %}
+    <span class="test-state test-state-{{ test.status }} test-state-stale"
+          title="Идёт новая проверка. Предыдущий результат: {{ test.finished_at|date:'d.m.Y H:i' }}">
+      <span class="test-mark" aria-hidden="true">…</span>
+      <span class="sr-only">Идёт новая проверка</span>
+    </span>
+  {% elif not test %}
+    <span class="test-state test-state-none" title="Тест ещё не запускался">
+      <span class="test-mark" aria-hidden="true">–</span>
+      <span class="sr-only">Тест ещё не запускался</span>
+    </span>
+  {% endif %}
+
+  <button type="button" class="test-btn test-btn-term"
+          hx-get="{% url 'ip_plan:settings_test_terminal' kind key %}"
+          hx-target="#modal-content" hx-indicator="#modal-spinner"
+          @click="$store.modal.dirty = false; $dispatch('open-modal')"
+          title="Показать ход проверки">
+    <span aria-hidden="true">▤</span>
+    <span class="sr-only">Показать ход проверки</span>
+  </button>
+
+  {% if busy_message %}
+    <span class="test-busy">{{ busy_message }}</span>
+  {% endif %}
+</div>

@@ -1,0 +1,70 @@
+{% comment %}
+  Предупреждение перед скачиванием архива настроек. Показывается всегда: в
+  архиве пароли устройств и гипервизоров лежат открытым текстом, и человек
+  должен увидеть это до того, как файл окажется у него в загрузках.
+
+  Форма отправляется обычным POST, без HTMX: ответ — файл, а HTMX не умеет
+  скачивать (подставил бы содержимое zip в DOM).
+{% endcomment %}
+<div class="modal-title-bar">
+  <h5>Экспорт настроек</h5>
+  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+</div>
+
+<form method="post" action="{% url 'ip_plan:settings_export_download' %}"
+      @submit="$store.modal.requestClose()">
+  {% csrf_token %}
+
+  <div class="modal-body-pad">
+    {% if not conf_available %}
+      <div class="set-note set-note-error">
+        Каталог конфигурации netbox-sync недоступен — экспортировать нечего.
+      </div>
+    {% else %}
+      <div class="set-note set-note-warn">
+        <strong>В архиве пароли в открытом виде.</strong>
+        Пароли доступа к коммутаторам и гипервизорам, enable-пароли,
+        токены NetBox{% if ldap_configured %}, bind-пароль FreeIPA{% endif %} —
+        всё лежит текстом, архив не шифруется. Храните и передавайте его так же,
+        как сами пароли.
+      </div>
+
+      <div class="field-group">
+        <div class="field-group-title">Что попадёт в архив</div>
+        <ul class="set-list">
+          <li><code class="set-mono">devices.json</code> — модели и устройства с паролями</li>
+          <li><code class="set-mono">sources_redvirt.json</code> — источники RedVirt с паролями</li>
+          <li><code class="set-mono">sources_vcenter.json</code> — источники vCenter с паролями</li>
+        </ul>
+        <div class="set-hint">
+          Рабочих данных в архиве нет: письма регулятора, журнал изменений,
+          учётные записи и каталог ОС не выгружаются.
+        </div>
+      </div>
+
+      <div class="field-group">
+        <div class="field-group-title">Дополнительно</div>
+        <label class="set-check">
+          <input type="checkbox" name="include_config" checked>
+          <span>Настройки NetBox и скана <span class="set-muted">— адрес, токен, окружения, DNS</span></span>
+        </label>
+        <label class="set-check">
+          <input type="checkbox" name="include_ldap" {% if ldap_configured %}checked{% endif %}>
+          <span>Настройки входа через FreeIPA <span class="set-muted">— серверы, группы, bind-пароль</span></span>
+        </label>
+        <div class="set-hint">
+          Эти два файла привязаны к конкретной установке: при переносе на другой
+          стенд адрес NetBox и токен там свои. В архив они попадут, но при
+          импорте применяются только по отдельному выбору.
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="modal-footer-bar">
+    <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Отмена</button>
+    {% if conf_available %}
+      <button type="submit" class="btn-modal-primary">Скачать архив</button>
+    {% endif %}
+  </div>
+</form>

@@ -19,8 +19,8 @@
     <table class="set-table">
       <thead>
         <tr>
-          <th>Устройство</th><th>Адрес</th><th>Модель</th><th>Логин</th>
-          <th>Синхронизируется</th><th></th>
+          <th>Устройство</th><th>Подключение</th><th>Модель</th>
+          <th>Синхронизируется</th><th>Проверка</th><th></th>
         </tr>
       </thead>
       <tbody>
@@ -30,21 +30,37 @@
               <span class="set-name">{{ d.name }}</span>
               <span class="set-sub">{{ d.cfg.site|default:"без площадки" }} · {{ d.cfg.status|default:"active" }}</span>
             </td>
-            <td class="set-mono">{{ d.cfg.host }}{% if d.cfg.port and d.cfg.port != 22 %}:{{ d.cfg.port }}{% endif %}</td>
+            <td class="set-mono">
+              {{ d.cfg.host }}{% if d.cfg.port and d.cfg.port != 22 %}:{{ d.cfg.port }}{% endif %}
+              {% if d.cfg.mgmt_ip %}<span class="set-sub">в NetBox: {{ d.cfg.mgmt_ip }}</span>{% endif %}
+              <span class="set-sub">логин: {{ d.cfg.username|default:"—" }}</span>
+            </td>
             <td>{{ d.cfg.model }}</td>
-            <td class="set-mono">{{ d.cfg.username }}</td>
             <td>
+              {% comment %}
+                Шаги показываем эффективные (настройки модели + правки
+                устройства) — синк читает их так же. Что пришло от модели,
+                названо в подсказке: иначе непонятно, почему шаг включён,
+                когда в карточке устройства галочки нет.
+              {% endcomment %}
               <div class="set-chips">
-                {% if d.cfg.sync_interfaces %}<span class="set-chip">интерфейсы</span>{% endif %}
-                {% if d.cfg.import_vlans %}<span class="set-chip">VLAN</span>{% endif %}
-                {% if d.cfg.import_prefixes %}<span class="set-chip">префиксы</span>{% endif %}
-                {% if d.cfg.sync_macs %}<span class="set-chip">MAC</span>{% endif %}
-                {% if d.cfg.backup_config %}<span class="set-chip">конфигурация</span>{% endif %}
-                {% if d.cfg.sync_blocklist %}<span class="set-chip set-chip-accent">блокировки</span>{% endif %}
-                {% if not d.cfg.sync_interfaces and not d.cfg.import_vlans and not d.cfg.import_prefixes and not d.cfg.sync_macs and not d.cfg.backup_config and not d.cfg.sync_blocklist %}
+                {% if d.eff.sync_interfaces %}<span class="set-chip">интерфейсы</span>{% endif %}
+                {% if d.eff.import_vlans %}<span class="set-chip">VLAN</span>{% endif %}
+                {% if d.eff.import_prefixes %}<span class="set-chip">префиксы</span>{% endif %}
+                {% if d.eff.sync_macs %}<span class="set-chip">MAC</span>{% endif %}
+                {% if d.eff.sync_lldp %}<span class="set-chip">LLDP</span>{% endif %}
+                {% if d.eff.backup_config %}<span class="set-chip">конфигурация</span>{% endif %}
+                {% if d.eff.sync_blocklist %}<span class="set-chip set-chip-accent">блокировки</span>{% endif %}
+                {% if not d.eff.sync_interfaces and not d.eff.import_vlans and not d.eff.import_prefixes and not d.eff.sync_macs and not d.eff.sync_lldp and not d.eff.backup_config and not d.eff.sync_blocklist %}
                   <span class="set-muted">ничего</span>
                 {% endif %}
               </div>
+              {% if d.from_model %}
+                <span class="set-sub">от модели: {{ d.from_model|join:", " }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {% include "ip_plan/_settings_test_button.html" with kind="device" key=d.name test=d.test %}
             </td>
             <td>
               <div class="set-row-actions">

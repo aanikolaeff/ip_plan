@@ -27,7 +27,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 
 from .models import LdapConfig, LocalAccount, SettingsAudit
-from .services import ldap_check
+from .services import connection_test, ldap_check, settings_bundle
 from .services import sync_config as sc
 
 logger = logging.getLogger(__name__)
@@ -123,10 +123,26 @@ def settings_page(request, tab="devices"):
 def _tab_context(request, tab):
     if tab == "devices":
         data, digest = sc.load("devices")
+        types = data.get("device_types") or {}
         devices = []
         for name, cfg in (data.get("devices") or {}).items():
-            devices.append({"name": name, "cfg": cfg,
+            # Синк читает настройки устройства поверх настроек его модели
+            # (см. _resolve в netbox_devices_sync.py), поэтому шаги показываем
+            # по этой же, эффективной, картине: сбор MAC-таблицы, например,
+            # задан у моделей, и по собственным полям устройства его не видно
+            # — в списке получалось «ничего не собираем» там, где собирается.
+            eff = dict(types.get(cfg.get("model")) or {})
+            eff.update(cfg)
+            devices.append({"name": name, "cfg": cfg, "eff": eff,
+                            "from_model": sorted(
+                                k for k in ("sync_interfaces", "import_vlans", "import_prefixes",
+                                            "sync_macs", "sync_lldp", "backup_config",
+                                            "sync_blocklist")
+                                if eff.get(k) and not cfg.get(k)),
                             "has_password": bool(cfg.get("password"))})
+        tests = connection_test.state_for("device", [d["name"] for d in devices])
+        for item in devices:
+            item["test"] = tests.get(item["name"])
         return {"devices": devices, "device_types": sorted((data.get("device_types") or {})),
                 "file_hash": digest}
 
@@ -142,9 +158,15 @@ def _tab_context(request, tab):
     if tab == "hypervisors":
         redvirt, rv_hash = sc.load("sources_redvirt")
         vcenter, vc_hash = sc.load("sources_vcenter")
+        rv_tests = connection_test.state_for("redvirt", [s.get("name") or s.get("url") for s in redvirt])
+        vc_tests = connection_test.state_for("vcenter", [s.get("name") or s.get("url") for s in vcenter])
         return {
-            "redvirt": list(enumerate(redvirt)), "redvirt_hash": rv_hash,
-            "vcenter": list(enumerate(vcenter)), "vcenter_hash": vc_hash,
+            "redvirt": [(i, s, rv_tests.get(s.get("name") or s.get("url")))
+                        for i, s in enumerate(redvirt)],
+            "redvirt_hash": rv_hash,
+            "vcenter": [(i, s, vc_tests.get(s.get("name") or s.get("url")))
+                        for i, s in enumerate(vcenter)],
+            "vcenter_hash": vc_hash,
         }
 
     if tab == "scan":
@@ -187,6 +209,200 @@ def _tab_context(request, tab):
 
 
 # ── Оборудование ───────────────────────────────────────────────────────────
+
+# ── Экспорт настроек ───────────────────────────────────────────────────────
+# Переносит на чистую установку подключения: устройства, модели, источники
+# гипервизоров и учётные данные к ним. Рабочих данных не отдаёт — см.
+# services/settings_bundle.py.
+
+@staff_required
+def export_confirm(request):
+    """Предупреждение перед скачиванием: в архиве пароли открытым текстом."""
+    return render(request, "ip_plan/_settings_export_confirm.html", {
+        "conf_available": sc.available(),
+        "ldap_configured": bool(LdapConfig.load().servers),
+    })
+
+
+@staff_required
+def export_download(request):
+    if request.method != "POST":
+        return _error_modal(request, "Ожидался POST", status=405)
+
+    include_config = bool(request.POST.get("include_config"))
+    include_ldap = bool(request.POST.get("include_ldap"))
+    try:
+        payload, filename, members = settings_bundle.build(
+            include_config=include_config,
+            include_ldap=include_ldap,
+            author=request.user.username,
+        )
+    except settings_bundle.BundleError as e:
+        return _error_modal(request, str(e))
+
+    # В журнал — состав, но не содержимое: имена файлов безопасны, значения
+    # полей нет.
+    _audit(request, "export", filename, "create", ", ".join(members))
+
+    response = HttpResponse(payload, content_type="application/zip")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Content-Length"] = str(len(payload))
+    return response
+
+
+# ── Импорт настроек ────────────────────────────────────────────────────────
+# Два шага: предпросмотр (ничего не пишет) и применение отмеченных записей.
+# Импорт дополняет конфигурацию, существующие записи и пароли не затирает без
+# явного выбора.
+
+def _import_blocked():
+    """Импорт меняет несколько файлов сразу, а шаги синка читают конфиги
+    каждый в момент своего старта: правка посреди прогона дала бы прогон на
+    смеси старых и новых настроек."""
+    return sc.sync_running()
+
+
+@staff_required
+def import_form(request):
+    return render(request, "ip_plan/_settings_import_form.html", {
+        "sync_running": _import_blocked(),
+    })
+
+
+@staff_required
+def import_preview(request):
+    if request.method != "POST":
+        return _error_modal(request, "Ожидался POST", status=405)
+    if _import_blocked():
+        return _error_modal(
+            request,
+            "Идёт синхронизация. Импорт изменил бы конфигурацию посреди прогона — "
+            "дождитесь окончания и повторите.",
+        )
+
+    files = request.FILES.getlist("files")
+    if not files:
+        return _error_modal(request, "Не выбран ни один файл")
+
+    uploaded, sources = {}, []
+    try:
+        for upload in files:
+            parsed = settings_bundle.read_upload(upload.name, upload.read())
+            for key, data in parsed.items():
+                uploaded[key] = data
+            sources.append(f"{upload.name} → {', '.join(sorted(parsed))}")
+    except settings_bundle.BundleError as e:
+        return _error_modal(request, str(e))
+
+    try:
+        result = settings_bundle.plan(uploaded)
+    except sc.SyncConfigError as e:
+        return _error_modal(request, str(e))
+
+    request.session["import_payload"] = uploaded
+    return render(request, "ip_plan/_settings_import_preview.html", {
+        "items": result["items"],
+        "summary": result["summary"],
+        "optional": result["optional"],
+        "sources": sources,
+    })
+
+
+@staff_required
+def import_apply(request):
+    if request.method != "POST":
+        return _error_modal(request, "Ожидался POST", status=405)
+    if _import_blocked():
+        return _error_modal(request, "Идёт синхронизация — импорт отменён.")
+
+    uploaded = request.session.get("import_payload")
+    if not uploaded:
+        return _error_modal(
+            request, "Данные для импорта потерялись (истекла сессия). Загрузите файлы заново."
+        )
+
+    selected = request.POST.getlist("apply")
+    replace_secrets = bool(request.POST.get("replace_secrets"))
+    apply_config = bool(request.POST.get("apply_config"))
+    apply_ldap = bool(request.POST.get("apply_ldap"))
+
+    if not selected and not apply_config and not apply_ldap:
+        return _error_modal(request, "Не отмечено ни одной записи")
+
+    try:
+        applied = settings_bundle.apply(
+            uploaded, selected,
+            replace_secrets=replace_secrets,
+            apply_config=apply_config,
+            apply_ldap=apply_ldap,
+        )
+    except (settings_bundle.BundleError, sc.SyncConfigError) as e:
+        return _error_modal(request, str(e))
+
+    request.session.pop("import_payload", None)
+    # В журнал — что применили; значения полей сюда не попадают.
+    _audit(request, "import", f"{len(applied)} записей", "update", "; ".join(applied))
+    return _redirect_to("devices", f"Импортировано записей: {len(applied)}")
+
+
+# ── Проверка подключений ───────────────────────────────────────────────────
+# Кнопка «Тест» у каждого устройства и гипервизора. Сама проверка идёт в
+# фоне (services/connection_test.py), сюда приходят только запуск и опрос
+# состояния.
+
+def _test_button(request, kind, key, test=None, busy_message=""):
+    """Партиал кнопки. Он же ответ на запуск и на каждый опрос состояния."""
+    if test is None:
+        test = connection_test.state_for(kind, [key]).get(key)
+    return render(request, "ip_plan/_settings_test_button.html", {
+        "kind": kind, "key": key, "test": test, "busy_message": busy_message,
+    })
+
+
+@staff_required
+def test_start(request, kind, key):
+    if request.method != "POST":
+        return _error_modal(request, "Ожидался POST", status=405)
+    if kind not in {"device", "redvirt", "vcenter"}:
+        return _error_modal(request, f"Неизвестный тип объекта: {kind}")
+
+    busy = ""
+    try:
+        test = connection_test.start(kind, key, username=request.user.username)
+    except connection_test.TestBusy as e:
+        # Не ошибка, а нормальный отказ: элемент остаётся как был.
+        test, busy = None, str(e)
+
+    # Запуск бывает из двух мест, и ответ должен подходить тому, кто спросил:
+    # из списка — кнопка, из окна проверки — его тело.
+    if request.POST.get("from") == "terminal":
+        return test_terminal_body(request, kind, key)
+    return _test_button(request, kind, key, test=test, busy_message=busy)
+
+
+@staff_required
+def test_status(request, kind, key):
+    """Опрос состояния. Пока проверка идёт, шаблон сам продолжает опрашивать."""
+    return _test_button(request, kind, key)
+
+
+@staff_required
+def test_terminal(request, kind, key):
+    """Окно с ходом проверки конкретного объекта."""
+    test = connection_test.state_for(kind, [key]).get(key)
+    return render(request, "ip_plan/_settings_test_terminal.html", {
+        "kind": kind, "key": key, "test": test, "modal": True,
+    })
+
+
+@staff_required
+def test_terminal_body(request, kind, key):
+    """Только содержимое окна — его и обновляет опрос, пока тест идёт."""
+    test = connection_test.state_for(kind, [key]).get(key)
+    return render(request, "ip_plan/_settings_test_terminal.html", {
+        "kind": kind, "key": key, "test": test, "modal": False,
+    })
+
 
 @staff_required
 def device_form(request, name=None):
@@ -231,6 +447,15 @@ def device_save(request, name=None):
 
         cfg = dict(previous)
         cfg["host"] = sc.validate_host(p.get("host"))
+        # Адрес, по которому устройство учитывается в NetBox, когда он не
+        # совпадает с адресом подключения: к криптошлюзам ходят через
+        # ViPNet-туннель (7.0.0.x), а в учёте они должны стоять реальным
+        # адресом. Пусто — берётся host, как было всегда.
+        mgmt_ip = (p.get("mgmt_ip") or "").strip()
+        if mgmt_ip:
+            cfg["mgmt_ip"] = sc.validate_host(mgmt_ip, field="Адрес управления")
+        else:
+            cfg.pop("mgmt_ip", None)
         cfg["port"] = sc.validate_port(p.get("port") or 22)
         cfg["username"] = (p.get("username") or "").strip()
         if not cfg["username"]:
@@ -253,7 +478,7 @@ def device_save(request, name=None):
         cfg["status"] = status
 
         for flag in ("sync_interfaces", "import_vlans", "import_prefixes",
-                     "sync_macs", "backup_config", "sync_blocklist"):
+                     "sync_macs", "sync_lldp", "backup_config", "sync_blocklist"):
             if p.get(flag):
                 cfg[flag] = True
             else:
@@ -262,12 +487,27 @@ def device_save(request, name=None):
         # sync_macs имеет смысл только для парсеров, у которых он вообще
         # реализован (_mac_dispatch в netbox_devices_sync.py) — иначе шаг
         # молча пропустится, а человек будет думать, что включил.
-        parser = (data["device_types"][model] or {}).get("interfaces_parser", "")
+        type_cfg = data["device_types"][model] or {}
+        parser = type_cfg.get("interfaces_parser", "")
         if cfg.get("sync_macs") and parser not in sc.MAC_CAPABLE_PARSERS:
             raise sc.SyncConfigError(
                 f"Сбор MAC-таблицы не поддержан для парсера «{parser}» "
                 f"(есть только для {', '.join(sorted(sc.MAC_CAPABLE_PARSERS))})."
             )
+
+        # Та же логика, что у sync_macs: LLDP есть не у всех вендоров, и без
+        # команды на модели собирать соседей нечем.
+        if cfg.get("sync_lldp"):
+            if parser not in sc.LLDP_CAPABLE_PARSERS:
+                raise sc.SyncConfigError(
+                    f"Сбор LLDP-соседей не поддержан для парсера «{parser}» "
+                    f"(есть только для {', '.join(sorted(sc.LLDP_CAPABLE_PARSERS))})."
+                )
+            if not type_cfg.get("lldp_command"):
+                raise sc.SyncConfigError(
+                    f"Сбор LLDP-соседей включён, но у модели «{model}» не задана "
+                    f"команда LLDP — задайте её на вкладке «Модели»."
+                )
 
         if cfg.get("sync_blocklist"):
             raw = (p.get("blocklist_objects") or "").strip()
@@ -285,7 +525,6 @@ def device_save(request, name=None):
             cfg.pop("blocklist_objects", None)
 
         if cfg.get("backup_config"):
-            type_cfg = data["device_types"][model] or {}
             if not type_cfg.get("config_command"):
                 raise sc.SyncConfigError(
                     f"Резервное копирование включено, но у модели «{model}» не задан "
@@ -355,6 +594,7 @@ _TYPE_TEXT_FIELDS = [
     ("mac_command", "Команда MAC-таблицы"),
     ("lag_command", "Команда LAG"),
     ("ip_command", "Команда IP-адресов"),
+    ("lldp_command", "Команда LLDP-соседей"),
     ("config_command", "Команда выгрузки конфигурации"),
 ]
 _TYPE_FLAG_FIELDS = [
@@ -362,6 +602,7 @@ _TYPE_FLAG_FIELDS = [
     ("import_prefixes", "Импортировать префиксы"),
     ("import_vlans", "Импортировать VLAN-ы"),
     ("sync_macs", "Собирать MAC-таблицу"),
+    ("sync_lldp", "Собирать LLDP-соседей"),
     ("backup_config", "Резервировать конфигурацию"),
 ]
 # Списки алгоритмов SSH — вводятся через запятую, хранятся списком.
@@ -388,6 +629,7 @@ def device_type_form(request, name=None):
         "list_fields": [(k, label, ", ".join(cfg.get(k) or [])) for k, label in _TYPE_LIST_FIELDS],
         "parsers": sc.INTERFACE_PARSERS,
         "mac_capable": sorted(sc.MAC_CAPABLE_PARSERS),
+        "lldp_capable": sorted(sc.LLDP_CAPABLE_PARSERS),
         "file_hash": digest,
     })
 
@@ -429,6 +671,13 @@ def device_type_save(request, name=None):
                 f"Сбор MAC-таблицы не реализован для парсера «{parser}» "
                 f"(есть только для {', '.join(sorted(sc.MAC_CAPABLE_PARSERS))})."
             )
+        if cfg.get("sync_lldp") and parser not in sc.LLDP_CAPABLE_PARSERS:
+            raise sc.SyncConfigError(
+                f"Сбор LLDP-соседей не реализован для парсера «{parser}» "
+                f"(есть только для {', '.join(sorted(sc.LLDP_CAPABLE_PARSERS))})."
+            )
+        if cfg.get("sync_lldp") and not cfg.get("lldp_command"):
+            raise sc.SyncConfigError("Сбор LLDP-соседей включён, но не задана команда LLDP-соседей")
         if cfg.get("backup_config") and not cfg.get("config_command"):
             raise sc.SyncConfigError("Резервное копирование включено, но не задана команда выгрузки конфигурации")
         if not cfg.get("manufacturer") or not cfg.get("role"):

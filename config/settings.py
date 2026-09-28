@@ -172,18 +172,26 @@ ACL_CONFIG_BACKUPS_DIR = config("ACL_CONFIG_BACKUPS_DIR", default=str(BASE_DIR /
 # для того, чтобы их можно было править отсюда (см. conf_loader.py в
 # netbox-sync и docs/plans/2026-09-07-netbox-sync-settings-editor-design.md).
 NETBOX_SYNC_CONF_DIR = config("NETBOX_SYNC_CONF_DIR", default=str(BASE_DIR / "netbox_sync_conf"))
-# Лок-файл full_sync.sh — лежит в КОРНЕ netbox-sync, на уровень выше conf/.
-# Нужен только для предупреждения в UI ("синк идёт прямо сейчас"), поэтому
-# отсутствие директории не является ошибкой.
-NETBOX_SYNC_LOCK_FILE = config(
-    "NETBOX_SYNC_LOCK_FILE", default=str(Path(NETBOX_SYNC_CONF_DIR).parent / ".full_sync.lock")
-)
 
 # --- Раздел "Настройки" (шапка) — сводка последнего прогона netbox-sync ---
 # Тот же принцип и тот же NETBOX_SYNC_DIR, что и у ACL_CONFIG_BACKUPS_DIR
 # выше — только подпапка sync_logs вместо config_backups. См.
 # ip_plan/services/sync_log.py.
 SYNC_LOGS_DIR = config("SYNC_LOGS_DIR", default=str(BASE_DIR / "sync_logs"))
+
+# Лок-файл full_sync.sh. Лежит в sync_logs/ — единственном каталоге синка,
+# кроме conf/, который сюда проброшен (корень netbox-sync не монтируется
+# сознательно: там код синка, который туда же деплоит CI). Раньше путь
+# считался как «на уровень выше conf/», но conf/ монтируется как
+# /app/netbox_sync_conf, и уровень выше — это корень самого ip_plan: файла
+# там нет и быть не может, так что признак «синк идёт» всегда был ложным, а
+# импорт настроек не блокировался вопреки задумке.
+#
+# Нужен только для предупреждения в UI, поэтому отсутствие каталога ошибкой
+# не считается.
+NETBOX_SYNC_LOCK_FILE = config(
+    "NETBOX_SYNC_LOCK_FILE", default=str(Path(SYNC_LOGS_DIR) / ".full_sync.lock")
+)
 
 # --- Блокировки регулятора — снимок объектов блокировки firewall ---
 # Тот же принцип и тот же NETBOX_SYNC_DIR, что и у ACL_CONFIG_BACKUPS_DIR/
