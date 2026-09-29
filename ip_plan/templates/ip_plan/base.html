@@ -286,5 +286,13 @@
   </script>
   <script src="{% static 'ip_plan/js/app.js' %}"></script>
   {% block extra_scripts %}{% endblock %}
+
+  {% comment %}
+    Версия сборки. Нужна, чтобы с одного взгляда понять, доехал ли деплой:
+    номер поднимается перед выкаткой, и если в углу он прежний — значит
+    контейнер пересобран не был. Уголок намеренно неяркий и не перехватывает
+    клики (pointer-events: none) — он не должен мешать работе с таблицами.
+  {% endcomment %}
+  <div class="app-version" title="Версия сборки">v{{ app_version }}</div>
 </body>
 </html>

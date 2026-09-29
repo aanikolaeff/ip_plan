@@ -88,10 +88,21 @@ TEMPLATES = [
                 # {{ user }} в шаблонах (кнопка выхода в base.html) —
                 # без этого там был бы только request.user "напрямую".
                 "django.contrib.auth.context_processors.auth",
+                # {{ app_version }} в уголке внизу страницы
+                "ip_plan.context_processors.app_version",
             ],
         },
     },
 ]
+
+# Версия сборки. Лежит отдельным файлом в корне репозитория, чтобы её можно
+# было поднять одной строкой перед деплоем и увидеть в углу страницы, доехал
+# ли он. Читается один раз при старте процесса — после пересборки контейнера
+# номер обновляется сам.
+try:
+    APP_VERSION = (BASE_DIR / "VERSION").read_text(encoding="utf-8").strip()
+except OSError:
+    APP_VERSION = "—"
 
 WSGI_APPLICATION = "config.wsgi.application"
 

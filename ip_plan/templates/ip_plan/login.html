@@ -65,5 +65,11 @@
       <button type="submit" class="btn-modal-primary login-submit">Войти</button>
     </form>
   </div>
+
+  {% comment %}
+    Версия сборки и здесь: страница входа доступна без авторизации, так что
+    по ней проще всего убедиться, что деплой доехал.
+  {% endcomment %}
+  <div class="app-version" title="Версия сборки">v{{ app_version }}</div>
 </body>
 </html>

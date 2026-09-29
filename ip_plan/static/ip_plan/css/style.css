@@ -1694,3 +1694,26 @@ tr:hover .cell-clear-btn { opacity: 1; }
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
+
+
+/* ── Версия сборки в правом нижнем углу ─────────────────────────────────── */
+/* Не перехватывает клики и не участвует в потоке: это подпись, а не элемент
+   интерфейса. Полупрозрачная в покое, читаемая при наведении — чтобы не
+   тянуть на себя внимание, но и не заставлять всматриваться. */
+.app-version {
+  position: fixed;
+  right: .55rem;
+  bottom: .4rem;
+  z-index: 50;
+  pointer-events: none;
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: .02em;
+  color: var(--text-muted);
+  opacity: .45;
+  background: var(--bg-surface);
+  padding: .2rem .4rem;
+  border-radius: 5px;
+  transition: opacity .15s;
+}
+.app-version:hover { opacity: .9; }
