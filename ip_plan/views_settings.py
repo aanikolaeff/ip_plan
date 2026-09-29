@@ -120,6 +120,42 @@ def settings_page(request, tab="devices"):
     return render(request, "ip_plan/settings.html", ctx)
 
 
+# Подписи чипов в колонке «Синхронизируется», в порядке шагов синка.
+_CHIP_LABELS = [
+    ("sync_interfaces", "интерфейсы"),
+    ("import_vlans", "VLAN"),
+    ("import_prefixes", "префиксы"),
+    ("sync_macs", "MAC"),
+    ("sync_lldp", "LLDP"),
+    ("backup_config", "конфигурация"),
+    ("sync_blocklist", "блокировки"),
+]
+assert {k for k, _ in _CHIP_LABELS} == set(sc.SYNC_FLAGS)
+
+# Откуда у шага взялось «включено» — цветом, а не подписью под строкой.
+_CHIP_TITLES = {
+    "own": "включено и у модели, и на этом устройстве",
+    "inherited": "включено у модели, устройство наследует",
+    "override": "включено на этом устройстве; у модели выключено",
+}
+
+
+def _chips(cfg, model_cfg, eff):
+    """Чипы включённых шагов с пометкой происхождения."""
+    chips = []
+    for flag, label in _CHIP_LABELS:
+        if not eff.get(flag):
+            continue
+        if flag not in cfg:
+            kind = "inherited"
+        elif not model_cfg.get(flag):
+            kind = "override"
+        else:
+            kind = "own"
+        chips.append({"label": label, "kind": kind, "title": _CHIP_TITLES[kind]})
+    return chips
+
+
 def _tab_context(request, tab):
     if tab == "devices":
         data, digest = sc.load("devices")
@@ -134,8 +170,7 @@ def _tab_context(request, tab):
             eff = sc.effective(cfg, types)
             model_cfg = types.get(cfg.get("model")) or {}
             devices.append({"name": name, "cfg": cfg, "eff": eff,
-                            "from_model": sorted(k for k in sc.SYNC_FLAGS
-                                                 if eff.get(k) and not cfg.get(k)),
+                            "chips": _chips(cfg, model_cfg, eff),
                             # Шаг, выключенный на устройстве вопреки модели.
                             # Без этой подписи строка молчала бы о том, что
                             # человек шаг снял: чипа нет — и непонятно, потому

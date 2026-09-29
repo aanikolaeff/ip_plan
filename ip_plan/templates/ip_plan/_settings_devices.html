@@ -39,25 +39,18 @@
             <td>
               {% comment %}
                 Шаги показываем эффективные (настройки модели + правки
-                устройства) — синк читает их так же. Что пришло от модели,
-                названо в подсказке: иначе непонятно, почему шаг включён,
-                когда в карточке устройства галочки нет.
+                устройства) — синк читает их так же. Откуда шаг включён,
+                сказано цветом чипа и подсказкой на наведении: серый — задан и
+                у модели, и здесь; голубой — унаследован от модели; оранжевый —
+                включён здесь вопреки выключенному у модели.
               {% endcomment %}
               <div class="set-chips">
-                {% if d.eff.sync_interfaces %}<span class="set-chip">интерфейсы</span>{% endif %}
-                {% if d.eff.import_vlans %}<span class="set-chip">VLAN</span>{% endif %}
-                {% if d.eff.import_prefixes %}<span class="set-chip">префиксы</span>{% endif %}
-                {% if d.eff.sync_macs %}<span class="set-chip">MAC</span>{% endif %}
-                {% if d.eff.sync_lldp %}<span class="set-chip">LLDP</span>{% endif %}
-                {% if d.eff.backup_config %}<span class="set-chip">конфигурация</span>{% endif %}
-                {% if d.eff.sync_blocklist %}<span class="set-chip set-chip-accent">блокировки</span>{% endif %}
-                {% if not d.eff.sync_interfaces and not d.eff.import_vlans and not d.eff.import_prefixes and not d.eff.sync_macs and not d.eff.sync_lldp and not d.eff.backup_config and not d.eff.sync_blocklist %}
+                {% for chip in d.chips %}
+                  <span class="set-chip set-chip-flag set-chip-{{ chip.kind }}" title="{{ chip.title }}">{{ chip.label }}</span>
+                {% empty %}
                   <span class="set-muted">ничего</span>
-                {% endif %}
+                {% endfor %}
               </div>
-              {% if d.from_model %}
-                <span class="set-sub">от модели: {{ d.from_model|join:", " }}</span>
-              {% endif %}
               {% comment %}
                 Шаг, включённый у модели, но снятый на этом устройстве: без
                 этой строки чипа просто нет, и непонятно, выключено оно здесь

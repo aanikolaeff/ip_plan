@@ -433,8 +433,40 @@
   color: var(--text-muted);
   white-space: nowrap;
 }
-.set-chip-accent { background: rgba(31, 111, 235, .09); border-color: rgba(31, 111, 235, .22); color: var(--accent); }
-:root[data-theme="dark"] .set-chip-accent { background: rgba(76, 141, 255, .14); border-color: rgba(76, 141, 255, .3); }
+/* Чипы шагов синхронизации. Отдельный модификатор, а не правка .set-chip:
+   тот же класс носят чипы на вкладке «Пользователи», и их вид менять незачем.
+   Моноширинный и на 20% мельче базового — чипов в строке до семи, и читаться
+   они должны как перечисление флагов, а не как текст. */
+.set-chip-flag {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: calc(var(--fs-2xs) * .8);
+}
+/* Происхождение шага — цветом, вместо подписи «от модели» под строкой.
+   Серый (базовый) — задан и у модели, и на устройстве; голубой —
+   унаследован от модели; оранжевый — включён на устройстве вопреки
+   выключенному у модели. .set-chip-accent — тот же голубой, его носят чипы
+   на других вкладках. */
+.set-chip-accent,
+.set-chip-inherited {
+  background: rgba(31, 111, 235, .09);
+  border-color: rgba(31, 111, 235, .22);
+  color: var(--accent);
+}
+.set-chip-override {                  /* включён на устройстве, у модели выключен */
+  background: rgba(219, 109, 0, .10);
+  border-color: rgba(219, 109, 0, .26);
+  color: #9a4d00;
+}
+:root[data-theme="dark"] .set-chip-accent,
+:root[data-theme="dark"] .set-chip-inherited {
+  background: rgba(76, 141, 255, .14);
+  border-color: rgba(76, 141, 255, .3);
+}
+:root[data-theme="dark"] .set-chip-override {
+  background: rgba(255, 159, 67, .16);
+  border-color: rgba(255, 159, 67, .32);
+  color: #ffb570;
+}
 
 .set-row-actions { display: flex; gap: .4rem; justify-content: flex-end; white-space: nowrap; }
 .set-row-actions form { margin: 0; }
