@@ -507,6 +507,7 @@ def device_form(request, name=None):
         "statuses": sc.DEVICE_STATUSES,
         "blocklist_objects": json.dumps(cfg.get("blocklist_objects") or {},
                                         ensure_ascii=False, indent=2),
+        "snmp_communities": ", ".join(cfg.get("snmp_communities") or []),
         "file_hash": digest,
         "sync_running": sc.sync_running(),
     })
@@ -543,6 +544,14 @@ def device_save(request, name=None):
         else:
             cfg.pop("mgmt_ip", None)
         cfg["port"] = sc.validate_port(p.get("port") or 22)
+        # Community нод кластера ViPNet: по первой отвечает активная нода, по
+        # второй — пассивная (см. netbox_vipnet_snmp.py). Пусто — шаг снятия
+        # состояния кластера просто не выполняется.
+        communities = [c.strip() for c in (p.get("snmp_communities") or "").split(",") if c.strip()]
+        if communities:
+            cfg["snmp_communities"] = communities
+        else:
+            cfg.pop("snmp_communities", None)
         cfg["username"] = (p.get("username") or "").strip()
         if not cfg["username"]:
             raise sc.SyncConfigError("Логин: обязательное поле")

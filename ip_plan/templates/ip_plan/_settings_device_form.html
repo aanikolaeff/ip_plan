@@ -58,6 +58,19 @@
       </div>
       <div class="set-form-row" style="margin-top:.7rem">
         <div class="set-field">
+          <label class="field-label" for="f-snmp">SNMP community нод кластера</label>
+          <input class="field-control set-mono" id="f-snmp" name="snmp_communities"
+                 value="{{ snmp_communities }}" placeholder="public1, public2">
+          <div class="set-hint">
+            Только для кластеров ViPNet. Community адресует ноду: по первой отвечает
+            активная, по второй — пассивная. Заполнено — синк снимет состояние
+            кластера (роль, время последнего переключения, достижимость соседа)
+            и запишет его в карточку устройства в NetBox.
+          </div>
+        </div>
+      </div>
+      <div class="set-form-row" style="margin-top:.7rem">
+        <div class="set-field">
           <label class="field-label" for="f-mgmt-ip">Адрес управления в NetBox</label>
           <input class="field-control set-mono" id="f-mgmt-ip" name="mgmt_ip" value="{{ cfg.mgmt_ip|default:'' }}">
           <div class="set-hint">
