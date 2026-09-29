@@ -58,6 +58,12 @@
               {% if d.from_model %}
                 <span class="set-sub">от модели: {{ d.from_model|join:", " }}</span>
               {% endif %}
+              {# Шаг, включённый у модели, но снятый на этом устройстве:
+                 без этой строки чипа просто нет, и непонятно, выключено
+                 оно здесь или не включено нигде. #}
+              {% if d.off_here %}
+                <span class="set-sub">выключено здесь: {{ d.off_here|join:", " }}</span>
+              {% endif %}
             </td>
             <td>
               {% include "ip_plan/_settings_test_button.html" with kind="device" key=d.name test=d.test %}

@@ -68,6 +68,30 @@ MAC_CAPABLE_PARSERS = {"eltex_status", "maipu", "huawei_vrp", "xfw"}
 # так что включённый на нём флаг означал бы шаг, который нечем выполнить.
 LLDP_CAPABLE_PARSERS = {"eltex_status", "cisco_ios", "maipu", "huawei_vrp"}
 
+# Флаги «что снимать с устройства», в порядке шагов синка. Живут и на
+# устройстве, и на его модели; смысл один и тот же, см. effective() ниже.
+SYNC_FLAGS = ("sync_interfaces", "import_vlans", "import_prefixes",
+              "sync_macs", "sync_lldp", "backup_config", "sync_blocklist")
+
+
+def effective(device_cfg, device_types):
+    """Настройки устройства поверх настроек его модели.
+
+    Ровно то же, что делает _resolve в netbox-sync (одинаковая копия в
+    netbox_devices_sync.py, netbox_lldp_topology.py, netbox_config_backup.py и
+    netbox_firewall_blocklist_sync.py): база — конфиг модели, поверх — конфиг
+    устройства. Слияние плоское, на один уровень.
+
+    Существенно, что update() переносит и значение False: «ключа нет» значит
+    «наследовать от модели», а «ключ = false» — «выключено, несмотря на
+    модель». Интерфейс обязан уметь записать именно false, иначе снятая
+    галочка на устройстве не отключает шаг, включённый у модели.
+    """
+    eff = dict((device_types or {}).get(device_cfg.get("model")) or {})
+    eff.update(device_cfg)
+    return eff
+
+
 DEVICE_STATUSES = ["active", "planned", "staged", "failed", "inventory", "offline"]
 
 _HOSTNAME_RE = re.compile(r"^[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?$")
@@ -254,14 +278,23 @@ def validate_url(value, field="URL", require_https=True):
     return value.rstrip("/")
 
 
-def validate_name(value, existing, original=None, field="Имя"):
-    """Непустое, без пробелов, уникальное. original — имя до правки, оно
-    из проверки уникальности исключается."""
+def validate_name(value, existing, original=None, field="Имя", allow_spaces=False):
+    """Непустое, уникальное; по умолчанию — без пробелов. original — имя до
+    правки, оно из проверки уникальности исключается.
+
+    allow_spaces нужен названиям моделей: они попадают в NetBox как
+    device_type.model, где пробел законен и уже используется («xFW 5000»,
+    «MES2300B-48»). Без этого послабления такую модель нельзя было
+    сохранить вообще: форма отдавала её собственное имя, а валидатор его же
+    и отвергал — правка любого поля упиралась в ошибку про пробелы.
+    """
     value = (value or "").strip()
     if not value:
         raise SyncConfigError(f"{field}: обязательное поле")
-    if re.search(r"\s", value):
+    if not allow_spaces and re.search(r"\s", value):
         raise SyncConfigError(f"{field}: пробелы недопустимы — «{value}»")
+    if allow_spaces and re.search(r"\s\s|^\s|\s$", value):
+        raise SyncConfigError(f"{field}: лишние пробелы — «{value}»")
     if value != original and value in existing:
         raise SyncConfigError(f"{field}: «{value}» уже есть в этом файле")
     return value

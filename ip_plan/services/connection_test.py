@@ -161,8 +161,7 @@ def _run_device(key):
     raw = (data.get("devices") or {}).get(key)
     if raw is None:
         raise LookupError(f"Устройства «{key}» нет в конфигурации")
-    cfg = dict((data.get("device_types") or {}).get(raw.get("model"), {}))
-    cfg.update(raw)
+    cfg = sc.effective(raw, data.get("device_types") or {})
 
     host = cfg.get("host")
     port = int(cfg.get("port") or 22)

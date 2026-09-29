@@ -131,14 +131,17 @@ def _tab_context(request, tab):
             # по этой же, эффективной, картине: сбор MAC-таблицы, например,
             # задан у моделей, и по собственным полям устройства его не видно
             # — в списке получалось «ничего не собираем» там, где собирается.
-            eff = dict(types.get(cfg.get("model")) or {})
-            eff.update(cfg)
+            eff = sc.effective(cfg, types)
+            model_cfg = types.get(cfg.get("model")) or {}
             devices.append({"name": name, "cfg": cfg, "eff": eff,
-                            "from_model": sorted(
-                                k for k in ("sync_interfaces", "import_vlans", "import_prefixes",
-                                            "sync_macs", "sync_lldp", "backup_config",
-                                            "sync_blocklist")
-                                if eff.get(k) and not cfg.get(k)),
+                            "from_model": sorted(k for k in sc.SYNC_FLAGS
+                                                 if eff.get(k) and not cfg.get(k)),
+                            # Шаг, выключенный на устройстве вопреки модели.
+                            # Без этой подписи строка молчала бы о том, что
+                            # человек шаг снял: чипа нет — и непонятно, потому
+                            # ли, что нигде не включено, или потому что снято.
+                            "off_here": sorted(k for k in sc.SYNC_FLAGS
+                                               if model_cfg.get(k) and cfg.get(k) is False),
                             "has_password": bool(cfg.get("password"))})
         tests = connection_test.state_for("device", [d["name"] for d in devices])
         for item in devices:
@@ -404,6 +407,23 @@ def test_terminal_body(request, kind, key):
     })
 
 
+# Подписи флагов устройства. Одним списком — чтобы форма, её обработчик и
+# порядок шагов синка (sc.SYNC_FLAGS) не разъезжались.
+_DEVICE_FLAG_FIELDS = [
+    ("sync_interfaces", "Интерфейсы и адрес управления", ""),
+    ("import_vlans", "VLAN-ы", ""),
+    ("import_prefixes", "Префиксы сетей", ""),
+    ("sync_macs", "MAC-таблицу",
+     "Eltex, Maipu, Huawei; у ViPNet это ARP-таблица. Снимается внутри шага "
+     "интерфейсов — без него не соберётся"),
+    ("sync_lldp", "LLDP-соседей",
+     "не умеет только xFW; команда задаётся на вкладке «Модели»"),
+    ("backup_config", "Резервную копию конфигурации", ""),
+    ("sync_blocklist", "Списки блокировок firewall", ""),
+]
+assert {k for k, _, _ in _DEVICE_FLAG_FIELDS} == set(sc.SYNC_FLAGS)
+
+
 @staff_required
 def device_form(request, name=None):
     data, digest = sc.load("devices")
@@ -412,9 +432,18 @@ def device_form(request, name=None):
         return _error_modal(request, f"Устройство «{name}» не найдено", status=404)
 
     cfg = devices.get(name, {}) if name else {}
+    # Галочки — по эффективной картине (модель + устройство), как в списке и
+    # как в самом синке. Раньше форма показывала только собственные поля
+    # устройства, и шаг, включённый у модели, выглядел выключенным: человек
+    # видел снятую галочку «MAC-таблицу» там, где MAC исправно собирался.
+    eff = sc.effective(cfg, data.get("device_types") or {})
+    flag_fields = [(key, label, hint, bool(eff.get(key)),
+                    key not in cfg and bool(eff.get(key)))
+                   for key, label, hint in _DEVICE_FLAG_FIELDS]
     return render(request, "ip_plan/_settings_device_form.html", {
         "name": name,
         "cfg": cfg,
+        "flag_fields": flag_fields,
         "password_mask": sc.masked(cfg.get("password")),
         "enable_mask": sc.masked(cfg.get("enable_password")),
         "device_types": sorted(data.get("device_types") or {}),
@@ -477,27 +506,57 @@ def device_save(request, name=None):
             raise sc.SyncConfigError(f"Статус «{status}» недопустим")
         cfg["status"] = status
 
-        for flag in ("sync_interfaces", "import_vlans", "import_prefixes",
-                     "sync_macs", "sync_lldp", "backup_config", "sync_blocklist"):
+        # Три состояния, а не два. Галочка стоит — true. Галочка снята, но шаг
+        # включён у модели — пишем явный false: ключ, удалённый из блока
+        # устройства, означает «наследовать», и шаг остался бы включённым.
+        # Именно из-за этого снятая галочка «MAC-таблицу» ничего не выключала:
+        # sync_macs задан у шести моделей из семи. Снята и у модели ничего —
+        # ключ убираем, чтобы не засорять конфиг мусорными false.
+        type_cfg = data["device_types"][model] or {}
+        for flag in sc.SYNC_FLAGS:
             if p.get(flag):
                 cfg[flag] = True
+            elif type_cfg.get(flag):
+                cfg[flag] = False
             else:
                 cfg.pop(flag, None)
+
+        # Дальше проверяем эффективную картину (модель + устройство): именно её
+        # исполняет синк. По одному лишь блоку устройства проверка пропускала
+        # всё, что включено на модели.
+        eff = sc.effective(cfg, data.get("device_types") or {})
 
         # sync_macs имеет смысл только для парсеров, у которых он вообще
         # реализован (_mac_dispatch в netbox_devices_sync.py) — иначе шаг
         # молча пропустится, а человек будет думать, что включил.
-        type_cfg = data["device_types"][model] or {}
         parser = type_cfg.get("interfaces_parser", "")
-        if cfg.get("sync_macs") and parser not in sc.MAC_CAPABLE_PARSERS:
+        if eff.get("sync_macs") and parser not in sc.MAC_CAPABLE_PARSERS:
             raise sc.SyncConfigError(
                 f"Сбор MAC-таблицы не поддержан для парсера «{parser}» "
                 f"(есть только для {', '.join(sorted(sc.MAC_CAPABLE_PARSERS))})."
             )
 
+        # MAC снимается хвостом шага интерфейсов (netbox_devices_sync.py:
+        # ранний return при выключенном sync_interfaces стоит ДО блока MAC),
+        # так что одно без другого — молча несобираемая таблица.
+        if eff.get("sync_macs") and not eff.get("sync_interfaces"):
+            raise sc.SyncConfigError(
+                "Сбор MAC-таблицы включён, но выключены интерфейсы: MAC снимается "
+                "внутри шага интерфейсов и без него собран не будет."
+            )
+
+        # У xfw MAC/ARP снимается не общим диспетчером, а внутри обхода
+        # кластера ViPNet, и только при cluster=vipnet_failover. Без кластера
+        # синк напечатает «нет поддержки для парсера xfw» и ничего не соберёт.
+        if eff.get("sync_macs") and parser == "xfw" and eff.get("cluster") != "vipnet_failover":
+            raise sc.SyncConfigError(
+                "Для парсера «xfw» ARP-таблица снимается только в режиме кластера: "
+                "у модели должно быть задано cluster=vipnet_failover."
+            )
+
         # Та же логика, что у sync_macs: LLDP есть не у всех вендоров, и без
         # команды на модели собирать соседей нечем.
-        if cfg.get("sync_lldp"):
+        if eff.get("sync_lldp"):
             if parser not in sc.LLDP_CAPABLE_PARSERS:
                 raise sc.SyncConfigError(
                     f"Сбор LLDP-соседей не поддержан для парсера «{parser}» "
@@ -509,7 +568,7 @@ def device_save(request, name=None):
                     f"команда LLDP — задайте её на вкладке «Модели»."
                 )
 
-        if cfg.get("sync_blocklist"):
+        if eff.get("sync_blocklist"):
             raw = (p.get("blocklist_objects") or "").strip()
             try:
                 objects = json.loads(raw) if raw else {}
@@ -524,7 +583,7 @@ def device_save(request, name=None):
         else:
             cfg.pop("blocklist_objects", None)
 
-        if cfg.get("backup_config"):
+        if eff.get("backup_config"):
             if not type_cfg.get("config_command"):
                 raise sc.SyncConfigError(
                     f"Резервное копирование включено, но у модели «{model}» не задан "
@@ -596,6 +655,7 @@ _TYPE_TEXT_FIELDS = [
     ("ip_command", "Команда IP-адресов"),
     ("lldp_command", "Команда LLDP-соседей"),
     ("config_command", "Команда выгрузки конфигурации"),
+    ("vrrp_command", "Команда VRRP"),
 ]
 _TYPE_FLAG_FIELDS = [
     ("legacy_crypto", "Устаревшие алгоритмы SSH"),
@@ -644,7 +704,8 @@ def device_type_save(request, name=None):
         previous = types.get(name, {}) if name else {}
         p = request.POST
 
-        new_name = sc.validate_name(p.get("name"), set(types), original=name, field="Название модели")
+        new_name = sc.validate_name(p.get("name"), set(types), original=name,
+                                    field="Название модели", allow_spaces=True)
 
         parser = (p.get("interfaces_parser") or "").strip()
         if parser not in sc.INTERFACE_PARSERS:
@@ -653,18 +714,29 @@ def device_type_save(request, name=None):
                 f"Допустимо: {', '.join(sc.INTERFACE_PARSERS)}"
             )
 
-        cfg = {"interfaces_parser": parser}
+        # База — прежний конфиг модели, а не пустой словарь. Собранный с нуля,
+        # он терял всё, чего в форме нет: cluster=vipnet_failover у xFW 5000 и
+        # HW5000 (без него не опрашивается кластер криптошлюзов) и любые
+        # будущие ключи. Форма правит ровно свои поля, остальное не трогает.
+        cfg = dict(previous)
+        cfg["interfaces_parser"] = parser
         for key, _label in _TYPE_TEXT_FIELDS:
             value = (p.get(key) or "").strip()
             if value:
                 cfg[key] = value
+            else:
+                cfg.pop(key, None)
         for key, _label in _TYPE_FLAG_FIELDS:
             if p.get(key):
                 cfg[key] = True
+            else:
+                cfg.pop(key, None)
         for key, _label in _TYPE_LIST_FIELDS:
             raw = (p.get(key) or "").strip()
             if raw:
                 cfg[key] = [item.strip() for item in raw.split(",") if item.strip()]
+            else:
+                cfg.pop(key, None)
 
         if cfg.get("sync_macs") and parser not in sc.MAC_CAPABLE_PARSERS:
             raise sc.SyncConfigError(
