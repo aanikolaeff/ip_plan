@@ -424,6 +424,31 @@ _DEVICE_FLAG_FIELDS = [
 assert {k for k, _, _ in _DEVICE_FLAG_FIELDS} == set(sc.SYNC_FLAGS)
 
 
+def _device_flag_fields(cfg, device_types):
+    """(ключ, подпись, пояснение, отмечен, унаследован) для блока флагов."""
+    eff = sc.effective(cfg, device_types)
+    return [(key, label, hint, bool(eff.get(key)), key not in cfg and bool(eff.get(key)))
+            for key, label, hint in _DEVICE_FLAG_FIELDS]
+
+
+@staff_required
+def device_flags(request):
+    """Блок «Что синхронизировать» под выбранную в форме модель.
+
+    Флаги модели — умолчания её устройств, поэтому при смене модели в
+    выпадающем списке галочки должны встать сразу: иначе новое устройство
+    заводится со всем снятым, а человек видит модель, у которой шаги
+    включены. Собственные значения устройства, если оно уже существует,
+    остаются главнее — как и в синке.
+    """
+    data, _ = sc.load("devices")
+    name = request.GET.get("name") or None
+    cfg = dict(((data.get("devices") or {}).get(name)) or {}) if name else {}
+    cfg["model"] = (request.GET.get("model") or "").strip()
+    return render(request, "ip_plan/_settings_device_flags.html",
+                  {"flag_fields": _device_flag_fields(cfg, data.get("device_types") or {})})
+
+
 @staff_required
 def device_form(request, name=None):
     data, digest = sc.load("devices")
@@ -436,10 +461,7 @@ def device_form(request, name=None):
     # как в самом синке. Раньше форма показывала только собственные поля
     # устройства, и шаг, включённый у модели, выглядел выключенным: человек
     # видел снятую галочку «MAC-таблицу» там, где MAC исправно собирался.
-    eff = sc.effective(cfg, data.get("device_types") or {})
-    flag_fields = [(key, label, hint, bool(eff.get(key)),
-                    key not in cfg and bool(eff.get(key)))
-                   for key, label, hint in _DEVICE_FLAG_FIELDS]
+    flag_fields = _device_flag_fields(cfg, data.get("device_types") or {})
     return render(request, "ip_plan/_settings_device_form.html", {
         "name": name,
         "cfg": cfg,
@@ -704,6 +726,7 @@ def device_type_save(request, name=None):
         previous = types.get(name, {}) if name else {}
         p = request.POST
 
+        applied = []
         new_name = sc.validate_name(p.get("name"), set(types), original=name,
                                     field="Название модели", allow_spaces=True)
 
@@ -755,6 +778,22 @@ def device_type_save(request, name=None):
         if not cfg.get("manufacturer") or not cfg.get("role"):
             raise sc.SyncConfigError("Производитель и роль обязательны — по ним синк заводит объекты в NetBox")
 
+        # Флаги модели — умолчания её устройств и заодно массовый выключатель:
+        # изменённый здесь шаг применяется ко всем устройствам этой модели.
+        # Иначе «выключил у модели» не меняло бы ничего там, где флаг
+        # проставлен устройству персонально, а таких большинство. Технически
+        # достаточно убрать персональное значение: устройство начинает
+        # наследовать новое значение модели — включённое или выключенное.
+        for key, _label in _TYPE_FLAG_FIELDS:
+            if key not in sc.SYNC_FLAGS:      # legacy_crypto — параметр SSH, не шаг
+                continue
+            if bool(previous.get(key)) == bool(cfg.get(key)):
+                continue
+            for dev_name, dev_cfg in (data.get("devices") or {}).items():
+                if dev_cfg.get("model") == name and key in dev_cfg:
+                    dev_cfg.pop(key)
+                    applied.append(f"{dev_name} ({key})")
+
         # Переименование модели: перевесить ссылающиеся устройства, иначе
         # они останутся с несуществующей моделью и синк их пропустит.
         renamed = []
@@ -772,6 +811,8 @@ def device_type_save(request, name=None):
         return _error_modal(request, str(e), status=409 if isinstance(e, sc.ConfigConflict) else 400)
 
     details = _describe_changes(previous, cfg) if name else "создана"
+    if applied:
+        details += f"; флаги применены к устройствам: {', '.join(applied)}"
     if renamed:
         details += f"; переименование применено к устройствам: {', '.join(renamed)}"
     _audit(request, "device_types", new_name, "update" if name else "create", details)

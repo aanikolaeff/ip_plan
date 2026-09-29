@@ -48,6 +48,12 @@
 
     <div class="field-group">
       <div class="field-group-title">Что делать с этой моделью</div>
+      <div class="set-hint">
+        Это умолчания для устройств модели: новое устройство заводится с ними,
+        а изменение здесь применяется ко всем устройствам этой модели — и
+        включение, и выключение. Отдельному устройству шаг можно снять или
+        добавить в его карточке.
+      </div>
       {% for key, label, checked in flag_fields %}
         <label class="set-check"><input type="checkbox" name="{{ key }}" {% if checked %}checked{% endif %}> <span>{{ label }}</span></label>
       {% endfor %}

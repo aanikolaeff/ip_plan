@@ -1,0 +1,18 @@
+{% comment %}
+  Блок «Что синхронизировать». Отдельным шаблоном, потому что перерисовывается
+  при смене модели: флаги модели — умолчания её устройств, и при заведении
+  нового устройства галочки должны встать сразу, а не после сохранения.
+{% endcomment %}
+<div class="field-group-title">Что синхронизировать</div>
+{% comment %}
+  Галочки показывают эффективное состояние: настройки модели плюс правки
+  устройства — ровно то, что исполнит синк. Снятая галочка у шага, включённого
+  на модели, сохраняется как явный false, поэтому выключить здесь можно всё,
+  что угодно (см. device_save).
+{% endcomment %}
+{% for key, label, hint, checked, inherited in flag_fields %}
+  <label class="set-check">
+    <input type="checkbox" name="{{ key }}" {% if checked %}checked{% endif %}>
+    <span>{{ label }}{% if hint %} <span class="set-muted">— {{ hint }}</span>{% endif %}{% if inherited %} <span class="set-muted">· включено на модели</span>{% endif %}</span>
+  </label>
+{% endfor %}

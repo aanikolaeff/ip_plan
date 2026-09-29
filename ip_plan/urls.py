@@ -59,6 +59,7 @@ urlpatterns = [
     path("settings/test/<str:kind>/<path:key>/status/", views_settings.test_status, name="settings_test_status"),
     path("settings/test/<str:kind>/<path:key>/terminal/", views_settings.test_terminal, name="settings_test_terminal"),
     path("settings/test/<str:kind>/<path:key>/terminal/body/", views_settings.test_terminal_body, name="settings_test_terminal_body"),
+    path("settings/devices/flags/", views_settings.device_flags, name="settings_device_flags"),
     path("settings/devices/add/", views_settings.device_form, name="settings_device_add"),
     path("settings/devices/add/save/", views_settings.device_save, name="settings_device_add_save"),
     path("settings/devices/<str:name>/edit/", views_settings.device_form, name="settings_device_edit"),
