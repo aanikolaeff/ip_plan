@@ -26,10 +26,14 @@ from django.conf import settings
 # Если этот список там когда-нибудь изменится, поправить и здесь.
 STEP_NAMES = [
     "Custom fields", "VLAN+prefixes", "Devices", "Config backup",
-    "Firewall blocklist", "Nmap scan", "RedVirt", "vCenter", "DNS enrich",
+    "Firewall blocklist", "Nmap scan", "RedVirt", "vCenter",
+    "LLDP topology", "DNS enrich",
 ]
 
-_HEADER_RE = re.compile(r"Full sync started:\s*(?P<started>\S+ \S+)\s+\[env=(?P<env>\w+)\]")
+_HEADER_RE = re.compile(
+    r"Full sync started:\s*(?P<started>\S+ \S+)\s+\[env=(?P<env>\w+)\]"
+    r"(?:\s+\[version=(?P<version>[^\]]+)\])?"
+)
 _SCAN_RE = re.compile(r"Scan:\s*mode=(?P<mode>\S+)\s+resolve-dns=(?P<dns>on|off)\s+timeout=(?P<timeout>\d+)s")
 # "  [Имя шага] СТАТУС  (Nс)" — пишется строкой log() сразу по завершении
 # шага (см. full_sync.sh), задолго до итогового блока SUMMARY в конце.
@@ -98,6 +102,9 @@ def get_summary():
         "log_file": path.name,
         "started_at": header.group("started") if header else None,
         "env": header.group("env") if header else None,
+        # Версия netbox-sync, на которой шёл прогон. None у логов, снятых до
+        # появления этой строки — тогда в интерфейсе её просто не показываем.
+        "sync_version": header.group("version") if header else None,
         "scan_mode": scan.group("mode") if scan else None,
         "resolve_dns": scan.group("dns") if scan else None,
         "overall": overall,

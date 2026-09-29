@@ -169,6 +169,9 @@
                   <div class="sync-log-meta">
                     <span x-text="$store.sync.log.started_at"></span>
                     <template x-if="$store.sync.log.env"><span> · env=<span x-text="$store.sync.log.env"></span></span></template>
+                    {# Версия netbox-sync, на которой шёл прогон: по ней видно, доехал ли его деплой.
+                       У логов, снятых до появления этой строки, поля нет — тогда просто не показываем. #}
+                    <template x-if="$store.sync.log.sync_version"><span> · sync <span x-text="'v' + $store.sync.log.sync_version"></span></span></template>
                     <span class="sync-log-badge" :class="'sync-log-badge-' + $store.sync.log.overall.toLowerCase()" x-text="$store.sync.log.overall"></span>
                   </div>
                   <div class="sync-log-steps">
