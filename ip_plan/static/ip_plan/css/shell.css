@@ -1,0 +1,393 @@
+/* ══ Оболочка приложения: боковое меню + панель содержимого ═══════════════
+   Портирование макета test_des/ (Elegant.html, разбор — test_des/design-review.md).
+   Токены (--canvas, --soft, --line, --accent-soft, --panel-shadow…) объявлены
+   в style.css рядом с прежними переменными, здесь только раскладка.
+
+   Решения 01.10.2026: минимальная ширина без горизонтальной прокрутки —
+   1280px, уже — меню само сворачивается до иконок (медиа-запрос внизу);
+   состояние «свёрнуто/развёрнуто» живёт в localStorage (ip_plan_sidebar),
+   выставляется на <html data-sidebar> до отрисовки и в Alpine-компоненте
+   shell (app.js) после. */
+
+html, body { height: 100%; }
+body.shell {
+  margin: 0;
+  display: flex;
+  min-height: 100vh;
+  background: var(--canvas);
+  font-size: 13px;
+  line-height: 20px;
+  letter-spacing: -0.003em;
+}
+body.shell.shell-plain { display: block; }
+[x-cloak] { display: none !important; }
+
+/* ── Боковое меню ─────────────────────────────────────────────────────── */
+.sb {
+  width: 244px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 18px 12px 14px;
+  /* без overflow:hidden: внутри лежит всплывающее меню площадок шириной
+     320px, которое должно выходить за пределы меню; подписи при сворачивании
+     прячутся display:none, так что обрезать нечего */
+  overflow: visible;
+  position: sticky;
+  top: 0;
+  z-index: 70; /* выше панели .shell-main — иначе меню площадок рисуется под ней */
+  height: 100vh;
+  color: var(--text-main);
+  transition: width .24s cubic-bezier(.2, .8, .2, 1);
+}
+.sb.collapsed, html[data-sidebar="collapsed"] .sb:not(.alpine-ready) { width: 64px; }
+.sb.collapsed .sb-label, html[data-sidebar="collapsed"] .sb:not(.alpine-ready) .sb-label { display: none !important; }
+.sb-collapsed-only { display: none; }
+.sb.collapsed .sb-collapsed-only { display: block; }
+
+.sb-brand {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
+  margin-bottom: 14px;
+  color: var(--text-main);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.sb-brand:hover { color: var(--text-main); }
+.sb-logo {
+  width: 24px; height: 24px; flex-shrink: 0;
+  border-radius: 7px;
+  background: var(--primary);
+  color: var(--primary-text);
+  display: flex; align-items: center; justify-content: center;
+}
+.sb-brand-name { font-size: 14.5px; font-weight: 600; letter-spacing: -0.015em; }
+
+/* Переключатель площадки */
+.sb-site-wrap { position: relative; margin-bottom: 10px; }
+.sb-site {
+  width: 100%;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--text-main);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  font: inherit;
+  transition: background .15s ease, box-shadow .15s ease;
+}
+.sb-site:hover { background: var(--hover); }
+.sb-site.open { box-shadow: inset 0 0 0 1px var(--accent-line); background: var(--accent-soft); }
+.sb-site > svg:first-child { flex-shrink: 0; color: var(--text-muted); }
+.sb-site-text { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; line-height: 16px; }
+.sb-site-kicker { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); }
+.sb-site-name { overflow: hidden; text-overflow: ellipsis; font-size: 13px; font-weight: 600; }
+.sb-site-chev { flex-shrink: 0; color: var(--text-faint); }
+
+.sb-site-menu {
+  display: none;   /* открывается классом .is-open из Alpine (:class), не x-show */
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  width: 320px;
+  flex-direction: column;
+  border-radius: 12px;
+  background: var(--bg-surface);
+  box-shadow: var(--pop-shadow);
+  overflow: hidden;
+}
+.sb-site-menu.is-open { display: flex; }
+.sb.collapsed .sb-site-menu { left: 52px; top: 0; }
+.sb-site-search { position: relative; display: flex; align-items: center; border-bottom: 1px solid var(--line); margin: 0; }
+.sb-site-search svg { position: absolute; left: 12px; color: var(--text-faint); pointer-events: none; }
+.sb-site-search input {
+  width: 100%; height: 40px; padding: 0 12px 0 34px;
+  border: 0; background: transparent; color: var(--text-main);
+  font: inherit; font-size: 13px; outline: none;
+}
+.sb-site-search input::placeholder { color: var(--text-faint); }
+.sb-site-list { display: flex; flex-direction: column; padding: 6px; max-height: 60vh; overflow: auto; }
+.sb-site-sep { height: 1px; margin: 5px 4px; background: var(--line); }
+.sb-site-item {
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px 4px 8px;
+  border-radius: 8px;
+  color: var(--text-main);
+  text-decoration: none;
+}
+.sb-site-item:hover { background: var(--hover); color: var(--text-main); }
+.sb-site-check { display: flex; color: var(--accent); }
+.sb-site-item-text { display: flex; flex-direction: column; line-height: 17px; }
+.sb-site-item-name { font-size: 13px; font-weight: 500; }
+.sb-site-item-name.is-selected { font-weight: 600; }
+.sb-site-item-sub { font-size: 11.5px; color: var(--text-faint); }
+
+/* Поиск ⌘K — поле есть, действий пока нет */
+.sb-search {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  margin-bottom: 14px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--soft);
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sb-search:hover { background: var(--hover); color: var(--text-main); }
+.sb-search-text { flex-grow: 1; text-align: left; }
+.sb-kbd { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+
+/* Пункты меню */
+.sb-nav { display: flex; flex-direction: column; gap: 2px; }
+.sb-item {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.sb-item svg { flex-shrink: 0; }
+.sb-item:hover { background: var(--hover); color: var(--text-main); }
+.sb-item.active {
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font-weight: 600;
+  box-shadow: var(--panel-shadow);
+}
+.sb-group {
+  padding: 20px 10px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.sb-rule { height: 1px; margin: 10px 8px; background: var(--line); }
+.sb-spacer { flex-grow: 1; }
+
+.sb-user {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px 0 6px;
+  white-space: nowrap;
+}
+.sb-avatar {
+  width: 28px; height: 28px; flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--soft);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .02em;
+  color: var(--text-muted);
+}
+.sb-user-name { flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 500; color: var(--text-main); text-decoration: none; }
+a.sb-user-name:hover { color: var(--accent); }
+.sb-logout-form { margin: 0; display: flex; }
+.sb-logout {
+  width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 8px;
+  background: transparent; color: var(--text-faint);
+  cursor: pointer;
+}
+.sb-logout:hover { background: var(--hover); color: var(--text-main); }
+
+/* ── Панель содержимого ───────────────────────────────────────────────── */
+.shell-main {
+  position: relative;
+  flex-grow: 1;
+  min-width: 0;
+  margin: 10px 10px 10px 0;
+  height: calc(100vh - 20px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: var(--bg-surface);
+  box-shadow: var(--panel-shadow);
+  overflow: hidden;
+}
+.shell-head {
+  height: 68px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 24px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.shell-head-left, .shell-head-right { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.shell-head-right { gap: 6px; }
+.shell-toggle {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 8px;
+  background: transparent; color: var(--text-muted);
+  cursor: pointer;
+}
+.shell-toggle:hover { background: var(--hover); color: var(--text-main); }
+.shell-head-sep { width: 1px; height: 18px; background: var(--line-strong); }
+.shell-title {
+  margin: 0 0 0 4px;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--text-main);
+}
+
+/* Индикатор синка в шапке (данные из $store.sync, клик — полный лог) */
+.shell-sync {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 9px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.shell-sync:hover { background: var(--hover); color: var(--text-main); }
+.shell-sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--off); }
+.shell-sync.is-ok .shell-sync-dot { background: var(--ok); }
+.shell-sync.is-failed .shell-sync-dot { background: var(--danger); }
+.shell-sync.is-running .shell-sync-dot { background: var(--info); box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 25%, transparent); }
+.shell-sync-state { font-weight: 600; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+.shell-sync.is-failed .shell-sync-state { color: var(--danger); }
+.shell-sync.is-ok .shell-sync-state { color: var(--ok); }
+
+.shell-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 24px 28px;
+}
+.shell-body-plain { padding: 2rem; }
+
+/* Страницы, где прокручивается не вся панель, а только список внутри неё
+   (Адреса, block body_class): шапка раздела, полоса статусов, тулбар,
+   шапка и подвал таблицы остаются на месте, остров сам решает, что из
+   него прокручивается (.ipt-grid). */
+.shell-body-fixed {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 12px;
+}
+.shell-island { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+
+/* Загрузка содержимого раздела — внутри области содержимого, а не поверх
+   всей страницы: оболочка (меню, шапка, тулбар) видна сразу, крутится
+   только то место, куда придут данные. Тот же блок лежит в шаблоне до
+   монтирования React-острова и в самом острове до первого ответа сервера. */
+.shell-loading {
+  flex: 1 1 auto;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.shell-spinner {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 3px solid var(--line-strong);
+  border-top-color: var(--accent);
+  animation: shell-spin .7s linear infinite;
+}
+@keyframes shell-spin { to { transform: rotate(360deg); } }
+
+/* ── Узкие экраны: 1280 — минимум, уже меню сворачивается само ────────── */
+@media (max-width: 1279px) {
+  .sb { width: 64px; }
+  .sb .sb-label { display: none !important; }
+  .sb .sb-collapsed-only { display: block; }
+  .sb .sb-site-menu { left: 52px; top: 0; }
+}
+
+/* ── Кнопки в шапке раздела (block head_actions) ──────────────────────── */
+.shell-btn {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.shell-btn:hover { background: var(--hover); color: var(--text-main); }
+.shell-btn-primary { background: var(--primary); color: var(--primary-text); font-weight: 600; }
+.shell-btn-primary:hover { background: var(--primary); color: var(--primary-text); filter: brightness(1.12); }
+
+/* ── Правая панель (drawer): карточка адреса ──────────────────────────── */
+.drawer-overlay {
+  position: fixed; inset: 0; z-index: 900;
+  background: rgba(28, 28, 34, .28);
+  display: flex; justify-content: flex-end;
+}
+:root[data-theme="dark"] .drawer-overlay { background: rgba(0, 0, 0, .5); }
+.drawer {
+  position: relative;
+  width: 440px; max-width: 100vw; height: 100vh;
+  margin: 10px 10px 10px 0; height: calc(100vh - 20px);
+  border-radius: 16px;
+  background: var(--bg-surface);
+  box-shadow: var(--pop-shadow);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.drawer #drawer-content { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.drawer .htmx-indicator { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg-surface) 70%, transparent); z-index: 2; }
+.drawer .htmx-indicator.htmx-request { display: flex; }

@@ -1,0 +1,25 @@
+{% comment %}
+  Одна строка списка правил (SPEC-acl.md, раздел 4): правило или ремарка.
+  Контекст: `row` из listing.rows (CONTRACT-acl.md), тип rule | remark;
+  свёртки (collapsed) разворачивает сам acl_list.html и зовёт этот файл для
+  вложенных строк.
+
+  Фрагменты правила печатаются в одну строку без переводов между тегами:
+  у фрагментов white-space: pre, и пробел-фрагмент {"text": " "} — значимый,
+  поэтому ни {% spaceless %}, ни переносов внутри цикла здесь быть не должно.
+  Группа — кнопка, открывающая панель группы (openPanel в aclList), совпавший
+  фрагмент любого вида — на фоне --hit, any — приглушён.
+{% endcomment %}
+{% if row.type == 'remark' %}
+  <div class="acl-lremark mono">{{ row.text }}</div>
+{% elif row.type == 'rule' %}
+  <div class="acl-lrow mono{% if row.is_match %} is-match{% endif %}{% if row.inactive %} is-inactive{% endif %}"
+       id="{{ row.anchor }}" data-action="{{ row.action }}" data-inactive="{{ row.inactive|yesno:'1,0' }}"{% if row.match_index %} data-match="{{ row.match_index }}"{% endif %}
+       :class="{ {% if row.match_index %}'is-current': cur === {{ row.match_index }}, {% endif %}'is-filtered': !passes('{{ row.action }}', {{ row.inactive|yesno:'true,false' }}) }"
+       {% if row.name %}title="{{ row.name }}"{% endif %}>
+    <span class="acl-lrow-seq">{{ row.seq_text }}</span>
+    <span class="acl-lrow-act"><span class="acl-lrow-dot is-{{ row.action }}" aria-hidden="true"></span><span class="acl-lrow-word is-{{ row.action }}">{{ row.action_word }}</span></span>
+    <span class="acl-lrow-rule">{% for f in row.fragments %}{% if f.kind == 'sep' %}<span class="acl-sep acl-sep-{{ f.icon }}" aria-hidden="true"></span>{% elif f.kind == 'name' %}<span class="acl-tag acl-tag-name">{{ f.text }}</span>{% if row.inactive %}<span class="acl-off" title="правило выключено в конфигурации (inactive)">выкл.</span>{% endif %}{% elif f.kind == 'group' %}<button type="button" class="acl-tag acl-tag-{{ f.side|default:'src' }} is-link{% if f.hit %} is-hit{% endif %}" title="Группа адресов · открыть" @click="openPanel('{{ f.panel_url|escapejs }}')">{{ f.text }}</button>{% elif f.kind == 'set' or f.kind == 'nodes' %}<button type="button" class="acl-tag acl-tag-{{ f.side|default:'src' }} is-link{% if f.hit %} is-hit{% endif %}" title="{{ f.title }}" @click="openPanel('{{ f.panel_url|escapejs }}')">{{ f.text }}</button>{% elif f.kind == 'service' %}{% if f.panel_url %}<button type="button" class="acl-tag acl-tag-svc is-link" title="{{ f.title }}" @click="openPanel('{{ f.panel_url|escapejs }}')">{{ f.text }}</button>{% else %}<span class="acl-tag acl-tag-svc" title="{{ f.title }}">{{ f.text }}</span>{% endif %}{% elif f.kind == 'any' %}<span class="acl-tag acl-tag-{{ f.side|default:'src' }} is-any{% if f.hit %} is-hit{% endif %}">{{ f.text }}</span>{% elif f.kind == 'lit' %}<span class="acl-tag acl-tag-{{ f.side|default:'src' }}{% if f.hit %} is-hit{% endif %}"{% if f.title %} title="{{ f.title }}"{% endif %}>{{ f.text }}</span>{% else %}<span class="acl-frag{% if f.hit %} is-hit{% endif %}">{{ f.text }}</span>{% endif %}{% endfor %}</span>
+    <span class="acl-lrow-match">{{ row.match_text }}</span>
+  </div>
+{% endif %}

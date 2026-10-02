@@ -2,7 +2,7 @@ from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_not_required
 from django.urls import path
 
-from . import views, views_settings
+from . import views_map, views, views_settings
 
 app_name = "ip_plan"
 
@@ -76,20 +76,36 @@ urlpatterns = [
     path("settings/sources/<str:kind>/<int:index>/save/", views_settings.source_save, name="settings_source_save"),
     path("settings/sources/<str:kind>/<int:index>/delete/", views_settings.source_delete, name="settings_source_delete"),
     path("settings/scan/save/", views_settings.scan_save, name="settings_scan_save"),
+    path("settings/access/save/", views_settings.ssh_access_save, name="settings_ssh_access_save"),
+    path("settings/access/delete/", views_settings.ssh_access_delete, name="settings_ssh_access_delete"),
+    path("settings/access/test/", views_settings.ssh_access_test, name="settings_ssh_access_test"),
     path("settings/environment/<str:env>/edit/", views_settings.environment_form, name="settings_env_edit"),
     path("settings/environment/<str:env>/save/", views_settings.environment_save, name="settings_env_save"),
     path("settings/ldap/save/", views_settings.ldap_save, name="settings_ldap_save"),
     path("settings/ldap/test/", views_settings.ldap_test, name="settings_ldap_test"),
+    path("settings/ldap/status/", views_settings.ldap_status, name="settings_ldap_status"),
+    path("settings/sync/state/", views_settings.sync_state, name="settings_sync_state"),
+    path("settings/sync/run/", views_settings.sync_run, name="settings_sync_run"),
     path("settings/users/add/", views_settings.user_form, name="settings_user_add"),
     path("settings/users/add/save/", views_settings.user_save, name="settings_user_add_save"),
     path("settings/users/<int:user_id>/edit/", views_settings.user_form, name="settings_user_edit"),
     path("settings/users/<int:user_id>/save/", views_settings.user_save, name="settings_user_save"),
     path("settings/users/<int:user_id>/delete/", views_settings.user_delete, name="settings_user_delete"),
+    path("site/select/", views.set_site, name="set_site"),
     path("acl/", views.acl_lookup, name="acl_lookup"),
+    path("acl/where/", views.acl_where, name="acl_where"),
+    path("acl/<str:device>/object-group/<str:name>/panel/", views.acl_group_panel, name="acl_group_panel"),
     path("acl/<str:device>/object-group/<str:name>/", views.acl_object_group_detail, name="acl_object_group_detail"),
+    path("acl/<str:device>/history/", views.acl_history, name="acl_history"),
+    path("acl/<str:device>/<str:acl_name>/rule/<str:rule_id>/<str:side>/panel/", views.acl_rule_nodes_panel, name="acl_rule_nodes_panel"),
     path("acl/<str:device>/<str:acl_name>/", views.acl_detail, name="acl_detail"),
     path("regulator/", views.regulator_list, name="regulator_list"),
     path("regulator/entries.json", views.regulator_entries_json, name="regulator_entries_json"),
+    path("regulator/commands/", views.regulator_commands, name="regulator_commands"),
+    path("map/", views_map.map_view, name="map_view"),
+    path("map/data.json", views_map.map_data, name="map_data"),
+    path("map/layout.json", views_map.map_layout, name="map_layout"),
+    path("regulator/document/<int:document_id>/entries/", views.regulator_document_entries, name="regulator_document_entries"),
     path("regulator/document/add/", views.regulator_document_add, name="regulator_document_add"),
     path("regulator/document/<int:document_id>/", views.regulator_document_detail, name="regulator_document_detail"),
     path("regulator/document/<int:document_id>/edit/", views.regulator_document_edit, name="regulator_document_edit"),
@@ -143,4 +159,6 @@ urlpatterns = [
     path("ip/<int:ip_id>/check/", views.ip_check_availability, name="ip_check_availability"),
     path("ip/<int:ip_id>/scan-ports/", views.ip_scan_ports, name="ip_scan_ports"),
     path("ip/<int:ip_id>/resolve-dns/", views.ip_resolve_dns, name="ip_resolve_dns"),
+    path("ip/<int:ip_id>/console/", views.ip_console, name="ip_console"),
+    path("ip/<int:ip_id>/connect/", views.ip_connect, name="ip_connect"),
 ]

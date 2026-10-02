@@ -1,9 +1,9 @@
     :root {
-      --bg-page: #f6f8fb;
-      --bg-table: rgba(255, 255, 255, 0.8);
-      --bg-row-odd: #fcfdff;
-      --bg-row-even: #f3f7fb;
-      --bg-row-hover: #d0e4ff;
+      --bg-page: #f6f6f4;
+      --bg-table: rgba(255, 255, 255, 0.9);
+      --bg-row-odd: #ffffff;
+      --bg-row-even: #f8f8f7;
+      --bg-row-hover: #f1f1fd;
       /* --bg-surface — непрозрачные "плавающие" поверхности (модалки,
          дропдауны, кебаб/ОС-меню): раньше эти карточки были захардкожены
          как #fff/#ffffff в каждом правиле по отдельности — на тёмной теме
@@ -13,15 +13,15 @@
          полная непрозрачность. --bg-surface-muted — чуть более приглушённая
          сплошная подложка (шапка таблицы). */
       --bg-surface: #ffffff;
-      --bg-surface-soft: rgba(255, 255, 255, 0.9);
-      --bg-surface-muted: #f8fafc;
-      --border-surface: rgba(255, 255, 255, 0.75);
-      --border-soft: rgba(24, 33, 47, 0.08);
-      --border-soft-strong: rgba(24, 33, 47, 0.16);
-      --accent: #1f6feb;
-      --accent-strong: #1558c4;
-      --text-main: #18212f;
-      --text-muted: #657287;
+      --bg-surface-soft: rgba(255, 255, 255, 0.92);
+      --bg-surface-muted: #f3f3f1;
+      --border-surface: rgba(28, 28, 34, 0.06);
+      --border-soft: rgba(28, 28, 34, 0.08);
+      --border-soft-strong: rgba(28, 28, 34, 0.13);
+      --accent: #5b5bd6;
+      --accent-strong: #4747c2;
+      --text-main: #1c1c22;
+      --text-muted: #62626d;
       /* Было #92a0b5 (2.49:1 на --bg-page, 2.65:1 на --bg-surface — фейл
          WCAG AA даже для крупного текста). #748095 даёт ~3.6-4:1 —
          достаточно для декоративных элементов/иконок/disabled-полей, для
@@ -29,9 +29,9 @@
          Audit", раздел про контраст). Реальный читаемый контент
          (.cell-muted и т.п.) на этот токен больше не завязан — переведён
          на --text-muted (4.58:1, уже проходил). */
-      --text-faint: #748095;
-      --color-danger: #dc2626;
-      --color-danger-strong: #b91c1c;
+      --text-faint: #8c8c96;
+      --color-danger: #e5484d;
+      --color-danger-strong: #c93a3f;
       /* Шкала кегля — раньше 30+ значений font-size было разбросано по
          обоим CSS-файлам как попало (.775rem рядом с .78rem, .855rem
          рядом с .85rem и т.п., см. design audit). Здесь — реально
@@ -50,8 +50,51 @@
       --fs-lg: .85rem;
       --fs-xl: .875rem;
       --fs-2xl: .9375rem;
-      --body-gradient-from: #f8fbff;
-      --body-gradient-to: #f4f7fb;
+      --body-gradient-from: #f6f6f4;
+      --body-gradient-to: #f6f6f4;
+    
+      /* ── Токены макета test_des/ (оболочка, см. shell.css и design-review.md) ── */
+      --canvas: var(--bg-page);
+      --soft: #f3f3f1;
+      --softer: #f8f8f7;
+      --hover: #f5f5f3;
+      --line: rgba(28, 28, 34, .08);
+      --line-strong: rgba(28, 28, 34, .13);
+      --primary: #1c1c22;
+      --primary-text: #ffffff;
+      --accent-soft: #f1f1fd;
+      --accent-line: rgba(91, 91, 214, .28);
+      --ok: #10b981;
+      --warn: #f59e0b;
+      --info: #0ea5e9;
+      --off: #a1a1aa;
+      --danger: #e5484d;
+      --panel-shadow: 0 0 0 1px rgba(28, 28, 34, .04), 0 1px 2px rgba(28, 28, 34, .03), 0 12px 32px -12px rgba(28, 28, 34, .08);
+      --pop-shadow: 0 0 0 1px rgba(28, 28, 34, .06), 0 18px 48px -12px rgba(28, 28, 34, .22);
+      --font-sans: 'Manrope', system-ui, sans-serif;
+      --font-mono: 'Geist Mono', ui-monospace, monospace;
+
+      /* Тексты и мягкие фоны статусов (были только в acl.css — нужны и
+         «Настройкам»), инфо-чипы «унаследовано от модели» и тёмный
+         консольный блок: команды для xFW в «Блокировках» и журнал прогона
+         синка в «Настройках» — одни токены на оба места. */
+      --warn-soft: #fef7e6;
+      --ok-t: #047857;
+      --warn-t: #b45309;
+      --danger-t: #c4262c;
+      --info-soft: #e8f4fb;
+      --info-t: #0369a1;
+      --console-bg: #1c1c22;
+      --console-text: #e7e7ea;
+      --console-prompt: #8f8fa0;
+      --console-name: #b8b8ff;
+      --console-count: #a1a1ae;
+      --console-ok: #7ee2b8;
+      --console-fail: #ff9b9e;
+      --console-line: rgba(255, 255, 255, .08);
+      --console-btn: rgba(255, 255, 255, .12);
+      --console-btn-hover: rgba(255, 255, 255, .2);
+      --console-btn-text: #ffffff;
     }
 
     /* --- Тёмная тема — переключается кнопкой "Настройки" в шапке
@@ -65,26 +108,26 @@
        блок в конце файла — так не пришлось заводить по паре тёмных
        токенов на каждый статус/тип. */
     :root[data-theme="dark"] {
-      --bg-page: #10141d;
-      --bg-table: rgba(19, 24, 34, 0.85);
-      --bg-row-odd: #151b26;
-      --bg-row-even: #11151e;
-      --bg-row-hover: #1d2a42;
-      --bg-surface: #161c28;
-      --bg-surface-soft: rgba(22, 28, 40, 0.92);
-      --bg-surface-muted: #131822;
-      --border-surface: rgba(255, 255, 255, 0.06);
-      --border-soft: rgba(255, 255, 255, 0.06);
-      --border-soft-strong: rgba(255, 255, 255, 0.13);
-      --accent: #4c8dff;
-      --accent-strong: #7aabff;
-      --text-main: #e7ecf5;
-      --text-muted: #98a4ba;
-      --text-faint: #67728a;
-      --color-danger: #f0574f;
-      --color-danger-strong: #ff7d76;
-      --body-gradient-from: #0b0e15;
-      --body-gradient-to: #10141d;
+      --bg-page: #0b0b0d;
+      --bg-table: rgba(19, 19, 22, 0.9);
+      --bg-row-odd: #131316;
+      --bg-row-even: #161619;
+      --bg-row-hover: #1f1f3a;
+      --bg-surface: #131316;
+      --bg-surface-soft: rgba(19, 19, 22, 0.92);
+      --bg-surface-muted: #1b1b1f;
+      --border-surface: rgba(255, 255, 255, 0.05);
+      --border-soft: rgba(255, 255, 255, 0.07);
+      --border-soft-strong: rgba(255, 255, 255, 0.12);
+      --accent: #9d9dff;
+      --accent-strong: #b7b7ff;
+      --text-main: #ededf0;
+      --text-muted: #a3a3ad;
+      --text-faint: #7c7c86;
+      --color-danger: #ff6369;
+      --color-danger-strong: #ff8a8e;
+      --body-gradient-from: #0b0b0d;
+      --body-gradient-to: #0b0b0d;
       /* Токены статус-рейки/dot-чипов React-таблицы (table.css) — ярче
          дефолта, тёмный фон "съедает" насыщенность иначе неразличимо. */
       --status-active: #22c55e;
@@ -92,15 +135,50 @@
       --status-deprecated: #94a3b8;
       --status-dhcp: #38bdf8;
       --status-slaac: #a78bfa;
+    
+      --soft: #1b1b1f;
+      --softer: #161619;
+      --hover: #18181c;
+      --line: rgba(255, 255, 255, .07);
+      --line-strong: rgba(255, 255, 255, .12);
+      --primary: #ededf0;
+      --primary-text: #0b0b0d;
+      --accent-soft: rgba(157, 157, 255, .09);
+      --accent-line: rgba(157, 157, 255, .35);
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --info: #38bdf8;
+      --off: #71717a;
+      --danger: #ff6369;
+      --panel-shadow: 0 0 0 1px rgba(255, 255, 255, .05), 0 12px 32px -12px rgba(0, 0, 0, .6);
+      --pop-shadow: 0 0 0 1px rgba(255, 255, 255, .08), 0 18px 48px -12px rgba(0, 0, 0, .7);
+
+      --warn-soft: rgba(251, 191, 36, .12);
+      --ok-t: #6ee7b7;
+      --warn-t: #fcd34d;
+      --danger-t: #fca5a5;
+      --info-soft: rgba(56, 189, 248, .12);
+      --info-t: #7dd3fc;
+      --console-bg: #24242b;
+      --console-text: #e7e7ea;
+      --console-prompt: #8f8fa0;
+      --console-name: #c4c4ff;
+      --console-count: #a1a1ae;
+      --console-ok: #7ee2b8;
+      --console-fail: #ff9b9e;
+      --console-line: rgba(255, 255, 255, .08);
+      --console-btn: rgba(255, 255, 255, .12);
+      --console-btn-hover: rgba(255, 255, 255, .2);
+      --console-btn-text: #ffffff;
     }
 
     body {
-      background: linear-gradient(180deg, var(--body-gradient-from) 0%, var(--body-gradient-to) 100%);
+      background: var(--canvas);
       color: var(--text-main);
-      font-family: 'Inter', sans-serif;
+      font-family: var(--font-sans);
     }
 
-    .ip-mono { font-family: 'JetBrains Mono', monospace; }
+    .ip-mono { font-family: var(--font-mono); font-variant-ligatures: none; }
 
     a { color: var(--accent); }
 
@@ -147,7 +225,7 @@
       background: var(--border-soft);
       border-radius: 8px;
       padding: .5rem .75rem;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: var(--font-mono); font-variant-ligatures: none;
       font-size: var(--fs-xs); /* на 25% меньше базового шрифта страницы (1rem) */
     }
     #regulator-note-display:empty { display: none; margin: 0; padding: 0; }
@@ -227,7 +305,7 @@
     }
     .field-control[readonly]:focus { box-shadow: none; border-color: var(--border-soft-strong); }
     /* Адрес — никогда не нужно больше места, чем "255.255.255.255/24" */
-    .field-control-ip { max-width: 200px; font-family: 'JetBrains Mono', monospace; }
+    .field-control-ip { max-width: 200px; font-family: var(--font-mono); font-variant-ligatures: none; }
 
     .btn-modal-primary {
       background: var(--accent);
@@ -565,7 +643,7 @@
       margin-bottom: .75rem;
     }
     .firewall-cmd {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: var(--font-mono); font-variant-ligatures: none;
       font-size: var(--fs-sm);
       line-height: 1.5;
       white-space: pre-wrap;
@@ -984,7 +1062,7 @@
       border-radius: 6px;
       background: #eef0f3;
       color: #4b5563;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: var(--font-mono); font-variant-ligatures: none;
       font-size: var(--fs-3xs);
       font-weight: 600;
       text-transform: lowercase;
@@ -1443,6 +1521,18 @@ tr:hover .cell-clear-btn { opacity: 1; }
 
 /* --- Страница "ACL" (acl_lookup.html) --- */
 .acl-table th, .acl-table td { vertical-align: middle; font-size: var(--fs-md); }
+/* Имена правил и объектов без пробелов (BLOCK_OUTSIDE_IN_BY_LIST) иначе
+   вылезают под соседнюю колонку, когда DataTables сжимает ширину. */
+.acl-table td.acl-col-name { overflow-wrap: anywhere; }
+.acl-table .acl-col-nowrap, .acl-table .badge-acl-type { white-space: nowrap; }
+/* Общее .table стоит в table-layout:fixed ради #ip-table (см. выше), а
+   DataTables ещё и пишет <colgroup> с своими ширинами — имя правила получало
+   120px. Таблицы ACL читаются, а не редактируются: пусть колонки считает
+   браузер по содержимому. */
+.table.acl-table { table-layout: auto !important; }
+.acl-table .acl-col-id { width: 6.5rem; white-space: nowrap; }
+.acl-table .acl-col-name { min-width: 16rem; width: 22%; }
+.acl-table .acl-col-action { width: 7rem; white-space: nowrap; }
 .acl-hint { color: var(--text-muted); margin: .75rem 0; font-size: var(--fs-xl); }
 .acl-hint-error { color: #c2410c; }
 /* Правила "permit ip any any" / "deny ip any any" в хвосте ACL матчят
@@ -1475,6 +1565,27 @@ tr:hover .cell-clear-btn { opacity: 1; }
 .badge-status[data-status="permit"] { background: #e7f7f0; color: #0f9d6c; }
 .badge-status[data-status="deny"] { background: #fdeaea; color: #d13a3a; }
 .badge-status[data-status="remark"] { background: #eef0f3; color: #4b5563; }
+.acl-rule-label { font-size: .78rem; color: #6b7280; white-space: nowrap; }
+.acl-node { white-space: nowrap; border-bottom: 1px dotted #9ca3af; cursor: help; }
+.acl-node-id { font-size: .7rem; color: #9ca3af; margin-left: .25rem; font-family: var(--font-mono, ui-monospace, monospace); }
+.acl-node-unknown { color: #c2410c; }
+.acl-tabs { display: flex; gap: .25rem; margin: 1rem 0 .75rem; border-bottom: 1px solid #e5e7eb; }
+.acl-tab { padding: .45rem .9rem; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; color: #4b5563; text-decoration: none; font-weight: 500; }
+.acl-tab:hover { background: #f3f4f6; }
+.acl-tab.active { background: #fff; border-color: #e5e7eb; color: #111827; margin-bottom: -1px; }
+.acl-tab-count { font-size: .75rem; color: #6b7280; margin-left: .25rem; }
+:root[data-theme="dark"] .acl-tabs { border-color: #374151; }
+:root[data-theme="dark"] .acl-tab.active { background: #111827; border-color: #374151; color: #f3f4f6; }
+:root[data-theme="dark"] .acl-tab:hover { background: #1f2937; }
+.acl-history-layout { display: grid; grid-template-columns: minmax(260px, 1fr) 3fr; gap: 1rem; align-items: start; margin-top: 1rem; }
+@media (max-width: 900px) { .acl-history-layout { grid-template-columns: 1fr; } }
+.acl-row-selected td { background: #eaf2ff; }
+.acl-diff { font-size: .78rem; line-height: 1.35; max-height: 70vh; overflow: auto; padding: .75rem; border: 1px solid #e5e7eb; border-radius: 6px; background: #fafafa; }
+.acl-diff-add { color: #0f9d6c; }
+.acl-diff-del { color: #d13a3a; }
+.acl-diff-hunk { color: #1f6feb; }
+:root[data-theme="dark"] .acl-diff { background: #111827; border-color: #374151; }
+:root[data-theme="dark"] .acl-row-selected td { background: #1e293b; }
 
 /* --- Кнопка "назад" (текстовая ссылка вида "← ACL") — используется на
    acl_detail.html/acl_object_group_detail.html для возврата к поиску ACL,
@@ -1717,3 +1828,77 @@ tr:hover .cell-clear-btn { opacity: 1; }
   transition: opacity .15s;
 }
 .app-version:hover { opacity: .9; }
+
+    /* ══ Формы адреса по макету test_des (IpAdd.html / IpEdit.html) ══════════ */
+    .ipf .modal-title-bar h5 { margin: 0; }
+    .ipf-sub { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
+    .ipf-gap { margin-top: 14px; }
+    .ipf-note { padding: 8px 12px; border-radius: 8px; font-size: 12.5px; margin-bottom: 12px; }
+    .ipf-note-ok { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }
+    .ipf-address-row { position: relative; display: flex; align-items: center; }
+    .ipf-address-row .ipf-address { width: 100%; padding-right: 150px; font-size: 14px; }
+    .ipf-free-badge { position: absolute; right: 10px; font-size: 12px; color: var(--text-faint); pointer-events: none; }
+    .ipf-free-badge.is-free { color: var(--ok); font-weight: 600; }
+    .ipf-free-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+    .ipf-free-chips-label { font-size: 12px; color: var(--text-faint); margin-right: 2px; }
+    .ipf-chip {
+      height: 24px; padding: 0 8px; border: 0; border-radius: 6px;
+      background: var(--soft); color: var(--text-main); font-size: 12px; cursor: pointer;
+    }
+    .ipf-chip.on { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent-line); }
+    .ipf-chip.is-static { cursor: default; margin: 0 4px 4px 0; display: inline-block; line-height: 24px; }
+    .ipf-segment {
+      display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--soft);
+    }
+    .ipf-seg { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; gap: 6px;
+      height: 30px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--text-muted); cursor: pointer; margin: 0; }
+    .ipf-seg input { position: absolute; opacity: 0; pointer-events: none; }
+    .ipf-seg:has(input:checked) { background: var(--bg-surface); color: var(--text-main); font-weight: 600;
+      box-shadow: 0 1px 2px rgba(28,28,34,.08), 0 0 0 1px var(--line); }
+    .ipf-seg-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--off); flex-shrink: 0; display: inline-block; }
+    .ipf-seg-dot[data-status="active"] { background: var(--ok); }
+    .ipf-seg-dot[data-status="reserved"] { background: var(--warn); }
+    .ipf-seg-dot[data-status="deprecated"] { background: var(--off); }
+    .ipf-seg-dot[data-status="dhcp"] { background: var(--info); }
+    .ipf-seg-dot[data-status="slaac"] { background: #8b5cf6; }
+    .ipf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; margin-top: 14px; }
+    .ipf-tags { margin-top: 14px; }
+    .ipf-tags .col-12 { padding: 0; }
+    .ipf-comment { margin-top: 12px; }
+    .ipf-link { border: 0; background: transparent; padding: 0; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; }
+    .ipf-textarea { width: 100%; resize: vertical; min-height: 72px; }
+    .ipf-footer { display: flex; align-items: center; gap: 8px; }
+    .ipf-footer-spacer { flex-grow: 1; }
+    .ipf-check { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; color: var(--text-muted); cursor: pointer; }
+    .ipf-check input { accent-color: var(--accent); }
+    .ipf-kbd { margin-left: 6px; padding: 0 5px; border-radius: 4px; background: rgba(255,255,255,.18); font-family: var(--font-mono); font-size: 10.5px; }
+
+    /* панель карточки адреса */
+    .ipd { height: 100%; display: flex; flex-direction: column; }
+    .ipd-form { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+    .ipd-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 0 20px; }
+    .ipd-crumb { font-size: 12px; color: var(--text-muted); }
+    .ipd-address { display: flex; align-items: baseline; gap: 2px; padding: 8px 20px 0; }
+    .ipd-ip { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+    .ipd-mask { font-size: 16px; color: var(--text-faint); }
+    .ipd-copy { margin-left: 8px; align-self: center; border: 0; background: transparent; color: var(--text-faint); cursor: pointer; padding: 4px; border-radius: 6px; }
+    .ipd-copy:hover { background: var(--hover); color: var(--text-main); }
+    .ipd-meta { display: flex; align-items: center; gap: 6px; padding: 4px 20px 0; font-size: 12.5px; color: var(--text-muted); flex-wrap: wrap; }
+    .ipd-dot, .ipd-faint { color: var(--text-faint); }
+    .ipd-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 20px 0; }
+    .ipd-action { height: 30px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 0; border-radius: 8px;
+      background: var(--soft); color: var(--text-main); font: inherit; font-size: 12.5px; cursor: pointer; }
+    .ipd-action:hover { background: var(--hover); }
+    .ipd-result { margin: 8px 20px 0; padding: 6px 10px; border-radius: 8px; font-size: 12.5px; background: var(--soft); color: var(--text-main); }
+    .ipd-result.is-ok { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }
+    .ipd-result.is-bad { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
+    .ipd-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 20px 16px; }
+    .ipd-section-title { margin: 18px 0 8px; font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
+    .ipd-section-scan { display: flex; justify-content: space-between; align-items: baseline; }
+    .ipd-section-scan .ipd-faint { text-transform: none; letter-spacing: 0; font-weight: 500; }
+    .ipd-scan { display: grid; grid-template-columns: 130px 1fr; gap: 8px 12px; margin: 0; padding: 12px; border-radius: 10px; background: var(--softer); font-size: 12.5px; }
+    .ipd-scan dt { color: var(--text-muted); } .ipd-scan dd { margin: 0; color: var(--text-main); word-break: break-word; }
+    .ipd-footer { display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line); }
+    .ipd-danger { border: 0; background: transparent; color: var(--danger); font: inherit; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 8px; border-radius: 8px; }
+    .ipd-danger:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+    .ipd-dirty { font-size: 12px; color: var(--warn); margin-left: 6px; }

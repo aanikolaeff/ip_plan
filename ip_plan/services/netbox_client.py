@@ -30,6 +30,10 @@ class NetBoxClient:
     TAGS_PATH = "/api/extras/tags/"
     DEVICES_PATH = "/api/dcim/devices/"
     VIRTUAL_MACHINES_PATH = "/api/virtualization/virtual-machines/"
+    CLUSTERS_PATH = "/api/virtualization/clusters/"
+    SITES_PATH = "/api/dcim/sites/"
+    MANUFACTURERS_PATH = "/api/dcim/manufacturers/"
+    DEVICE_ROLES_PATH = "/api/dcim/device-roles/"
 
     # Защита от бесконечного цикла, если NetBox вернёт некорректную пагинацию.
     MAX_PAGES = 500
@@ -172,11 +176,35 @@ class NetBoxClient:
         response = self._request("GET", f"{self.VIRTUAL_MACHINES_PATH}{vm_id}/")
         return response.json()
 
+    def get_cluster(self, cluster_id):
+        # Тип кластера (red-virt / vcenter) нужен консоли ВМ: вложенный
+        # объект cluster у ВМ его не несёт.
+        response = self._request("GET", f"{self.CLUSTERS_PATH}{cluster_id}/")
+        return response.json()
+
     # --- подсети (префиксы) ---
 
     def list_prefixes(self, limit=1000):
         """Получить все подсети (IPAM Prefixes) — для фильтра по подсети в таблице."""
         return self._list_all(self.PREFIXES_PATH, {"limit": limit})
+
+    # --- площадки ---
+
+    def list_sites(self):
+        """Площадки NetBox (dcim/sites) как список {slug, name} — для выбора
+        в формах раздела «Настройки». Справочник маленький, страниц нет."""
+        results = self._list_all(self.SITES_PATH, {"brief": 1})
+        return [{"slug": s["slug"], "name": s["name"]} for s in results]
+
+    def list_manufacturers(self):
+        """Имена производителей NetBox — подсказки в карточке модели. Синк
+        заводит производителя сам по имени (ensure_manufacturer), так что
+        список — не ограничение, а защита от «Huawei» / «HUAWEI» вразнобой."""
+        return sorted(m["name"] for m in self._list_all(self.MANUFACTURERS_PATH, {"brief": 1}))
+
+    def list_device_roles(self):
+        """Имена ролей устройств NetBox — так же, как производители."""
+        return sorted(r["name"] for r in self._list_all(self.DEVICE_ROLES_PATH, {"brief": 1}))
 
     # --- тэги ---
 

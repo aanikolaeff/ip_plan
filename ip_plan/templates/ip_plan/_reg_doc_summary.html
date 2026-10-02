@@ -1,0 +1,47 @@
+{% load ip_plan_extras %}
+{% comment %}
+  Сводка по письму (SPEC-reg.md, 2.2): сколько записей и сколько из них уже
+  стоит на xFW. Контекст — progress (строка letters из CONTRACT-reg.md или
+  None) и необязательный oob. Рендерится на странице письма и ещё раз — OOB
+  в ответе фрагмента записей (_reg_doc_entries.html), чтобы после быстрого
+  ввода, импорта или снятия записи цифры обновлялись вместе с таблицей.
+  Хэши в прогрессе не участвуют (firewall их не фильтрует), в счёт записей
+  не входят и показаны отдельно «+N хэшей».
+{% endcomment %}
+{% with p=progress %}
+<div id="reg-doc-summary"{% if oob %} hx-swap-oob="true"{% endif %}
+     class="reg-sum{% if p and p.known and p.applicable %}{% if p.all_applied and not p.revoked_present %} is-done{% else %} is-warn{% endif %}{% endif %}">
+  {% if p %}
+    {% with n=p.ip|add:p.fqdn|add:p.url_count %}
+    <div class="reg-sum-left">
+      {% if p.total %}
+        <span>
+          <span class="mono reg-sum-total">{{ n|ru_number }}</span> <span class="reg-sum-muted">{{ n|plural:"запись,записи,записей" }}:</span>
+          <span class="mono">{{ p.ip|ru_number }}</span> IP · <span class="mono">{{ p.fqdn|ru_number }}</span> {{ p.fqdn|plural:"домен,домена,доменов" }} · <span class="mono">{{ p.url_count|ru_number }}</span> URL{% if p.hash %} <span class="reg-sum-muted">(+<span class="mono">{{ p.hash|ru_number }}</span> {{ p.hash|plural:"хэш,хэша,хэшей" }})</span>{% endif %}{% if p.revoked %} <span class="reg-sum-muted">· снято <span class="mono">{{ p.revoked|ru_number }}</span></span>{% endif %}
+        </span>
+        {% if not p.known %}
+          <span class="reg-sum-prog-text">снимка xFW нет — применены ли записи, неизвестно</span>
+        {% elif p.applicable %}
+          <span class="reg-sum-prog">
+            <span class="reg-bar is-wide{% if p.all_applied %} is-done{% endif %}"><span style="width: {{ p.pct }}%"></span></span>
+            <span class="reg-sum-prog-text">
+              {% if p.all_applied %}на xFW применено все <span class="mono">{{ p.applicable|ru_number }}</span>{% else %}на xFW применено <span class="mono">{{ p.applied|ru_number }}</span> из <span class="mono">{{ p.applicable|ru_number }}</span> · <span class="mono">{{ p.pending|ru_number }}</span> {{ p.pending|plural:"ждёт,ждут,ждут" }}{% endif %}
+            </span>
+            {% if p.revoked_present %}<span class="reg-sum-danger">· {{ p.revoked_present|ru_number }} {{ p.revoked_present|plural:"снята,сняты,снято" }}, но {{ p.revoked_present|plural:"стоит,стоят,стоят" }}</span>{% endif %}
+          </span>
+        {% else %}
+          <span class="reg-sum-prog-text">{% if p.revoked_present %}<span class="reg-sum-danger">{{ p.revoked_present|ru_number }} {{ p.revoked_present|plural:"снята,сняты,снято" }}, но ещё {{ p.revoked_present|plural:"стоит,стоят,стоят" }} на xFW</span>{% else %}для firewall применять нечего{% endif %}</span>
+        {% endif %}
+      {% else %}
+        <span class="reg-sum-muted">В письме пока нет записей — добавьте значение вручную или загрузите файлы письма</span>
+      {% endif %}
+    </div>
+    {% if p.known and p.pending or p.known and p.revoked_present %}
+      <a class="reg-sum-cta" href="{% url 'ip_plan:regulator_commands' %}">Подготовить команды →</a>
+    {% endif %}
+    {% endwith %}
+  {% else %}
+    <div class="reg-sum-left"><span class="reg-sum-muted">Сводка по письму недоступна</span></div>
+  {% endif %}
+</div>
+{% endwith %}

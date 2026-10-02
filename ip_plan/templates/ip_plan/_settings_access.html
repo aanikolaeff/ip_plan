@@ -1,0 +1,121 @@
+{% comment %}
+  «Доступ к хостам» (в макете нет — в стиле «Вход и LDAP», решение 02.10).
+  Служебная учётная запись и закрытый ключ для входа на серверы и ВМ по
+  SSH (services/ssh_access.py, conf/ssh_access.json). Контекст: ssh =
+  {username, port, has_key, passphrase_mask, key: {kind, bits,
+  fingerprint, public}|None, key_error}, file_hash, gateway_enabled.
+
+  Сам ключ сюда не приходит никогда — только тип, отпечаток и открытая
+  часть; пустое поле ключа при сохранении = «оставить прежний», пустая
+  парольная фраза = «оставить прежнюю» (keep_or_new). Формы стоят на
+  странице: ошибка приходит в #modal-content со статусом ≥400, hx-on
+  открывает модалку.
+{% endcomment %}
+<div class="st-cols">
+  <div class="st-col">
+    <div>
+      <h2 class="st-h2">Доступ к хостам</h2>
+      <p class="st-lead">Учётная запись и закрытый ключ, которыми приложение входит на серверы и виртуальные машины: проверка справа, пункт «SSH по ключу» в меню адреса и опрос операционных систем синхронизацией.</p>
+    </div>
+
+    {% if ssh.has_key and ssh.key %}
+      <div class="st-banner is-ok">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+        <span class="st-banner-text">Ключ задан: {{ ssh.key.kind }} {{ ssh.key.bits }} бит, отпечаток <code>{{ ssh.key.fingerprint }}</code></span>
+      </div>
+    {% elif ssh.has_key %}
+      <div class="st-banner is-danger" role="alert">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+        <span class="st-banner-text">Сохранённый ключ не читается: {{ ssh.key_error }} Вставьте ключ заново.</span>
+      </div>
+    {% else %}
+      <div class="st-banner is-neutral">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+        <span class="st-banner-text">Ключ не задан. Пока его нет, вход по ключу нигде не используется.</span>
+      </div>
+    {% endif %}
+
+    <form id="st-ssh-form" class="st-col"
+          hx-post="{% url 'ip_plan:settings_ssh_access_save' %}" hx-target="#modal-content" hx-indicator="#modal-spinner"
+          hx-on::after-request="if (event.detail.xhr.status >= 400) { Alpine.store('modal').dirty = false; window.dispatchEvent(new CustomEvent('open-modal')); }">
+      {% csrf_token %}
+      <input type="hidden" name="file_hash" value="{{ file_hash }}">
+
+      <section class="st-sec">
+        <span class="st-sec-title">Учётная запись</span>
+        <div class="st-grid2">
+          <label class="st-field">
+            <span class="st-label">Пользователь</span>
+            <input class="st-input is-mono" name="username" value="{{ ssh.username }}" autocomplete="off" spellcheck="false" required>
+            <span class="st-hint">Под этим именем приложение входит на каждый хост</span>
+          </label>
+          <label class="st-field">
+            <span class="st-label">Порт</span>
+            <input class="st-input is-mono" name="port" value="{{ ssh.port }}" inputmode="numeric">
+          </label>
+        </div>
+      </section>
+
+      <section class="st-sec">
+        <span class="st-sec-title">Закрытый ключ</span>
+        <label class="st-field">
+          <span class="st-label">Ключ</span>
+          <textarea class="st-input" name="private_key" rows="7" autocomplete="off" spellcheck="false"
+                    placeholder="{% if ssh.has_key %}Ключ сохранён и не показывается. Оставьте поле пустым, чтобы не менять его, или вставьте новый.{% else %}-----BEGIN OPENSSH PRIVATE KEY-----&#10;…&#10;-----END OPENSSH PRIVATE KEY-----{% endif %}"></textarea>
+          <span class="st-hint">Ed25519, ECDSA или RSA в формате OpenSSH либо PEM. Файл без расширения <code>.pub</code>; ключ PuTTY (<code>.ppk</code>) сначала преобразуйте в OpenSSH.</span>
+        </label>
+        <div class="st-grid2">
+          <label class="st-field">
+            <span class="st-label">Парольная фраза ключа</span>
+            <input class="st-input" name="passphrase" type="password" placeholder="{{ ssh.passphrase_mask }}" autocomplete="new-password">
+            <span class="st-hint">{% if ssh.passphrase_mask %}Оставьте пустым, чтобы не менять. {% endif %}Только если ключ ею защищён.</span>
+          </label>
+        </div>
+      </section>
+    </form>
+
+    {% if ssh.has_key and ssh.key %}
+      <section class="st-sec is-gap12">
+        <div>
+          <span class="st-sec-title">Открытая часть</span>
+          <div class="st-sec-desc">Её кладут в <span class="mono">~{{ ssh.username }}/.ssh/authorized_keys</span> на хостах.</div>
+        </div>
+        <pre class="st-pubkey">{{ ssh.key.public }} ip_plan</pre>
+      </section>
+    {% endif %}
+
+    <div class="st-form-foot is-between">
+      {% if ssh.has_key %}
+        <form hx-post="{% url 'ip_plan:settings_ssh_access_delete' %}" hx-target="#modal-content"
+              hx-on::after-request="if (event.detail.xhr.status >= 400) { Alpine.store('modal').dirty = false; window.dispatchEvent(new CustomEvent('open-modal')); }"
+              hx-confirm="Удалить ключ и пользователя? Вход по ключу перестанет работать везде, где он использовался.">
+          {% csrf_token %}
+          <button type="submit" class="st-btn st-btn-ghost is-danger">Удалить ключ</button>
+        </form>
+      {% else %}<span></span>{% endif %}
+      <button type="submit" form="st-ssh-form" class="st-btn st-btn-primary is-md">Сохранить</button>
+    </div>
+  </div>
+
+  <div class="st-side">
+    <section class="st-side-card">
+      <span class="st-side-title">Проверить вход</span>
+      <form id="ssh-test-form" style="display:flex; flex-direction:column; gap:12px; margin:0"
+            hx-post="{% url 'ip_plan:settings_ssh_access_test' %}" hx-target="#ssh-test-result" hx-swap="innerHTML" hx-indicator="#modal-spinner">
+        {% csrf_token %}
+        <label class="st-field">
+          <span class="st-label">Хост</span>
+          <input class="st-input is-mono is-36" name="test_host" autocomplete="off" spellcheck="false" placeholder="10.1.108.112 или имя"{% if not ssh.has_key %} disabled{% endif %}>
+        </label>
+        <button type="submit" class="st-btn st-btn-outline is-34"{% if not ssh.has_key %} disabled title="Сначала сохраните ключ"{% endif %}>Проверить</button>
+      </form>
+      <div id="ssh-test-result" class="st-result"></div>
+      <span class="st-side-note">Входит на хост сохранённым ключом и читает сведения об ОС. На хосте выполняется одна команда чтения, ничего не меняется.</span>
+    </section>
+    <section class="st-side-card is-plain">
+      <span class="st-side-title is-13">Где используется</span>
+      <span class="st-side-text">Шлюз «в браузере», пункт «SSH по ключу» в меню адреса{% if not gateway_enabled %} — шлюз сейчас выключен{% endif %}.</span>
+      <span class="st-side-text">В журнале хоста все такие входы — один пользователь; кто открыл сессию, видно только в логе ip_plan.</span>
+    </section>
+  </div>
+</div>

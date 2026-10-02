@@ -1,59 +1,59 @@
-<div class="modal-title-bar">
-  <h5>{% if target %}{{ target.username }}{% else %}Новая локальная учётная запись{% endif %}</h5>
-  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
-</div>
+{% comment %}
+  Локальная учётная запись — модалка (user_form / user_save). Поля
+  username, password, is_staff, is_superuser, is_active,
+  must_change_password. Пароль: у существующей пусто = не менять.
+{% endcomment %}
+<div class="st st-modal">
+  <div class="modal-title-bar">
+    <div>
+      <h5>{% if target %}{{ target.username }}{% else %}Локальная учётка{% endif %}</h5>
+      <div class="st-modal-sub">{% if target %}локальная учётная запись{% else %}аварийный вход, когда каталог недоступен{% endif %}</div>
+    </div>
+    <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>
 
-<form hx-post="{% if target %}{% url 'ip_plan:settings_user_save' target.id %}{% else %}{% url 'ip_plan:settings_user_add_save' %}{% endif %}"
-      hx-target="#modal-content" hx-indicator="#modal-spinner">
-  {% csrf_token %}
+  <form hx-post="{% if target %}{% url 'ip_plan:settings_user_save' target.id %}{% else %}{% url 'ip_plan:settings_user_add_save' %}{% endif %}"
+        hx-target="#modal-content" hx-indicator="#modal-spinner">
+    {% csrf_token %}
 
-  <div class="modal-body-pad">
-    <div class="field-group">
-      <div class="field-group-title">Учётная запись</div>
-      <div class="set-field">
-        <label class="field-label" for="u-name">Имя пользователя</label>
-        <input class="field-control set-mono" id="u-name" name="username" value="{{ target.username|default:'' }}" required autofocus>
-        {% if not target %}
-          <div class="set-hint">
-            Не должно совпадать с именем в FreeIPA — локальная учётка перекрыла бы человеку
-            вход через каталог. Проверяется при сохранении.
-          </div>
-        {% endif %}
+    <div class="modal-body-pad">
+      <div class="st-grid2">
+        <label class="st-field">
+          <span class="st-label">Имя пользователя</span>
+          <input class="st-input is-mono" name="username" value="{{ target.username|default:'' }}" required autofocus autocomplete="off" spellcheck="false">
+          {% if not target %}<span class="st-hint">Не должно совпадать с именем в FreeIPA — проверяется при сохранении.</span>{% endif %}
+        </label>
+        <label class="st-field">
+          <span class="st-label">Пароль</span>
+          <input class="st-input" name="password" type="password" autocomplete="new-password"{% if not target %} required{% endif %}>
+          <span class="st-hint">{% if target %}Оставьте пустым, чтобы не менять.{% else %}Не короче 10 символов, не только цифры, не из списка частых.{% endif %}</span>
+        </label>
       </div>
-      <div class="set-field" style="margin-top:.7rem">
-        <label class="field-label" for="u-pw">Пароль</label>
-        <input class="field-control" id="u-pw" name="password" type="password" autocomplete="new-password"
-               {% if not target %}required{% endif %}>
-        <div class="set-hint">
-          {% if target %}Оставьте пустым, чтобы не менять.
-          {% else %}Не короче 10 символов, не только цифры, не из списка частых.{% endif %}
+
+      <div>
+        <div class="st-label" style="margin-bottom:2px">Что разрешено</div>
+        <div class="st-switch-row">
+          <span class="st-switch-text"><span class="st-switch-title">Настройки синхронизации</span><span class="st-switch-note">оборудование, гипервизоры, сканирование</span></span>
+          <label class="st-switch"><input type="checkbox" role="switch" name="is_staff" value="1"{% if target.is_staff %} checked{% endif %} aria-label="Настройки синхронизации"><span class="st-switch-track" aria-hidden="true"></span></label>
+        </div>
+        <div class="st-switch-row">
+          <span class="st-switch-text"><span class="st-switch-title">Суперпользователь</span><span class="st-switch-note">вход, учётные записи, токен NetBox</span></span>
+          <label class="st-switch"><input type="checkbox" role="switch" name="is_superuser" value="1"{% if target.is_superuser %} checked{% endif %} aria-label="Суперпользователь"><span class="st-switch-track" aria-hidden="true"></span></label>
+        </div>
+        <div class="st-switch-row">
+          <span class="st-switch-text"><span class="st-switch-title">Учётная запись активна</span></span>
+          <label class="st-switch"><input type="checkbox" role="switch" name="is_active" value="1"{% if not target or target.is_active %} checked{% endif %} aria-label="Учётная запись активна"><span class="st-switch-track" aria-hidden="true"></span></label>
+        </div>
+        <div class="st-switch-row">
+          <span class="st-switch-text"><span class="st-switch-title">Сменить пароль при следующем входе</span></span>
+          <label class="st-switch"><input type="checkbox" role="switch" name="must_change_password" value="1"{% if target.local_account.must_change_password %} checked{% endif %} aria-label="Сменить пароль при следующем входе"><span class="st-switch-track" aria-hidden="true"></span></label>
         </div>
       </div>
     </div>
 
-    <div class="field-group">
-      <div class="field-group-title">Что разрешено</div>
-      <label class="set-check">
-        <input type="checkbox" name="is_staff" {% if target.is_staff %}checked{% endif %}>
-        <span>Настройки синхронизации <span class="set-muted">— оборудование, гипервизоры, сканирование</span></span>
-      </label>
-      <label class="set-check">
-        <input type="checkbox" name="is_superuser" {% if target.is_superuser %}checked{% endif %}>
-        <span>Суперпользователь <span class="set-muted">— вход, учётные записи, токен NetBox</span></span>
-      </label>
-      <label class="set-check">
-        <input type="checkbox" name="is_active" {% if not target or target.is_active %}checked{% endif %}>
-        <span>Учётная запись активна</span>
-      </label>
-      <label class="set-check">
-        <input type="checkbox" name="must_change_password" {% if target.local_account.must_change_password %}checked{% endif %}>
-        <span>Потребовать смену пароля при следующем входе</span>
-      </label>
+    <div class="modal-footer-bar">
+      <button type="button" class="st-btn st-btn-ghost" @click="$store.modal.requestClose()">Отмена</button>
+      <button type="submit" class="st-btn st-btn-primary is-md">Сохранить</button>
     </div>
-  </div>
-
-  <div class="modal-footer-bar">
-    <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Отмена</button>
-    <button type="submit" class="btn-modal-primary">Сохранить</button>
-  </div>
-</form>
+  </form>
+</div>

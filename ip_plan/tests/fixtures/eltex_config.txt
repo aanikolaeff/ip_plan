@@ -1,0 +1,61 @@
+terminal length 0
+
+% Unrecognized command
+lab-mes-sw01#show running-config
+
+vlan database
+ vlan 100,200
+exit
+!
+hostname lab-mes-sw01
+!
+ip access-list extended SRV-IN
+ permit tcp any any 10.200.10.0 0.0.0.255 22 ace-priority 10
+ permit udp 10.200.20.5 0.0.0.0 any 10.200.10.53 0.0.0.0 range 53 54 ace-priority 20
+ deny ip 192.0.2.0 0.0.0.255 any ace-priority 30 log-input
+ permit icmp any 10.200.10.0 0.0.0.255 8 any ace-priority 40
+ permit ip any any any any ace-priority 50
+exit
+!
+ip access-list extended UNUSED
+ deny ip any any ace-priority 10 time-range NIGHT
+exit
+!
+ip access-list LEGACY permit 10.200.30.0 0.0.0.255
+ip access-list LEGACY deny any
+!
+mac access-list extended L2-ONLY
+ permit any any ace-priority 10
+exit
+!
+management access-list MGMT
+ permit ip-source 10.200.9.10 service ssh ace-priority 10
+ permit ip-source 10.200.9.0 mask /24 service snmp ace-priority 20
+ permit ip-source 192.0.2.0 mask 255.255.255.0 ace-priority 30
+ deny ace-priority 40
+exit
+management access-class MGMT
+!
+snmp-server server
+encrypted snmp-server community XXXXXXXXXXXXXXXXXXXXXXXX ro view Default
+!
+interface TwentyFiveGigaEthernet1/0/1
+ description ===lab-srv01===
+ service-acl input SRV-IN default-action deny-any
+exit
+!
+interface vlan 100
+ name -=SERVERS=-
+ ip address 10.200.100.4 255.255.255.0
+ service-acl input SRV-IN LEGACY
+exit
+!
+interface vlan 200
+                                                      name -=SHIFTED-BY-PAGER=-
+ ip access-group LEGACY in
+exit
+!
+ip default-gateway 10.200.100.254
+!
+end
+lab-mes-sw01#

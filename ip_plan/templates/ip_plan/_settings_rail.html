@@ -1,0 +1,29 @@
+{% comment %}
+  Рейка разделов настроек (SPEC §0.4): группы «Синхронизация / Источники
+  данных / Доступ / История», пункт — ссылка на вкладку, под названием —
+  файл, который пункт правит. Точка у «Запуск и расписание» — состояние
+  последнего прогона (warn — ошибка или оборван, accent — идёт). На самой
+  вкладке синка _rail точку не считает (чтобы не читать лог дважды) —
+  берём её из уже посчитанного sync.state.
+{% endcomment %}
+<nav class="st-rail" aria-label="Разделы настроек">
+  {% for group in rail %}
+    <div class="st-rail-group">{{ group.title }}</div>
+    {% for item in group.items %}
+      {% if item.key == "sync" and sync %}
+        {% if sync.state == "failed" or sync.state == "aborted" %}{% firstof "warn" as dot %}{% elif sync.state == "running" %}{% firstof "accent" as dot %}{% else %}{% firstof "" as dot %}{% endif %}
+      {% else %}
+        {% firstof item.dot "" as dot %}
+      {% endif %}
+      <a class="st-rail-item{% if item.key == active_tab %} is-active{% endif %}"
+         href="{% url 'ip_plan:settings_tab' item.key %}"
+         aria-current="{% if item.key == active_tab %}page{% else %}false{% endif %}">
+        <span class="st-rail-title">
+          {{ item.title }}
+          {% if dot %}<span class="st-rail-dot is-{{ dot }}" title="{% if dot == 'accent' %}идёт синхронизация{% else %}последний прогон с ошибкой{% endif %}"></span>{% endif %}
+        </span>
+        <span class="st-rail-file">{{ item.file }}</span>
+      </a>
+    {% endfor %}
+  {% endfor %}
+</nav>

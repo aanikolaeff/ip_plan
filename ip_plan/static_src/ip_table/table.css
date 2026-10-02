@@ -1,280 +1,807 @@
 /* ==========================================================================
-   IP-таблица — «патч-панель»
+   IP-таблица «Адреса» — React-остров по макету test_des (Elegant.html)
    ==========================================================================
-   Дизайн-язык этой React/TanStack-таблицы (см. docs/plans/ дизайн-док) —
-   поверх общих токенов style.css (Inter/JetBrains Mono, --accent, --bg-*),
-   их не переопределяем: остальная страница (hero/тулбар/модалки) — общая с
-   HTMX-частью приложения, трогать незачем и рискованно.
-
-   Идея: каждая строка — порт коммутатора. Слева на закреплённом крае —
-   тонкая цветная "лампа" статуса (rail), видна всегда, даже когда широкая
-   таблица прокручена по горизонтали и текстовый бейдж уже уехал за экран.
-   Статус ещё раз — тихим dot+label чипом в самой колонке "Статус" (не
-   сплошной цветной пилюлей — это данные, а не кнопка). IP/порты/CPE/OS —
-   моноширинным JetBrains Mono (уже есть класс .ip-mono в style.css),
-   остальной текст — Inter. Ничего из этого не трогает JS-логику
-   (resize/pin/sort/filter/inline-edit) — только классы/атрибуты. */
+   Только токены style.css (:root / :root[data-theme="dark"]): --soft,
+   --softer, --hover, --line, --line-strong, --accent, --accent-soft,
+   --accent-line, --ok/--warn/--info/--off/--danger, --pop-shadow,
+   --font-mono, --text-main/--text-muted/--text-faint, --bg-surface.
+   Единственные свои значения — палитра тёмной плавающей панели (--float-*)
+   и подсветка совпадений (--hit), которых в style.css нет. */
 
 :root {
-  /* "Сигнальная" палитра статусов — не дефолтный Bootstrap-набор,
-     подобрана отдельно от --accent (синий, используется для интерактива:
-     ссылки, фокус, ресайз), чтобы статус и "это можно нажать" не путались
-     визуально. */
-  --status-active: #16a34a;
-  --status-reserved: #d97706;
-  --status-deprecated: #94a3b8;
-  --status-dhcp: #0ea5e9;
-  --status-slaac: #8b5cf6;
+  --float-bg: rgba(28, 28, 34, .92);
+  --float-text: #f7f7f8;
+  --float-muted: #a9a9b4;
+  --float-line: rgba(255, 255, 255, .1);
+  --float-hover: rgba(255, 255, 255, .08);
+  --hit: color-mix(in srgb, var(--warn) 28%, transparent);
+  --hit-line: color-mix(in srgb, var(--warn) 55%, transparent);
+}
+:root[data-theme="dark"] {
+  --float-bg: rgba(237, 237, 240, .95);
+  --float-text: #131316;
+  --float-muted: #5e5e68;
+  --float-line: rgba(0, 0, 0, .1);
+  --float-hover: rgba(0, 0, 0, .06);
 }
 
-/* ---------- Скролл-контейнер: только сама таблица, не вся страница ----------
-   .table-wrapper (общий класс, используется и на ACL-страницах с DataTables)
-   держит overflow:visible намеренно — см. комментарий в style.css про
-   sticky-шапку DataTables. У React-таблицы нет DataTables-обёртки
-   (.dt-scroll), поэтому без своего контейнера широкая таблица растягивала
-   бы <body>, и горизонтальный скролл двигал бы тулбар/hero вместе с ней.
-   Этот div — единственный, кто реально скроллится по X; заодно он же —
-   "nearest scrolling ancestor" для position:sticky у закреплённых колонок
-   (.col-pinned) — раньше стики резолвился относительно всей страницы,
-   что маскировало ту же проблему, а не решало её. */
-.ip-table-scroll {
-  overflow-x: auto;
-  /* overflow-y:auto + max-height — сознательно, а не просто "пусть страница
-     скроллится": position:sticky у <th> (см. TableRoot.jsx) резолвится
-     относительно БЛИЖАЙШЕГО скролл-контейнера-предка, а не вьюпорта. Раз
-     этому же div уже нужен overflow-x:auto (горизонтальный скролл широкой
-     таблицы), по спеке CSS Overflow вычисленный overflow-y автоматически
-     становится 'auto' тоже (правило "visible+не-visible → оба auto") —
-     div и так уже единственный кандидат на роль sticky-контейнера, что бы
-     тут ни написать. Без реальной ограниченной высоты скроллилась бы
-     страница целиком, а не этот div — и sticky просто не за что было бы
-     "цепляться": scrollTop самого div навсегда остался бы 0. Значение —
-     подобрано под остальной layout страницы (nav 56px + hero + toolbar +
-     отступы .table-wrapper + пагинация под таблицей).
-  */
-  overflow-y: auto;
-  max-height: calc(100vh - 300px);
-  max-width: 100%;
-  border-radius: 24px 24px 0 0; /* верхние углы .table-wrapper — см. там же */
+/* ---------- Контейнер ---------- */
+/* Остров растягивается на всю область содержимого (.shell-body-fixed в
+   shell.css), а прокручивается только .ipt-grid: полоса статусов, тулбар,
+   шапка таблицы и подвал с пагинацией закреплены. */
+.ipt {
+  --row-h: 42px;
+  --head-h: 38px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  color: var(--text-main);
+  font-size: 13px;
+  line-height: 1.35;
+}
+.ipt[data-density="compact"] { --row-h: 34px; }
+.ipt[data-density="relaxed"] { --row-h: 50px; }
+
+.ipt button { font-family: inherit; }
+.ipt b { font-weight: 600; }
+.ipt-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.ipt-muted { color: var(--text-muted); }
+.ipt-faint { color: var(--text-faint); }
+.ipt-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- Ошибка загрузки ---------- */
+.ipt-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 35%, transparent);
+  color: var(--text-main);
+  font-size: 12.5px;
 }
 
-/* ---------- Таблица: layout ---------- */
-
-#ip-table {
-  table-layout: fixed;
-  border-collapse: separate;
-  border-spacing: 0;
+/* ---------- Полоса статусов + заполненность ---------- */
+.ipt-tabs {
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
 }
-#ip-table td {
+.ipt-tablist { display: flex; align-items: center; gap: 2px; min-width: 0; overflow: hidden; }
+.ipt-tab {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+.ipt-tab:hover { background: var(--hover); color: var(--text-main); }
+.ipt-tab.is-on { background: var(--soft); color: var(--text-main); font-weight: 600; }
+.ipt-tab:disabled { opacity: .5; cursor: default; }
+.ipt-tab:disabled:hover { background: transparent; color: var(--text-muted); }
+.ipt-tab-n { font-size: 11px; color: var(--text-faint); }
+
+.ipt-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--dot, var(--off));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot, var(--off)) 16%, transparent);
+}
+.ipt-dot-plain { box-shadow: none; }
+.ipt-dot-free { background: transparent; box-shadow: inset 0 0 0 1.5px var(--text-faint); }
+
+.ipt-occ { display: flex; align-items: center; gap: 12px; flex-shrink: 0; font-size: 12.5px; }
+.ipt-occ b { color: var(--text-main); }
+.ipt-occ-pct { font-weight: 500; }
+.ipt-bar {
+  width: 180px;
+  height: 4px;
+  display: flex;
+  gap: 2px;
+  border-radius: 4px;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+.ipt-bar > span { height: 100%; border-radius: 2px; min-width: 2px; }
+.ipt-summary { font-size: 12.5px; color: var(--text-muted); white-space: nowrap; }
+
+/* ---------- Тулбар ---------- */
+.ipt-toolbar {
+  height: 52px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.ipt-toolbar-left { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+
+.ipt-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  color: var(--text-faint);
+}
+.ipt-search > svg { position: absolute; left: 11px; pointer-events: none; }
+.ipt-search input {
+  width: 260px;
+  height: 34px;
+  padding: 0 12px 0 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+.ipt-search input::placeholder { color: var(--text-faint); }
+.ipt-search input:focus { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+.ipt-search input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+
+.ipt-btn-ghost,
+.ipt-btn-filter {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+.ipt-btn-ghost:hover, .ipt-btn-filter:hover, .ipt-btn-ghost.is-on, .ipt-btn-filter.is-on { background: var(--hover); color: var(--text-main); }
+.ipt-btn-ghost:disabled { opacity: .5; cursor: default; }
+.ipt-btn-filter { border: 1px dashed var(--line-strong); }
+.ipt-btn-filter.is-on { border-style: solid; border-color: var(--accent-line); background: var(--accent-soft); }
+.ipt-btn-sm { height: 30px; padding: 0 10px; font-size: 12.5px; border-radius: 8px; gap: 6px; }
+
+.ipt-chip {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 11px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+  color: var(--text-main);
+  font-size: 12.5px;
+  white-space: nowrap;
+  max-width: 420px;
+}
+.ipt-chip-val { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.ipt-chip-x {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.ipt-chip-x:hover { background: var(--accent-line); color: var(--text-main); }
+
+/* ---------- Таблица (CSS grid) ---------- */
+.ipt-grid {
+  margin: 0 -12px;
+  min-width: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.ipt-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  height: var(--head-h);
+  display: grid;
+  align-items: center;
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--bg-surface);
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: .01em;
+}
+.ipt-hcell { min-width: 0; padding: 0 10px; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.ipt-hbtn {
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.ipt-hbtn:hover { color: var(--text-main); }
+.ipt-hbtn.is-sorted { color: var(--text-main); }
+.ipt-hcell.ipt-c-select, .ipt-cell.ipt-c-select,
+.ipt-hcell.ipt-c-actions, .ipt-cell.ipt-c-actions { justify-content: center; padding: 0; }
+
+.ipt-body { display: flex; flex-direction: column; min-height: 120px; }
+
+.ipt-row {
+  height: var(--row-h);
+  flex-shrink: 0;
+  display: grid;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  transition: background .1s ease;
+}
+.ipt-row:hover { background: var(--softer); }
+.ipt-row.is-menu { background: var(--softer); }
+.ipt-row.is-selected { background: var(--accent-soft); }
+.ipt-row.is-selected:hover { background: color-mix(in srgb, var(--accent-soft) 80%, var(--softer)); }
+
+.ipt-cell {
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+.ipt-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ipt-txt[data-editable] { cursor: text; }
+.ipt-cell-copy { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 auto; }
+.ipt-cell-copy > .ipt-txt { flex: 1 1 auto; }
+
+.ipt-inline-input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--accent-line);
+  border-radius: 7px;
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 12.5px;
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Чекбоксы — акцентного цвета, без Bootstrap-рамок */
+.ipt input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* Элементы, видимые при наведении на строку */
+.ipt-reveal { opacity: 0; transition: opacity .12s ease; }
+.ipt-row:hover .ipt-reveal, .ipt-row.is-menu .ipt-reveal, .ipt-reveal:focus-visible, .ipt-reveal.is-on { opacity: 1; }
+@media (hover: none) { .ipt-reveal { opacity: 1; } }
+
+.ipt-ibtn {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.ipt-ibtn:hover { background: var(--soft); color: var(--text-main); }
+
+/* Адрес */
+.ipt-addr { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ipt-addr-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ipt-addr-link:hover { color: var(--accent); }
+.ipt-addr-mask { display: none; color: var(--text-faint); font-size: 11.5px; margin-left: -6px; }
+.ipt[data-density="relaxed"] .ipt-addr-mask { display: inline; }
+.ipt-role {
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10.5px;
+  line-height: 17px;
+  font-weight: 500;
+  letter-spacing: .02em;
   white-space: nowrap;
 }
 
-/* ---------- Заголовок: тихая "control strip" ---------- */
-
-#ip-table thead th {
-  position: relative;
-  text-align: left;
-  /* Bootstrap задаёт .table > thead { vertical-align: bottom } — при
-     смешанном контенте заголовков (чекбокс select-all высотой ~13px vs
-     текстовые лейблы ~16.5px из-за line-height) это выравнивало их по
-     нижнему краю НЕОДИНАКОВО (у разных по высоте инлайн-боксов "низ"
-     физически оказывается на разных Y), из-за чего чекбокс визуально
-     стоял выше текста заголовков вместо одной линии. middle — то самое
-     выравнивание, для которого и предназначен vertical-align в table:
-     общая базовая линия для разновысокого инлайн-контента внутри ячейки. */
-  vertical-align: middle;
-  padding: .5rem .65rem;
-  font-size: .6875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  color: var(--text-muted);
-  background: var(--bg-page);
-  border-bottom: 1px solid var(--border-soft-strong);
-  cursor: default;
-}
-.th-label {
+/* Статус */
+.ipt-status {
+  max-width: 100%;
+  height: 26px;
   display: inline-flex;
   align-items: center;
-  gap: .3em;
-}
-.sort-indicator {
-  font-size: .6em;
-  color: var(--text-faint);
-  opacity: .5;
-  transition: opacity .12s ease, color .12s ease;
-}
-.sort-indicator.active {
-  color: var(--accent);
-  opacity: 1;
-}
-
-/* ---------- Ячейки данных ---------- */
-
-#ip-table tbody td {
-  /* Bootstrap задаёт .table { vertical-align: top }, наследуется в tbody —
-     при строке, чья высота растёт из-за одной "высокой" ячейки (напр.
-     .ip-cell-row в колонке "Адрес" сама себя центрирует flex'ом и требует
-     места под кебаб-кнопку), простой инлайн-контент СОСЕДНИХ ячеек
-     (чекбокс, статус-чип) прилипал к верху вместо центра — визуально
-     оказывался на несколько пикселей выше адреса/текста в той же строке.
-     middle убирает это несоответствие: весь контент строки выравнивается
-     по одной общей середине независимо от того, какая ячейка "выше". */
-  vertical-align: middle;
-  padding: .5rem .65rem;
-  font-size: .8125rem;
-  border-bottom: 1px solid var(--border-soft);
-}
-#ip-table .cell-value { color: var(--text-main); }
-#ip-table .cell-muted { color: var(--text-muted); }
-#ip-table .ip-mono { font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
-
-/* ---------- Статус-рейка на закреплённом крае ("лампа порта") ---------- */
-
-#ip-table tbody tr td.col-pinned:first-child {
-  position: relative;
-}
-#ip-table tbody tr td.col-pinned:first-child::before {
-  content: "";
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 3px;
-  background: var(--border-soft-strong);
-}
-#ip-table tbody tr[data-status="active"] td.col-pinned:first-child::before { background: var(--status-active); }
-#ip-table tbody tr[data-status="reserved"] td.col-pinned:first-child::before { background: var(--status-reserved); }
-#ip-table tbody tr[data-status="deprecated"] td.col-pinned:first-child::before { background: var(--status-deprecated); }
-#ip-table tbody tr[data-status="dhcp"] td.col-pinned:first-child::before { background: var(--status-dhcp); }
-#ip-table tbody tr[data-status="slaac"] td.col-pinned:first-child::before { background: var(--status-slaac); }
-
-/* ---------- Статус-чип (тихий dot+label, не пилюля-кнопка) ---------- */
-
-.status-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: .4em;
-  font-size: .8125rem;
-  color: var(--text-main);
-  /* Точка стоит впритык к левому краю чипа — без отступа её гало
-     (box-shadow ниже, бежит на 3px во все стороны) обрезалось родительским
-     overflow:hidden (.cell-value/ячейка таблицы) ровно по левому краю,
-     справа/сверху/снизу оставаясь целым. Отступ даёт гало место, прежде
-     чем упереться в границу клиппинга. */
-  margin-left: 3px;
-}
-.status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex: none;
-  background: var(--border-soft-strong);
-}
-.status-chip[data-status="active"] .status-dot { background: var(--status-active); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-active) 18%, transparent); }
-.status-chip[data-status="reserved"] .status-dot { background: var(--status-reserved); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-reserved) 18%, transparent); }
-.status-chip[data-status="deprecated"] .status-dot { background: var(--status-deprecated); }
-.status-chip[data-status="dhcp"] .status-dot { background: var(--status-dhcp); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-dhcp) 18%, transparent); }
-.status-chip[data-status="slaac"] .status-dot { background: var(--status-slaac); box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-slaac) 18%, transparent); }
-/* "revoked" — статус записи блокировки регулятора (RegulatorEntry.status),
-   не статус IP-адреса — переиспользует "deprecated"-серый семантически
-   (снята ≈ неактивна), без своего токена цвета. */
-.status-chip[data-status="revoked"] .status-dot { background: var(--status-deprecated); }
-
-/* ---------- Строки: зебра тише, hairline вместо чистой заливки ---------- */
-
-#ip-table tbody tr:nth-child(odd) td { background: var(--bg-row-odd); }
-#ip-table tbody tr:nth-child(even) td { background: var(--bg-row-even); }
-#ip-table tbody tr:hover td { background: var(--bg-row-hover); }
-#ip-table tbody tr.row-selected td { background: color-mix(in srgb, var(--accent) 10%, var(--bg-row-odd)); }
-
-/* ---------- Закреплённые колонки (select + address) ---------- */
-
-#ip-table-root .col-pinned {
-  background: var(--bg-row-odd);
-}
-#ip-table tbody tr:nth-child(even) .col-pinned { background: var(--bg-row-even); }
-#ip-table tbody tr:hover .col-pinned { background: var(--bg-row-hover); }
-#ip-table tbody tr.row-selected .col-pinned { background: color-mix(in srgb, var(--accent) 10%, var(--bg-row-odd)); }
-#ip-table thead th.col-pinned {
-  background: var(--bg-page);
-  /* z-index сюда НЕ дублируем: закреплённые заголовки уже получают
-     zIndex:5 инлайн-стилем из TableRoot.jsx (обычные — 4), именно чтобы
-     "Адрес" всегда лежал поверх остальных колонок при горизонтальном
-     скролле. Раньше здесь стоял свой z-index:4 !important — !important
-     побеждает инлайн-стиль, сбрасывал закреплённый заголовок обратно на
-     4, вровень с обычными, и при равном z-index более поздние в DOM
-     ячейки ("Принадлежность" и т.д.) рисовались поверх более ранней
-     ("Адрес") вместо того, чтобы уходить под неё. */
-}
-/* Тень-градиент справа от последней закреплённой колонки — сигнал границы
-   при горизонтальном скролле широкой таблицы (адрес — 2-й <td>/<th>: 1-й
-   всегда чекбокс, порядок закреплённых колонок пользователь не меняет). */
-#ip-table td.col-pinned:nth-child(2),
-#ip-table th.col-pinned:nth-child(2) {
-  box-shadow: 4px 0 6px -4px rgba(24, 33, 47, .18);
-}
-
-/* ---------- Ресайз-хэндл: волосяная линия по умолчанию, акцент на hover
-   (открывает возможность взгляду — раньше не было видно вообще, что можно
-   тянуть) ---------- */
-
-.column-resizer {
-  position: absolute;
-  right: -3px;
-  top: 0;
-  height: 100%;
-  width: 7px;
-  cursor: col-resize;
-  user-select: none;
-  touch-action: none;
+  gap: 8px;
+  margin-left: -6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
   background: transparent;
-}
-.column-resizer::after {
-  content: "";
-  position: absolute;
-  right: 3px;
-  top: .35rem;
-  bottom: .35rem;
-  width: 1px;
-  background: var(--border-soft-strong);
-  transition: background .12s ease, width .12s ease, right .12s ease;
-}
-.column-resizer:hover::after,
-.column-resizer.resizing::after {
-  background: var(--accent);
-  width: 2px;
-  right: 2.5px;
-}
-
-/* ---------- Пагинация ---------- */
-
-.pagination-bar {
-  display: flex;
-  align-items: center;
-  gap: .75rem;
-  justify-content: center;
-  padding: .65rem 0 0;
-  font-size: .8125rem;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-.pagination-bar button {
-  border: 1px solid var(--border-soft-strong);
-  background: var(--bg-row-odd);
   color: var(--text-main);
-  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+.ipt-status:hover, .ipt-status.is-open { background: var(--soft); }
+.ipt-status:disabled { cursor: wait; }
+
+/* Тэги */
+.ipt-tags { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; }
+.ipt-tag {
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--soft);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+/* Совместимость со старыми классами ячейки ОС (os-menu.jsx / style.css) */
+.ipt .cell-display { display: flex; align-items: center; min-width: 0; width: 100%; }
+.ipt .cell-with-copy { display: flex; align-items: center; gap: 6px; min-width: 0; width: 100%; }
+.ipt .cell-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.ipt .cell-clear-btn { opacity: 0; }
+.ipt-row:hover .cell-clear-btn { opacity: 1; }
+
+/* Кебаб */
+.ipt-kebab {
   width: 28px;
   height: 28px;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
   cursor: pointer;
-  transition: border-color .12s ease, color .12s ease;
 }
-.pagination-bar button:hover:not(:disabled) {
-  border-color: var(--accent);
+.ipt-kebab:hover { background: var(--soft); color: var(--text-main); }
+.ipt-kebab.is-on { background: var(--soft); color: var(--text-main); }
+
+/* Свободные диапазоны */
+.ipt-gap {
+  height: var(--row-h);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-left: 62px;
+  padding-right: 16px;
+  border-bottom: 1px solid var(--line);
+  background: repeating-linear-gradient(135deg, transparent 0 7px, var(--softer) 7px 8px);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ipt-gap b { color: var(--text-main); font-weight: 500; }
+.ipt-gap-range { font-size: 12px; color: var(--text-faint); }
+.ipt-gap-take {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
 }
-.pagination-bar button:disabled {
-  opacity: .35;
-  cursor: default;
+.ipt-gap-take:hover { text-decoration: underline; }
+
+.ipt-empty {
+  padding: 36px 16px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 13px;
 }
+
+/* ---------- Подвал ---------- */
+.ipt-foot {
+  height: 48px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.ipt-foot b { color: var(--text-main); font-weight: 500; }
+.ipt-pager { display: flex; align-items: center; gap: 2px; }
+.ipt-pbtn {
+  min-width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.ipt-pbtn:hover { background: var(--hover); color: var(--text-main); }
+.ipt-pbtn:disabled { color: var(--line-strong); cursor: default; background: transparent; }
+.ipt-pbtn.is-on { background: var(--soft); color: var(--text-main); font-weight: 500; }
+.ipt-pellip { min-width: 24px; text-align: center; color: var(--text-faint); }
+
+/* ---------- Поповеры ---------- */
+.ipt-pop {
+  position: fixed;
+  z-index: 1080;
+  border-radius: 12px;
+  background: var(--bg-surface);
+  box-shadow: var(--pop-shadow);
+  color: var(--text-main);
+  font-size: 13px;
+  line-height: 1.35;
+}
+.ipt-pop-menu { width: 244px; padding: 6px; display: flex; flex-direction: column; }
+.ipt-pop-status { min-width: 170px; padding: 6px; display: flex; flex-direction: column; }
+.ipt-mi {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ipt-mi:hover { background: var(--hover); }
+.ipt-mi.is-danger { color: var(--danger); }
+.ipt-mi-icon { color: var(--text-muted); flex-shrink: 0; }
+.ipt-mi.is-danger .ipt-mi-icon { color: inherit; }
+.ipt-mi-label { flex-grow: 1; }
+.ipt-mi-key { font-size: 11px; color: var(--text-faint); }
+.ipt-mi.is-danger .ipt-mi-key { color: inherit; opacity: .8; }
+.ipt-mi-check { color: var(--accent); }
+.ipt-sep { height: 1px; margin: 6px 4px; background: var(--line); }
+.ipt-sep-h { height: 1px; background: var(--line); }
+.ipt-pop-foot {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px 0 16px;
+  border-top: 1px solid var(--line);
+  background: var(--softer);
+  border-radius: 0 0 12px 12px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.ipt-sec-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* Меню «Фильтр» — два уровня рядом */
+.ipt-pop-filter {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+}
+.ipt-fm-fields, .ipt-fm-values {
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: var(--bg-surface);
+  box-shadow: var(--pop-shadow);
+  overflow: hidden;
+}
+.ipt-fm-fields { width: 264px; }
+.ipt-fm-values { width: 300px; }
+.ipt-fm-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-faint);
+}
+.ipt-fm-search > svg { position: absolute; left: 14px; pointer-events: none; }
+.ipt-fm-search input {
+  width: 100%;
+  height: 44px;
+  padding: 0 14px 0 36px;
+  border: 0;
+  background: transparent;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.ipt-fm-search input::placeholder { color: var(--text-faint); }
+.ipt-fm-list { display: flex; flex-direction: column; padding: 6px; }
+.ipt-fm-field {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.ipt-fm-field:hover { background: var(--softer); }
+.ipt-fm-field.is-active { background: var(--hover); font-weight: 600; }
+.ipt-fm-ficon { width: 16px; display: flex; justify-content: center; color: var(--text-muted); }
+.ipt-fm-flabel { flex-grow: 1; }
+.ipt-fm-chev { color: var(--text-faint); }
+.ipt-badge-n {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+}
+.ipt-fm-vlist { display: flex; flex-direction: column; padding: 6px; max-height: 340px; overflow: auto; }
+.ipt-fm-value {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin: 0;
+}
+.ipt-fm-value:hover { background: var(--hover); }
+.ipt-fm-vtext { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; line-height: 16px; }
+.ipt-fm-vtext > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ipt-fm-vmono { font-size: 12.5px; }
+.ipt-fm-vnote { font-size: 11.5px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ipt-fm-vcount { font-size: 11px; color: var(--text-faint); }
+.ipt-fm-empty { padding: 12px 10px; color: var(--text-faint); font-size: 12.5px; }
+.ipt-fm-foot {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 0 14px;
+  border-top: 1px solid var(--line);
+  background: var(--softer);
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* Меню «Вид» */
+.ipt-pop-view { width: 332px; display: flex; flex-direction: column; border-radius: 14px; overflow: hidden; }
+.ipt-vm-sec { display: flex; flex-direction: column; gap: 10px; padding: 16px 16px 14px; }
+.ipt-vm-sec-tight { padding: 8px; gap: 0; }
+.ipt-seg {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--soft);
+}
+.ipt-seg-btn {
+  height: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.ipt-seg-btn.is-on { background: var(--bg-surface); color: var(--text-main); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .08), 0 0 0 1px var(--line); }
+.ipt-seg-lines { display: flex; flex-direction: column; }
+.ipt-seg-lines i { display: block; width: 18px; height: 1.5px; border-radius: 1px; background: currentColor; }
+.ipt-vm-colhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px 6px; }
+.ipt-vm-colnote { font-size: 12px; color: var(--text-faint); white-space: nowrap; }
+.ipt-vm-colnote b { color: var(--text-main); font-weight: 500; }
+.ipt-vm-cols { display: flex; flex-direction: column; padding: 0 8px 8px; max-height: 380px; overflow: auto; }
+.ipt-vm-row {
+  height: 34px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
+  border-radius: 8px;
+  transition: background .1s ease;
+}
+.ipt-vm-row:hover { background: var(--softer); }
+.ipt-vm-row[draggable="true"] { cursor: grab; }
+.ipt-vm-row.is-drag { opacity: .45; }
+.ipt-vm-row.is-over { box-shadow: inset 0 2px 0 var(--accent); }
+.ipt-vm-row.is-static { height: 36px; }
+.ipt-vm-grip { color: var(--text-muted); flex-shrink: 0; }
+.ipt-vm-grip.is-idle { color: var(--text-faint); }
+.ipt-vm-label { flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ipt-vm-always { font-weight: 500; }
+.ipt-vm-scan { font-size: 11px; color: var(--text-faint); }
+.ipt-vm-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px 4px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.ipt-vm-divider span { flex-grow: 1; height: 1px; background: var(--line); }
+
+.ipt-switch {
+  position: relative;
+  width: 30px;
+  height: 18px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--line-strong);
+  cursor: pointer;
+  transition: background .15s ease;
+  padding: 0;
+}
+.ipt-switch.is-on { background: var(--accent); }
+.ipt-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .2);
+  transition: left .15s ease;
+}
+.ipt-switch.is-on .ipt-switch-knob { left: 14px; }
+
+/* ---------- Плавающая панель выделения ---------- */
+.ipt-float {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: 1070;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px 0 16px;
+  border-radius: 14px;
+  background: var(--float-bg);
+  color: var(--float-text);
+  box-shadow: var(--pop-shadow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  white-space: nowrap;
+  font-size: 13px;
+  animation: ipt-float-in .16s ease-out;
+}
+@keyframes ipt-float-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.ipt-float-count { font-weight: 600; }
+.ipt-float-sep { width: 1px; height: 20px; margin: 0 8px 0 14px; background: var(--float-line); }
+.ipt-float-sep-tight { margin: 0 6px; }
+.ipt-fbtn {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--float-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.ipt-fbtn:hover, .ipt-fbtn.is-on { background: var(--float-hover); }
+.ipt-fbtn:disabled { opacity: .5; cursor: default; background: transparent; }
+.ipt-fbtn.is-danger { color: var(--danger); }
+.ipt-fbtn-x { width: 34px; padding: 0; justify-content: center; color: var(--float-muted); }
+
+/* ---------- Узкие экраны ---------- */
+@media (max-width: 1100px) {
+  .ipt-search input { width: 200px; }
+  .ipt-bar { width: 120px; }
+}
+
+/* ---------- Меню строки: подзаголовок «Подключиться» ---------- */
+.ipt-mi-head {
+  padding: 6px 10px 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* ---------- Меню «Вид»: подключение к хостам ---------- */
+.ipt-vm-fields { display: flex; gap: 10px; }
+.ipt-vm-field { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted); }
+.ipt-vm-input {
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-main);
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+.ipt-vm-input::placeholder { color: var(--text-faint); }
+.ipt-vm-input:focus { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+.ipt-vm-hint { font-size: 11.5px; line-height: 1.4; color: var(--text-faint); }

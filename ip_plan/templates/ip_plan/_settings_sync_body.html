@@ -1,0 +1,167 @@
+{% comment %}
+  Тело экрана «Запуск и расписание» (SPEC §1 — покой, §2 — идёт прогон).
+  Контекст: sync = sync_overview.overview() (CONTRACT-settings §1).
+
+  Запуск и остановка из интерфейса — заглушки (решение 01.10.2026): кнопки
+  шлют hx-post на settings_sync_run, сервер отвечает 204 и тостом, что
+  запуск пока делается на хосте. Пока прогон идёт, блок опрашивает
+  settings_sync_state каждые 5 с и заменяет себя; в ответе без running
+  атрибутов опроса нет — опрос прекращается сам.
+{% endcomment %}
+<div class="st-screen is-gap20" id="st-sync" x-data="stSteps()"
+     {% if sync.running %}hx-get="{% url 'ip_plan:settings_sync_state' %}" hx-trigger="every 5s" hx-target="this" hx-swap="outerHTML"{% endif %}>
+
+  <div class="st-screen-head">
+    <div>
+      <h2 class="st-h2">Синхронизация</h2>
+      <p class="st-lead is-640">Сбор данных с оборудования и гипервизоров в NetBox. По расписанию запускается каждую ночь целиком; отсюда можно запустить весь прогон или отдельные шаги — кроме сканирования сетей.</p>
+    </div>
+    {% if sync.running %}
+      <button type="button" class="st-btn st-btn-outline is-40 is-danger"
+              hx-post="{% url 'ip_plan:settings_sync_run' %}" hx-vals='{"action": "stop"}' hx-swap="none"
+              hx-confirm="Остановить прогон? Текущий шаг прервётся."
+              title="Остановка из интерфейса пока не подключена">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"></rect></svg>
+        Остановить
+      </button>
+    {% else %}
+      <button type="button" class="st-btn st-btn-primary is-lg"
+              hx-post="{% url 'ip_plan:settings_sync_run' %}" hx-vals='{"action": "run"}' hx-swap="none"
+              title="Скоро: запуск из интерфейса пока не подключён">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z"></path></svg>
+        Запустить синхронизацию
+      </button>
+    {% endif %}
+  </div>
+
+  {% if sync.running %}
+    {# ── Идёт прогон: панель прогресса (§2) ── #}
+    <div class="st-progress">
+      <div class="st-progress-row">
+        <span class="st-progress-title">
+          <span class="st-dot is-accent"></span>
+          {% if sync.progress %}Идёт синхронизация · шаг {{ sync.progress.position }} из {{ sync.progress.total }}{% if sync.progress.step_name %} — {{ sync.progress.step_name }}{% endif %}{% else %}Идёт синхронизация{% endif %}
+        </span>
+        {% if sync.progress.elapsed %}
+          <span class="st-progress-meta">{{ sync.progress.elapsed }}{% if sync.progress.remaining %} · осталось {{ sync.progress.remaining }}{% endif %}</span>
+        {% endif %}
+      </div>
+      <div class="st-progress-track"><span class="st-progress-fill" style="width: {{ sync.progress.pct|default:2 }}%"></span></div>
+    </div>
+  {% elif sync.state == "none" %}
+    <div class="st-banner is-info">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+      Логов прогона ещё нет — синхронизация на этом стенде не запускалась или не смонтирован sync_logs.
+    </div>
+  {% else %}
+    {# ── Сводка последнего прогона (§1.2) ── #}
+    <div class="st-stats">
+      <div class="st-stat">
+        <div class="st-stat-label">Последний прогон</div>
+        <div class="st-stat-value">{{ sync.started|default:"—" }}</div>
+        <div class="st-stat-note">{% if sync.duration %}{{ sync.duration }}{% else %}&nbsp;{% endif %}</div>
+      </div>
+      <div class="st-stat">
+        <div class="st-stat-label">Результат</div>
+        {% if sync.state == "ok" %}
+          <div class="st-stat-value is-ok"><span class="st-dot is-ok"></span>{{ sync.ok_count }} из {{ sync.total_count }} шагов</div>
+          <div class="st-stat-note">&nbsp;</div>
+        {% elif sync.state == "failed" %}
+          <div class="st-stat-value is-warn"><span class="st-dot is-warn"></span>{{ sync.ok_count }} из {{ sync.total_count }} шагов</div>
+          <div class="st-stat-note" title="{% for f in sync.failed %}{{ f.title }} — {{ f.label|lower }}{% if not forloop.last %}, {% endif %}{% endfor %}">{% for f in sync.failed %}{{ f.title }} — {{ f.label|lower }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+        {% else %}
+          <div class="st-stat-value is-warn"><span class="st-dot is-warn"></span>прогон оборван</div>
+          <div class="st-stat-note">завершено {{ sync.done_count }} из {{ sync.total_count }} шагов</div>
+        {% endif %}
+      </div>
+      <div class="st-stat">
+        <div class="st-stat-label">Следующий прогон</div>
+        <div class="st-stat-value">{{ sync.next_run|default:"—" }}</div>
+        <div class="st-stat-note">cron на хосте{% if sync.schedule %} · <span class="mono">{{ sync.schedule }}</span>{% endif %}</div>
+      </div>
+      <div class="st-stat">
+        <div class="st-stat-label">Версия и окружение</div>
+        <div class="st-stat-value mono">{% if sync.sync_version %}sync v{{ sync.sync_version }}{% else %}—{% endif %}</div>
+        <div class="st-stat-note mono">{% if sync.env %}env={{ sync.env }}{% else %}&nbsp;{% endif %}</div>
+      </div>
+    </div>
+  {% endif %}
+
+  {# ── Шаги (§1.3) ── #}
+  <section>
+    <div class="st-steps-head">
+      <span class="st-steps-title">Шаги</span>
+      {% if not sync.running %}
+        <span class="st-steps-picked" :class="{ 'is-hidden': picked.length === 0 }">
+          Выбрано: <span class="mono" x-text="picked.length">0</span>
+          <button type="button" class="st-btn st-btn-primary is-sm"
+                  hx-post="{% url 'ip_plan:settings_sync_run' %}" hx-swap="none"
+                  :hx-vals="JSON.stringify({ action: 'run', steps: picked.join(',') })"
+                  @htmx:after-request="picked = []"
+                  title="Скоро: запуск из интерфейса пока не подключён">Запустить выбранные</button>
+        </span>
+        <span class="st-steps-hint" :class="{ 'is-hidden': picked.length > 0 }">Шаги выполняются по порядку. Отметьте нужные, чтобы запустить только их.</span>
+      {% endif %}
+    </div>
+    <div class="st-tbl">
+      <div class="st-tbl-in st-cols-steps-in">
+        <div class="st-thead st-cols-steps">
+          <span></span><span></span><span class="st-cell" style="padding-left:0">Шаг</span><span class="st-cell">Последний результат</span><span class="st-cell">Когда</span><span></span>
+        </div>
+        {% for s in sync.steps %}
+          <div class="st-tr st-cols-steps{% if forloop.counter|divisibleby:2 %} is-even{% endif %}{% if s.status == 'fail' or s.status == 'timeout' or s.status == 'run' %} is-step-{{ s.status }}{% endif %}">
+            <span class="st-step-check">
+              {% if s.schedule_only %}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-label="Только по расписанию"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+              {% else %}
+                <input type="checkbox" value="{{ s.name }}" x-model="picked" aria-label="Выбрать шаг {{ s.name }}"{% if sync.running %} disabled{% endif %}>
+              {% endif %}
+            </span>
+            <span class="st-step-n">{{ s.index }}</span>
+            <span class="st-step-main">
+              <span class="st-step-title{% if s.schedule_only %} is-locked{% endif %}">{{ s.title }} <span class="st-step-key">{{ s.name }}</span></span>
+              <span class="st-step-desc">{{ s.desc }}</span>
+            </span>
+            <span class="st-cell is-flex" style="font-size:12.5px">
+              {% if s.schedule_only and sync.running and s.status != 'run' %}
+                <span class="st-pill is-skip">не запускается</span>
+              {% else %}
+                <span class="st-pill is-{{ s.status }}">
+                  {% if s.status == 'run' %}<svg class="st-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>{% endif %}
+                  {{ s.status_label }}
+                </span>
+              {% endif %}
+              {% if s.duration %}<span class="st-step-dur">{{ s.duration }}</span>{% endif %}
+            </span>
+            <span class="st-cell st-step-when" title="{{ s.script }}">{{ s.when }}</span>
+            <span class="st-cell is-end">
+              {% if s.schedule_only %}
+                <span class="st-step-only">только по расписанию</span>
+              {% elif not sync.running %}
+                <button type="button" class="st-btn st-btn-outline" style="padding:0 11px"
+                        hx-post="{% url 'ip_plan:settings_sync_run' %}" hx-vals='{"action": "run", "steps": "{{ s.name|escapejs }}"}' hx-swap="none"
+                        title="Скоро: запуск из интерфейса пока не подключён">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z"></path></svg>
+                  Запустить
+                </button>
+              {% endif %}
+            </span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  {% if sync.running %}
+    {# ── Журнал прогона (§2) ── #}
+    <section class="st-console">
+      <div class="st-console-head"><b>Журнал прогона</b><span>обновляется автоматически</span></div>
+      <div class="st-console-body" x-init="$el.scrollTop = $el.scrollHeight">{% for line in sync.journal %}<div class="st-console-line is-{{ line.kind }}">{{ line.text|default:" " }}</div>{% empty %}<div class="st-console-line is-meta">Журнал пока пуст.</div>{% endfor %}</div>
+    </section>
+  {% else %}
+    <div class="st-banner is-info">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+      Сканирование сетей (nmap) запускается только по расписанию: оно нагружает сеть и длится до нескольких часов. Если нужно проверить отдельный адрес — используйте «Проверить доступность» и «Сканировать порты» в таблице адресов.
+    </div>
+  {% endif %}
+</div>

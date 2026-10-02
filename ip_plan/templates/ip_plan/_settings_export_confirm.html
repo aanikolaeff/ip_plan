@@ -1,70 +1,61 @@
 {% comment %}
-  Предупреждение перед скачиванием архива настроек. Показывается всегда: в
-  архиве пароли устройств и гипервизоров лежат открытым текстом, и человек
-  должен увидеть это до того, как файл окажется у него в загрузках.
-
-  Форма отправляется обычным POST, без HTMX: ответ — файл, а HTMX не умеет
-  скачивать (подставил бы содержимое zip в DOM).
+  Экспорт настроек — предупреждение перед скачиванием: в архиве пароли
+  открытым текстом. Форма — обычный POST без HTMX (ответ — файл, HTMX
+  скачивать не умеет). Поля include_config / include_ldap.
 {% endcomment %}
-<div class="modal-title-bar">
-  <h5>Экспорт настроек</h5>
-  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+<div class="st st-modal">
+  <div class="modal-title-bar">
+    <div>
+      <h5>Экспорт настроек</h5>
+      <div class="st-modal-sub">архив для переноса на другую установку</div>
+    </div>
+    <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>
+
+  <form method="post" action="{% url 'ip_plan:settings_export_download' %}" @submit="$store.modal.requestClose()">
+    {% csrf_token %}
+    <div class="modal-body-pad">
+      {% if not conf_available %}
+        <div class="st-banner is-danger" role="alert"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg><span class="st-banner-text">Каталог конфигурации netbox-sync недоступен — экспортировать нечего.</span></div>
+      {% else %}
+        <div class="st-banner is-danger">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+          <span class="st-banner-text"><b>В архиве пароли в открытом виде.</b> Пароли доступа к коммутаторам и гипервизорам, enable-пароли, токены NetBox{% if ldap_configured %}, bind-пароль FreeIPA{% endif %} — всё лежит текстом, архив не шифруется. Храните и передавайте его так же, как сами пароли.</span>
+        </div>
+
+        <section class="st-sec is-gap12">
+          <span class="st-sec-title">Что попадёт в архив</span>
+          <ul class="st-modal-list">
+            <li><span class="mono">devices.json</span> — модели и устройства с паролями</li>
+            <li><span class="mono">sources_redvirt.json</span> — источники RedVirt с паролями</li>
+            <li><span class="mono">sources_vcenter.json</span> — источники vCenter с паролями</li>
+          </ul>
+          <span class="st-hint">Рабочих данных в архиве нет: письма регулятора, журнал изменений, учётные записи и каталог ОС не выгружаются.</span>
+        </section>
+
+        <section class="st-sec is-gap12">
+          <span class="st-sec-title">Дополнительно</span>
+          <label class="st-checkline">
+            <input type="checkbox" name="include_config" checked>
+            <span>Настройки NetBox и скана <span class="st-checkline-sub">— адрес, токен, окружения, DNS</span></span>
+          </label>
+          <label class="st-checkline">
+            <input type="checkbox" name="include_ldap"{% if ldap_configured %} checked{% endif %}>
+            <span>Настройки входа через FreeIPA <span class="st-checkline-sub">— серверы, группы, bind-пароль</span></span>
+          </label>
+          <span class="st-hint">Эти два файла привязаны к конкретной установке: при переносе на другой стенд адрес NetBox и токен там свои. В архив они попадут, но при импорте применяются только по отдельному выбору.</span>
+        </section>
+      {% endif %}
+    </div>
+
+    <div class="modal-footer-bar">
+      <button type="button" class="st-btn st-btn-ghost" @click="$store.modal.requestClose()">Отмена</button>
+      {% if conf_available %}
+        <button type="submit" class="st-btn st-btn-primary is-md">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" x2="12" y1="15" y2="3"></line></svg>
+          Скачать архив
+        </button>
+      {% endif %}
+    </div>
+  </form>
 </div>
-
-<form method="post" action="{% url 'ip_plan:settings_export_download' %}"
-      @submit="$store.modal.requestClose()">
-  {% csrf_token %}
-
-  <div class="modal-body-pad">
-    {% if not conf_available %}
-      <div class="set-note set-note-error">
-        Каталог конфигурации netbox-sync недоступен — экспортировать нечего.
-      </div>
-    {% else %}
-      <div class="set-note set-note-warn">
-        <strong>В архиве пароли в открытом виде.</strong>
-        Пароли доступа к коммутаторам и гипервизорам, enable-пароли,
-        токены NetBox{% if ldap_configured %}, bind-пароль FreeIPA{% endif %} —
-        всё лежит текстом, архив не шифруется. Храните и передавайте его так же,
-        как сами пароли.
-      </div>
-
-      <div class="field-group">
-        <div class="field-group-title">Что попадёт в архив</div>
-        <ul class="set-list">
-          <li><code class="set-mono">devices.json</code> — модели и устройства с паролями</li>
-          <li><code class="set-mono">sources_redvirt.json</code> — источники RedVirt с паролями</li>
-          <li><code class="set-mono">sources_vcenter.json</code> — источники vCenter с паролями</li>
-        </ul>
-        <div class="set-hint">
-          Рабочих данных в архиве нет: письма регулятора, журнал изменений,
-          учётные записи и каталог ОС не выгружаются.
-        </div>
-      </div>
-
-      <div class="field-group">
-        <div class="field-group-title">Дополнительно</div>
-        <label class="set-check">
-          <input type="checkbox" name="include_config" checked>
-          <span>Настройки NetBox и скана <span class="set-muted">— адрес, токен, окружения, DNS</span></span>
-        </label>
-        <label class="set-check">
-          <input type="checkbox" name="include_ldap" {% if ldap_configured %}checked{% endif %}>
-          <span>Настройки входа через FreeIPA <span class="set-muted">— серверы, группы, bind-пароль</span></span>
-        </label>
-        <div class="set-hint">
-          Эти два файла привязаны к конкретной установке: при переносе на другой
-          стенд адрес NetBox и токен там свои. В архив они попадут, но при
-          импорте применяются только по отдельному выбору.
-        </div>
-      </div>
-    {% endif %}
-  </div>
-
-  <div class="modal-footer-bar">
-    <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Отмена</button>
-    {% if conf_available %}
-      <button type="submit" class="btn-modal-primary">Скачать архив</button>
-    {% endif %}
-  </div>
-</form>

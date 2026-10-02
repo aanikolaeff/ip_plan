@@ -1,235 +1,250 @@
 import { createColumnHelper } from '@tanstack/react-table';
-import { CopyButton, EditableCell, RoleBadge, StatusBadge } from './components/cells.jsx';
+import { COLUMN_DEFS, STATUS_ORDER } from './constants.js';
+import { CopyButton, EditableText, Empty, StatusCell } from './components/cells.jsx';
 import { OsMenuCell } from './components/os-menu.jsx';
-import { KebabMenu } from './components/kebab-menu.jsx';
-import { ipToInt } from './ip.js';
+import { RowMenu } from './components/kebab-menu.jsx';
+import { ipToInt, maskOf, stripMask } from './ip.js';
 
-const columnHelper = createColumnHelper();
+const h = createColumnHelper();
+const defMeta = (id) => COLUMN_DEFS.find((c) => c.id === id) || {};
+const text = (v) => (v ? v : '');
+const byText = (fn) => (a, b) => text(fn(a.original)).localeCompare(text(fn(b.original)), 'ru');
 
-// Дефолтные размеры — перенесены как есть из app.js
-// (FIXED_COLUMN_WIDTHS/STRETCHY_MIN_WIDTHS), только теперь это лишь
-// СТАРТОВОЕ значение: TanStack позволяет их реально тащить мышью, и
-// storage.js персистит результат в localStorage (см. TableRoot.jsx).
+function MonoCell({ value, muted }) {
+  if (!value) return <Empty />;
+  return <span className={`ipt-txt ipt-mono${muted ? ' ipt-muted' : ''}`} title={value}>{value}</span>;
+}
+
+// table.options.meta: { updateRow, openEdit, statusChoices, menuRowId,
+// setMenuRowId, onRowAction }.
 export const columns = [
-  columnHelper.display({
+  h.display({
     id: 'select',
-    size: 48,
-    enableResizing: false,
     enableHiding: false,
     enableSorting: false,
     header: ({ table }) => (
       <input
         type="checkbox"
+        aria-label="Выбрать все на странице"
         checked={table.getIsAllPageRowsSelected()}
         ref={(el) => { if (el) el.indeterminate = table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected(); }}
         onChange={table.getToggleAllPageRowsSelectedHandler()}
-        title="Выбрать все на странице"
       />
     ),
     cell: ({ row }) => (
       <input
         type="checkbox"
+        aria-label={`Выбрать ${stripMask(row.original.address)}`}
         checked={row.getIsSelected()}
         onChange={row.getToggleSelectedHandler()}
+        onClick={(e) => e.stopPropagation()}
       />
     ),
   }),
 
-  columnHelper.accessor('address', {
-    header: 'Адрес (IP)',
-    size: 220,
-    minSize: 140,
+  h.accessor('address', {
+    id: 'address',
+    header: 'Адрес',
     enableHiding: false,
-    // Дефолтный sortingFn сравнил бы "10.0.1.10/24" и "10.0.1.2/24" как
-    // строки ("1" < "2") — не числовой порядок IP. Плюс это единственный
-    // столбец, отсортированный по умолчанию (см. sorting в TableRoot.jsx) —
-    // на нём же держится арифметика гэп-строк свободных диапазонов, ей
-    // нужен настоящий числовой порядок.
-    sortingFn: (rowA, rowB) => {
-      const a = ipToInt(rowA.original.address.split('/')[0]);
-      const b = ipToInt(rowB.original.address.split('/')[0]);
-      return (a ?? 0) - (b ?? 0);
-    },
-    cell: ({ getValue, row, table }) => {
-      const address = getValue();
-      const addressOnly = address.split('/')[0];
+    meta: { label: 'Адрес' },
+    // Строковая сортировка дала бы "10.0.1.10" < "10.0.1.2" — нужен
+    // числовой порядок, на нём же держится арифметика свободных диапазонов.
+    sortingFn: (a, b) => (ipToInt(stripMask(a.original.address)) ?? 0) - (ipToInt(stripMask(b.original.address)) ?? 0),
+    cell: ({ row, table }) => {
+      const full = row.original.address;
+      const addr = stripMask(full);
+      const mask = maskOf(full);
+      const role = row.original.role;
       return (
-        <span className="ip-cell-row">
-          <span className="cell-with-copy">
-            <span
-              className="ip-link ip-mono"
-              onClick={() => table.options.meta?.openEditModal(row.original.id)}
-            >
-              {address}
-            </span>
-            <CopyButton value={addressOnly} />
-          </span>
-          <KebabMenu id={row.original.id} address={address} table={table} />
+        <span className="ipt-addr">
+          <button
+            type="button"
+            className="ipt-addr-link ipt-mono"
+            title={`${full} — открыть карточку`}
+            onClick={(e) => { e.stopPropagation(); table.options.meta?.openEdit(row.original.id); }}
+          >
+            {addr}
+          </button>
+          {mask && <span className="ipt-addr-mask ipt-mono" aria-hidden="true">/{mask}</span>}
+          {role && <span className="ipt-role ipt-mono" title={`Роль: ${role.name}`}>{role.slug || role.name}</span>}
+          <CopyButton value={addr} />
         </span>
       );
     },
   }),
 
-  columnHelper.accessor((row) => row.status, {
+  h.accessor((r) => r.status?.value || '', {
     id: 'status',
     header: 'Статус',
-    size: 120,
-    minSize: 90,
-    // Значение колонки — объект {value,label}, дефолтный sortingFn ('auto')
-    // не умеет сравнивать объекты (клик по заголовку проставлял бы ▲/▼,
-    // но порядок строк не менялся) — сортируем по человекочитаемому label.
-    sortingFn: (rowA, rowB) => (rowA.original.status?.label || '').localeCompare(rowB.original.status?.label || ''),
-    cell: ({ getValue, row, table }) => (
-      <EditableCell
+    meta: defMeta('status'),
+    sortingFn: (a, b) => STATUS_ORDER.indexOf(a.original.status?.value) - STATUS_ORDER.indexOf(b.original.status?.value),
+    cell: ({ row, table }) => (
+      <StatusCell
         id={row.original.id}
-        field="status"
-        value={getValue()?.value}
-        display={<StatusBadge status={getValue()} />}
-        editable
-        type="select"
-        table={table}
+        status={row.original.status}
+        choices={table.options.meta?.statusChoices}
+        onSaved={table.options.meta?.updateRow}
       />
     ),
   }),
 
-  columnHelper.accessor('dns_name', {
+  h.accessor((r) => r.site?.name || '', {
+    id: 'site',
+    header: 'Площадка',
+    meta: defMeta('site'),
+    sortingFn: byText((r) => r.site?.name),
+    cell: ({ row }) => {
+      const site = row.original.site;
+      if (!site) return <span className="ipt-faint" title="Адрес не привязан ни к устройству, ни к подсети с площадкой">Без площадки</span>;
+      return <span className="ipt-txt" title={`Площадка: ${site.name}`}>{site.name}</span>;
+    },
+  }),
+
+  h.accessor('dns_name', {
+    id: 'dns_name',
     header: 'DNS-имя',
-    size: 280,
-    minSize: 200,
+    meta: defMeta('dns_name'),
     cell: ({ getValue, row, table }) => (
-      <span className="cell-with-copy">
-        <EditableCell id={row.original.id} field="dns_name" value={getValue()} editable table={table} />
+      <span className="ipt-cell-copy">
+        <EditableText id={row.original.id} field="dns_name" value={getValue()} mono onSaved={table.options.meta?.updateRow} />
         <CopyButton value={getValue()} />
       </span>
     ),
   }),
 
-  columnHelper.accessor('dns_records', {
-    header: 'DNS записи',
-    size: 150,
-    minSize: 100,
-    cell: ({ getValue }) => <span className="cell-value ip-mono" title={getValue()}>{getValue() || '—'}</span>,
-  }),
-
-  columnHelper.accessor('assignment', {
-    header: 'Принадлежность',
-    size: 200,
-    minSize: 140,
-    cell: ({ getValue }) => (
-      <span className="cell-muted" title={getValue()}>{getValue() || '—'}</span>
-    ),
-  }),
-
-  columnHelper.accessor((row) => row.role, {
-    id: 'role',
-    header: 'Роль',
-    size: 100,
-    minSize: 80,
-    // См. комментарий у status выше — тот же случай, объект вместо примитива.
-    sortingFn: (rowA, rowB) => (rowA.original.role?.name || '').localeCompare(rowB.original.role?.name || ''),
-    cell: ({ getValue }) => <RoleBadge role={getValue()} />,
-  }),
-
-  columnHelper.accessor('effective_description', {
+  h.accessor('effective_description', {
     id: 'description',
     header: 'Описание',
-    size: 280,
-    minSize: 200,
+    meta: defMeta('description'),
     cell: ({ getValue, row, table }) => (
-      <span className="cell-with-copy" title={row.original.description_hint}>
-        <EditableCell
+      <span className="ipt-cell-copy">
+        <EditableText
           id={row.original.id}
           field="description"
           value={row.original.description}
           display={getValue()}
-          editable={row.original.description_editable}
-          maxLen={40}
-          table={table}
+          editable={!!row.original.description_editable}
+          title={row.original.description_hint || getValue() || undefined}
+          muted
+          onSaved={table.options.meta?.updateRow}
         />
         <CopyButton value={getValue()} />
       </span>
     ),
   }),
 
-  columnHelper.accessor('tags', {
+  h.accessor((r) => (r.tags || []).join(', '), {
+    id: 'tags',
     header: 'Тэги',
-    size: 86,
-    minSize: 70,
-    enableSorting: false,
-    cell: ({ getValue }) => {
-      const tags = getValue() || [];
-      if (!tags.length) return <span className="cell-muted">—</span>;
-      return tags.map((tag) => <span key={tag} className="tag-chip">{tag}</span>);
+    meta: defMeta('tags'),
+    cell: ({ row }) => {
+      const tags = row.original.tags || [];
+      if (!tags.length) return <Empty />;
+      return (
+        <span className="ipt-tags" title={tags.join(', ')}>
+          {tags.map((t) => <span key={t} className="ipt-tag">{t}</span>)}
+        </span>
+      );
     },
   }),
 
-  columnHelper.accessor('cpe', {
-    header: 'CPE',
-    size: 121,
-    minSize: 90,
-    cell: ({ getValue }) => <span className="cell-value ip-mono" title={getValue()}>{getValue() || '—'}</span>,
+  h.accessor('os_installed', {
+    id: 'os_installed',
+    header: 'ОС',
+    meta: defMeta('os_installed'),
+    // Своё меню со справочником (window.OS_CATALOG_OPTIONS), открывается
+    // одним кликом — см. components/os-menu.jsx.
+    cell: ({ getValue, row, table }) => <OsMenuCell id={row.original.id} value={getValue()} table={table} />,
   }),
 
-  columnHelper.accessor('open_ports', {
-    header: 'Open Ports',
-    size: 156,
-    minSize: 100,
-    cell: ({ getValue }) => <span className="cell-value ip-mono" title={getValue()}>{getValue() || '—'}</span>,
+  h.accessor('open_ports', {
+    id: 'open_ports',
+    header: 'Порты',
+    meta: defMeta('open_ports'),
+    cell: ({ getValue }) => <MonoCell value={getValue()} muted />,
   }),
 
-  columnHelper.accessor('guest_os', {
-    header: 'Guest OS',
-    size: 140,
-    minSize: 100,
-    cell: ({ getValue }) => <span className="cell-value ip-mono" title={getValue()}>{getValue() || '—'}</span>,
+  h.accessor((r) => r.role?.name || '', {
+    id: 'role',
+    header: 'Роль',
+    meta: defMeta('role'),
+    cell: ({ row }) => {
+      const role = row.original.role;
+      if (!role) return <Empty />;
+      return <span className="ipt-role ipt-mono" title={role.name}>{role.slug || role.name}</span>;
+    },
   }),
 
-  columnHelper.accessor('os_guess', {
-    header: 'OS Guess',
-    size: 506,
-    minSize: 200,
-    cell: ({ getValue }) => <span className="cell-value ip-mono" title={getValue()}>{getValue() || '—'}</span>,
-  }),
-
-  columnHelper.accessor('os_installed', {
-    header: 'Операционная система',
-    size: 280,
-    minSize: 200,
-    // Своё меню (справочник admin/os_catalog.json), не обычный текстовый
-    // EditableCell — см. components/os-menu.jsx, портировано из
-    // startOsMenuEdit() в app.js (старая DataTables-версия).
-    cell: ({ getValue, row, table }) => (
-      <OsMenuCell id={row.original.id} value={getValue()} table={table} />
-    ),
-  }),
-
-  columnHelper.accessor('purpose', {
+  h.accessor('purpose', {
+    id: 'purpose',
     header: 'Назначение',
-    size: 300,
-    minSize: 200,
+    meta: defMeta('purpose'),
     cell: ({ getValue, row, table }) => (
-      <EditableCell id={row.original.id} field="purpose" value={getValue()} editable maxLen={24} table={table} />
+      <EditableText id={row.original.id} field="purpose" value={getValue()} onSaved={table.options.meta?.updateRow} />
     ),
   }),
 
-  columnHelper.accessor('comments', {
+  h.accessor('assignment', {
+    id: 'assignment',
+    header: 'Принадлежность',
+    meta: defMeta('assignment'),
+    cell: ({ getValue }) => (getValue() ? <span className="ipt-txt ipt-muted" title={getValue()}>{getValue()}</span> : <Empty />),
+  }),
+
+  h.accessor('dns_records', {
+    id: 'dns_records',
+    header: 'DNS-записи',
+    meta: defMeta('dns_records'),
+    cell: ({ getValue }) => <MonoCell value={getValue()} />,
+  }),
+
+  h.accessor('comments', {
+    id: 'comments',
     header: 'Комментарии',
-    size: 300,
-    minSize: 200,
+    meta: defMeta('comments'),
     cell: ({ getValue, row, table }) => (
-      <EditableCell id={row.original.id} field="comments" value={getValue()} editable maxLen={40} table={table} />
+      <EditableText id={row.original.id} field="comments" value={getValue()} muted onSaved={table.options.meta?.updateRow} />
     ),
+  }),
+
+  h.accessor('guest_os', {
+    id: 'guest_os',
+    header: 'Guest OS',
+    meta: defMeta('guest_os'),
+    cell: ({ getValue }) => <MonoCell value={getValue()} />,
+  }),
+
+  h.accessor('os_guess', {
+    id: 'os_guess',
+    header: 'OS Guess',
+    meta: defMeta('os_guess'),
+    cell: ({ getValue }) => <MonoCell value={getValue()} />,
+  }),
+
+  h.accessor('cpe', {
+    id: 'cpe',
+    header: 'CPE',
+    meta: defMeta('cpe'),
+    cell: ({ getValue }) => <MonoCell value={getValue()} />,
+  }),
+
+  h.display({
+    id: 'actions',
+    enableHiding: false,
+    enableSorting: false,
+    header: () => null,
+    cell: ({ row, table }) => {
+      const meta = table.options.meta || {};
+      const id = String(row.original.id);
+      return (
+        <RowMenu
+          address={stripMask(row.original.address)}
+          isVm={row.original.role?.slug === 'vm'}
+          open={meta.menuRowId === id}
+          onToggle={(open) => meta.setMenuRowId?.(open ? id : null)}
+          onAction={(action) => meta.onRowAction?.(action, row.original)}
+        />
+      );
+    },
   }),
 ];
-
-// Скрыты по умолчанию — те же индексы/поля, что DEFAULT_HIDDEN_COLUMNS в
-// app.js (dns_records, tags, cpe, guest_os, os_guess).
-export const DEFAULT_HIDDEN_COLUMNS = {
-  dns_records: false,
-  tags: false,
-  cpe: false,
-  guest_os: false,
-  os_guess: false,
-};
-
-export const DEFAULT_PINNING = { left: ['select', 'address'] };

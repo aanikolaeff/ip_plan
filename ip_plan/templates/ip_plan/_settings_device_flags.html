@@ -1,18 +1,27 @@
 {% comment %}
-  Блок «Что синхронизировать». Отдельным шаблоном, потому что перерисовывается
-  при смене модели: флаги модели — умолчания её устройств, и при заведении
-  нового устройства галочки должны встать сразу, а не после сохранения.
+  Блок «Что собирать» карточки устройства. Отдельным шаблоном: при смене
+  модели его перерисовывает settings_device_flags (флаги модели —
+  умолчания её устройств). Контекст: flag_fields =
+  [(key, label, hint, checked, inherited, on_model)].
+
+  Переключатель — настоящий checkbox name=key value=1, все семь всегда в
+  DOM: снятый у шага, включённого на модели, сервер запишет явным false
+  («выключено здесь», device_save). Пометки происхождения меняются сразу
+  при клике (Alpine stFlagRow).
 {% endcomment %}
-<div class="field-group-title">Что синхронизировать</div>
-{% comment %}
-  Галочки показывают эффективное состояние: настройки модели плюс правки
-  устройства — ровно то, что исполнит синк. Снятая галочка у шага, включённого
-  на модели, сохраняется как явный false, поэтому выключить здесь можно всё,
-  что угодно (см. device_save).
-{% endcomment %}
-{% for key, label, hint, checked, inherited in flag_fields %}
-  <label class="set-check">
-    <input type="checkbox" name="{{ key }}" {% if checked %}checked{% endif %}>
-    <span>{{ label }}{% if hint %} <span class="set-muted">— {{ hint }}</span>{% endif %}{% if inherited %} <span class="set-muted">· включено на модели</span>{% endif %}</span>
-  </label>
+<div class="st-sec-title">Что собирать</div>
+<div class="st-sec-desc is-mb">Показано то, что исполнит синк: умолчания модели плюс правки этого устройства. Выключенный здесь шаг, включённый у модели, сохранится как «выключено здесь».</div>
+{% for key, label, hint, checked, inherited, on_model in flag_fields %}
+  <div class="st-switch-row" x-data="stFlagRow({{ checked|yesno:'true,false' }}, {{ inherited|yesno:'true,false' }}, {{ on_model|yesno:'true,false' }})">
+    <span class="st-switch-text">
+      <span class="st-switch-title">{{ label }} <span class="st-switch-key">{{ key }}</span></span>
+      <span class="st-switch-note is-info{% if not inherited %} is-hidden{% endif %}" :class="{ 'is-hidden': note() !== 'model' }">по умолчанию модели</span>
+      <span class="st-switch-note is-warn{% if checked or not on_model %} is-hidden{% endif %}" :class="{ 'is-hidden': note() !== 'off' }">выключено здесь — у модели включено</span>
+      {% if hint %}<span class="st-switch-note">{{ hint }}</span>{% endif %}
+    </span>
+    <label class="st-switch" title="{{ label }}">
+      <input type="checkbox" role="switch" name="{{ key }}" value="1" x-model="on"{% if checked %} checked{% endif %} aria-label="{{ label }}">
+      <span class="st-switch-track" aria-hidden="true"></span>
+    </label>
+  </div>
 {% endfor %}

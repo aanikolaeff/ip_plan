@@ -11,13 +11,17 @@ from .models import RegulatorDocument, RegulatorEntry
 ADDRESS_PATTERN = r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,2}$"
 ADDRESS_RE = re.compile(ADDRESS_PATTERN)
 
+# Подписи по-русски (макет test_des/, 01.10.2026): NetBox отдаёт label
+# по-английски, но пользователю показываем эти. STATUS_LABELS — тот же
+# список словарём, для serialize_ip и шаблонов.
 STATUS_CHOICES = [
-    ("active", "Active"),
-    ("reserved", "Reserved"),
-    ("deprecated", "Deprecated"),
+    ("active", "Активен"),
+    ("reserved", "Резерв"),
+    ("deprecated", "Устарел"),
     ("dhcp", "DHCP"),
     ("slaac", "SLAAC"),
 ]
+STATUS_LABELS = dict(STATUS_CHOICES)
 
 # Ключи custom_fields в NetBox (уточнены прямым запросом к API — отличаются
 # от отображаемых имён из ТЗ). "Комментарии" в custom_fields не входит:

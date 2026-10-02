@@ -1,0 +1,46 @@
+{% extends "ip_plan/base.html" %}
+{% load static %}
+
+{% comment %}
+  Общая раскладка раздела «Настройки» (SPEC-settings.md §0): шапку
+  «Настройки» с нижней линией рисует оболочка, справа в ней — Экспорт /
+  Импорт (модалки). Под шапкой — рейка разделов 236px и прокручиваемая
+  колонка содержимого (block settings_main). Страницы: settings.html
+  (вкладки), settings_device.html и settings_model.html (карточки).
+  Стили — settings.css, логика — settings.js.
+{% endcomment %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'ip_plan/css/settings.css' %}">
+{% endblock %}
+{% block extra_scripts %}
+  <script src="{% static 'ip_plan/js/settings.js' %}"></script>
+{% endblock %}
+
+{% block head_actions %}
+  <button type="button" class="st-head-btn"
+          hx-get="{% url 'ip_plan:settings_export_confirm' %}"
+          hx-target="#modal-content" hx-indicator="#modal-spinner"
+          @click="$store.modal.dirty = false; $dispatch('open-modal')"
+          title="Скачать архив с настройками подключения">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" x2="12" y1="15" y2="3"></line></svg>
+    Экспорт
+  </button>
+  <button type="button" class="st-head-btn"
+          hx-get="{% url 'ip_plan:settings_import_form' %}"
+          hx-target="#modal-content" hx-indicator="#modal-spinner"
+          @click="$store.modal.dirty = false; $dispatch('open-modal')"
+          title="Загрузить настройки из архива или JSON-файлов">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" x2="12" y1="3" y2="15"></line></svg>
+    Импорт
+  </button>
+{% endblock %}
+
+{% block body_class %} st-body st{% endblock %}
+
+{% block content %}
+  {% include "ip_plan/_settings_rail.html" %}
+  <div class="st-main" id="st-main">
+    {% block settings_main %}{% endblock %}
+  </div>
+{% endblock %}

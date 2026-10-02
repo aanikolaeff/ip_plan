@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from dataclasses import dataclass, field
 
 # Cisco 'eq <port>' допускает как номер, так и mnemonic-имя порта — в данных
 # встречаются ftp/domain, но список расширен на другие частые mnemonics.
@@ -57,62 +56,10 @@ def _port_to_text(tok: str) -> str:
     return tok  # отображаем как в конфиге; резолв в номер не нужен для поиска
 
 
-@dataclass
-class Endpoint:
-    """Один операнд ACL-правила (source или destination)."""
-
-    raw: str
-    kind: str  # any | host | wildcard | object-group | unresolved
-    networks: list = field(default_factory=list)  # список ipaddress.IPv4Network
-    object_group: str | None = None
-    resolved: bool = True  # False — не смогли посчитать networks (см. object-group)
-
-
-@dataclass
-class AclRule:
-    sequence: int
-    action: str  # permit | deny | remark
-    protocol: str | None = None
-    source: Endpoint | None = None
-    destination: Endpoint | None = None
-    source_port: str | None = None
-    destination_port: str | None = None
-    log: bool = False
-    remark: str | None = None
-    raw: str = ""
-
-
-@dataclass
-class Acl:
-    name: str
-    acl_type: str  # standard | extended
-    rules: list = field(default_factory=list)
-
-
-@dataclass
-class Application:
-    acl_name: str
-    kind: str  # interface | line | snmp | nat
-    location: str
-    direction: str | None = None
-
-
-@dataclass
-class ParsedDevice:
-    device_name: str
-    acls: list = field(default_factory=list)
-    object_groups: dict = field(default_factory=dict)
-    applications: list = field(default_factory=list)
-    unresolved_object_groups: set = field(default_factory=set)
-
-    def acl_by_name(self, name: str):
-        for acl in self.acls:
-            if acl.name == name:
-                return acl
-        return None
-
-    def is_applied(self, acl_name: str) -> bool:
-        return any(app.acl_name == acl_name for app in self.applications)
+# Датаклассы вынесены в acl_model.py (общая модель для всех вендорских
+# парсеров); здесь они реэкспортируются, чтобы старые импорты
+# `from .cisco_acl import Endpoint` не ломались.
+from .acl_model import Acl, AclRule, Application, Endpoint, ParsedDevice  # noqa: F401
 
 
 # ── Разбор одного endpoint'а (source/destination) ──────────────────────────
@@ -166,9 +113,9 @@ def _parse_endpoint(tokens: list, i: int, object_groups: dict, unresolved: set):
         if nets is None:
             unresolved.add(name)
             return Endpoint(raw=f"object-group {name}", kind="object-group",
-                             object_group=name, resolved=False), i + 2
+                             object_group=name, object_groups=[name], resolved=False), i + 2
         return Endpoint(raw=f"object-group {name}", kind="object-group",
-                         object_group=name, networks=list(nets)), i + 2
+                         object_group=name, object_groups=[name], networks=list(nets)), i + 2
 
     # Голый IP — либо "IP WILDCARD" (сеть), либо просто IP (неявный host,
     # стандартная запись для ACL типа 'access-list 20 deny 178.162.194.210').
@@ -394,9 +341,11 @@ def _parse_applications(lines: list) -> list:
 
         m = _SNMP_COMMUNITY.match(line)
         if m:
-            community, mode, acl_ref = m.group(1), m.group(2), m.group(3)
+            # community намеренно не попадает в location: это секрет, а
+            # location рендерится на странице ACL открытым текстом.
+            mode, acl_ref = m.group(2), m.group(3)
             apps.append(Application(acl_name=acl_ref, kind="snmp",
-                                     location=f"community {community} ({mode})"))
+                                     location=f"community ({mode})"))
             continue
 
         m = _NAT_LIST.match(line)
@@ -425,4 +374,11 @@ def parse_config(text: str, device_name: str) -> ParsedDevice:
         object_groups=object_groups,
         applications=applications,
         unresolved_object_groups=unresolved,
+        parser="cisco_ios",
     )
+
+
+def parse_snapshot(files: dict, device_name: str) -> ParsedDevice:
+    """Единый вход для acl_store: files — {имя снимка: текст}; Cisco читает
+    только полный running-config («config»)."""
+    return parse_config(files.get("config", ""), device_name)

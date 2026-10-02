@@ -1,31 +1,41 @@
-<div class="set-panel">
-  <div class="set-panel-head">
-    <div>
-      <h2 class="set-panel-title">Журнал изменений</h2>
-      <p class="set-panel-desc">
-        Кто и что менял в настройках. Пароли и токены сюда не записываются — только факт
-        изменения. Предыдущие версии самих файлов лежат рядом с ними, в каталоге
-        <code class="set-mono">conf/.history</code>.
-      </p>
-    </div>
+{% comment %}
+  «Журнал изменений» (SPEC §9; CONTRACT-settings §9). Контекст: audit_rows
+  [{when, when_full, username, scope_label, category, target, action_kind,
+  action_label, details}], audit_category, audit_categories. Вкладки —
+  ссылки ?cat= (фильтр на сервере), последние 200 записей.
+{% endcomment %}
+<div class="st-screen">
+  <div>
+    <h2 class="st-h2">Журнал изменений</h2>
+    <p class="st-lead">Кто, когда и что менял в настройках, и кто запускал синхронизацию. Пароли и токены не записываются — только факт изменения. Прошлые версии файлов лежат в <span class="mono">conf/.history</span>.</p>
   </div>
-  <div class="set-panel-body set-panel-body-flush">
-    <table class="set-table">
-      <thead><tr><th>Когда</th><th>Кто</th><th>Раздел</th><th>Объект</th><th>Действие</th><th>Что изменилось</th></tr></thead>
-      <tbody>
-        {% for row in audit_rows %}
-          <tr>
-            <td class="set-mono set-muted">{{ row.created_at|date:"d.m.Y H:i" }}</td>
-            <td>{{ row.username }}</td>
-            <td class="set-muted">{{ row.scope }}</td>
-            <td><span class="set-name">{{ row.target }}</span></td>
-            <td>{{ row.get_action_display }}</td>
-            <td class="set-muted">{{ row.details|default:"—" }}</td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="6" class="set-empty">Изменений пока не было.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+
+  <div class="st-tabs" role="tablist" aria-label="Категория">
+    {% for key, label in audit_categories %}
+      <a class="st-seg{% if key == audit_category %} is-on{% endif %}" role="tab" aria-selected="{% if key == audit_category %}true{% else %}false{% endif %}"
+         href="{% url 'ip_plan:settings_tab' 'audit' %}{% if key %}?cat={{ key }}{% endif %}">{{ label }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="st-tbl">
+    <div class="st-tbl-in st-cols-audit-in">
+      <div class="st-thead st-cols-audit">
+        <span class="st-cell is-first">Когда</span><span class="st-cell">Кто</span><span class="st-cell">Раздел</span><span class="st-cell">Объект</span><span class="st-cell">Действие</span><span class="st-cell">Что изменилось</span>
+      </div>
+      {% for row in audit_rows %}
+        <div class="st-tr st-cols-audit is-44 is-hover{% if forloop.counter|divisibleby:2 %} is-even{% endif %}">
+          <span class="st-cell is-first mono" style="font-size:12px; color:var(--muted)" title="{{ row.when_full|date:'d.m.Y H:i:s' }}">{{ row.when }}</span>
+          <span class="st-cell mono" style="font-size:12.5px" title="{{ row.username }}">{{ row.username }}</span>
+          <span class="st-cell" style="font-size:12.5px; color:var(--muted)">{{ row.scope_label }}</span>
+          <span class="st-cell mono" style="font-size:12.5px; font-weight:500" title="{{ row.target }}">{{ row.target }}</span>
+          <span class="st-cell">
+            <span class="st-tag is-600 {% if row.action_kind == 'add' %}is-ok{% elif row.action_kind == 'delete' %}is-danger{% elif row.action_kind == 'run' %}is-accent{% elif row.action_kind == 'import' or row.action_kind == 'export' %}is-info{% else %}is-soft{% endif %}">{{ row.action_label }}</span>
+          </span>
+          <span class="st-cell" style="font-size:12.5px; color:var(--muted)" title="{{ row.details }}">{{ row.details|default:"—" }}</span>
+        </div>
+      {% empty %}
+        <div class="st-empty">Записей пока нет</div>
+      {% endfor %}
+    </div>
   </div>
 </div>

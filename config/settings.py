@@ -90,6 +90,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 # {{ app_version }} в уголке внизу страницы
                 "ip_plan.context_processors.app_version",
+                "ip_plan.context_processors.shell",
             ],
         },
     },
@@ -174,7 +175,17 @@ NETBOX_DNS_SKIP_PATTERN = config("NETBOX_DNS_SKIP_PATTERN", default=r"\.vipnet$"
 # на проде молча резолвился в пустую папку через тот же самый относительный
 # путь). Если раскладка когда-нибудь изменится ещё раз — свой путь/схему
 # доставки через ACL_CONFIG_BACKUPS_DIR напрямую.
-ACL_CONFIG_BACKUPS_DIR = config("ACL_CONFIG_BACKUPS_DIR", default=str(BASE_DIR / "config_backups"))
+# «or»: пустая строка в .env (так выглядит .env.example и локальный .env)
+# у python-decouple — это значение, а не «не задано»; без «or» путь
+# превращался в «.», страница ACL молча показывала пустой список.
+ACL_CONFIG_BACKUPS_DIR = config("ACL_CONFIG_BACKUPS_DIR", default="") or str(BASE_DIR / "config_backups")
+
+# Порог «широкого набора» на странице ACL (services/acl_search.py): правило,
+# в которое адрес попал через сеть короче этого префикса (10/8, 0/0,
+# @PrivateNetworkIP), считается не упоминанием адреса, а охватом «всех
+# частных сетей / всего интернета» и сворачивается внизу результата.
+# Решение по макету 01.10.2026: /16, настраивается.
+ACL_WIDE_PREFIX = int(config("ACL_WIDE_PREFIX", default="") or 16)
 
 # --- Редактируемые конфиги netbox-sync (раздел "Настройки") ---
 # Директория conf/ репозитория netbox-sync, смонтированная НА ЗАПИСЬ (см.
@@ -182,13 +193,13 @@ ACL_CONFIG_BACKUPS_DIR = config("ACL_CONFIG_BACKUPS_DIR", default=str(BASE_DIR /
 # sources_*.json — те самые файлы, которые netbox-sync вынес из git именно
 # для того, чтобы их можно было править отсюда (см. conf_loader.py в
 # netbox-sync и docs/plans/2026-09-07-netbox-sync-settings-editor-design.md).
-NETBOX_SYNC_CONF_DIR = config("NETBOX_SYNC_CONF_DIR", default=str(BASE_DIR / "netbox_sync_conf"))
+NETBOX_SYNC_CONF_DIR = config("NETBOX_SYNC_CONF_DIR", default="") or str(BASE_DIR / "netbox_sync_conf")
 
 # --- Раздел "Настройки" (шапка) — сводка последнего прогона netbox-sync ---
 # Тот же принцип и тот же NETBOX_SYNC_DIR, что и у ACL_CONFIG_BACKUPS_DIR
 # выше — только подпапка sync_logs вместо config_backups. См.
 # ip_plan/services/sync_log.py.
-SYNC_LOGS_DIR = config("SYNC_LOGS_DIR", default=str(BASE_DIR / "sync_logs"))
+SYNC_LOGS_DIR = config("SYNC_LOGS_DIR", default="") or str(BASE_DIR / "sync_logs")
 
 # Лок-файл full_sync.sh. Лежит в sync_logs/ — единственном каталоге синка,
 # кроме conf/, который сюда проброшен (корень netbox-sync не монтируется
@@ -204,12 +215,48 @@ NETBOX_SYNC_LOCK_FILE = config(
     "NETBOX_SYNC_LOCK_FILE", default=str(Path(SYNC_LOGS_DIR) / ".full_sync.lock")
 )
 
+# «Настройки → Запуск и расписание». Время в логах full_sync.sh — местное
+# время хоста синка (date без зоны), а Django живёт в UTC: без явной зоны
+# «последний прогон» съезжал бы на 3 часа и ломалось сравнение с журналом.
+SYNC_LOG_TZ = config("SYNC_LOG_TZ", default="Europe/Moscow")
+# Расписание cron на хосте синка. Интерфейсу его не видно (cron вне
+# контейнера), поэтому дублируется здесь — для «Следующий прогон». Понимается
+# только вид «M H * * *»; иное — «Следующий прогон» не показывается.
+SYNC_SCHEDULE = config("SYNC_SCHEDULE", default="0 3 * * *")
+
 # --- Блокировки регулятора — снимок объектов блокировки firewall ---
 # Тот же принцип и тот же NETBOX_SYNC_DIR, что и у ACL_CONFIG_BACKUPS_DIR/
 # SYNC_LOGS_DIR выше — подпапка firewall_blocklists (пишет
 # netbox-sync/netbox_firewall_blocklist_sync.py). См.
 # ip_plan/services/firewall_blocklist.py.
-FIREWALL_BLOCKLISTS_DIR = config("FIREWALL_BLOCKLISTS_DIR", default=str(BASE_DIR / "firewall_blocklists"))
+FIREWALL_BLOCKLISTS_DIR = config("FIREWALL_BLOCKLISTS_DIR", default="") or str(BASE_DIR / "firewall_blocklists")
+
+# --- Карта сети (services/topology_map.py) ---
+# Каталог lldp_snapshots/ из netbox-sync (topology.json — сводка последнего
+# прогона топологии: как доказана каждая связь, конфликты, владение кабелями;
+# unconfirmed_cables.json — история «без подтверждения»). Тот же NETBOX_SYNC_DIR
+# и тот же read-only принцип, что у config_backups выше.
+TOPOLOGY_DIR = config("TOPOLOGY_DIR", default="") or str(BASE_DIR / "lldp_snapshots")
+# Адрес NetBox для ссылок «Открыть в NetBox» в браузере пользователя:
+# NETBOX_URL — адрес изнутри контейнера (host.docker.internal), браузеру он
+# не годится. Пусто — NETBOX_URL с host.docker.internal → localhost.
+NETBOX_PUBLIC_URL = config("NETBOX_PUBLIC_URL", default="")
+
+# --- Шлюз удалённого доступа (Apache Guacamole, сервисы guacd/guacamole в
+# docker-compose.yml, профиль "gateway") — пункты «В браузере» в меню строки
+# таблицы адресов. См. ip_plan/services/remote_gateway.py.
+# Ключ — 128 бит, 32 hex-символа (`openssl rand -hex 16`), тот же, что уходит
+# контейнеру guacamole как JSON_SECRET_KEY. Пусто = шлюз выключен: пунктов
+# меню нет, эндпоинт отвечает 503.
+GUACAMOLE_JSON_SECRET_KEY = config("GUACAMOLE_JSON_SECRET_KEY", default="").strip()
+# Куда ip_plan ходит сам, обменивать JSON на токен (сеть compose).
+GUACAMOLE_INTERNAL_URL = config("GUACAMOLE_INTERNAL_URL", default="") or "http://guacamole:8080/guacamole"
+# Куда отправлять браузер пользователя. Локально — порт контейнера напрямую,
+# на проде — location nginx на том же хосте и по тому же HTTPS, что ip_plan.
+GUACAMOLE_PUBLIC_URL = config("GUACAMOLE_PUBLIC_URL", default="") or "http://localhost:8091/guacamole"
+# Шлюз ходит к хостам с адреса сервера — это сетевая досягаемость, которой у
+# рабочей станции пользователя может не быть. По умолчанию только staff.
+GUACAMOLE_STAFF_ONLY = config("GUACAMOLE_STAFF_ONLY", default="") not in ("false", "False", "0", "no")
 
 # Превью разбора документов (ip_plan/services/ioc_parser.py,
 # regulator_document_ioc_save) шлёт по 2 POST-поля (ioc_kind+ioc_value) на

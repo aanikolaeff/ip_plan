@@ -1,0 +1,90 @@
+{% extends "ip_plan/base.html" %}
+{% load static ip_plan_extras %}
+
+{% comment %}
+  Главная раздела ACL (SPEC-acl.md, раздел 2): блок вопроса + каталог списков
+  доступа / групп адресов. Контекст — question, catalog, tab, snapshot_summary
+  (CONTRACT-acl.md). Вкладки каталога переключаются ссылками ?tab=lists|groups
+  (сервер рендерит одну таблицу), вкладка «Проверить трафик» — ?mode=traffic
+  (заглушка). Заголовок «ACL» рисует оболочка; в шапке справа — дата снимка.
+  Прокручивается только тело каталога (body_class shell-body-fixed).
+{% endcomment %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'ip_plan/css/acl.css' %}">
+{% endblock %}
+{% block extra_scripts %}
+  <script src="{% static 'ip_plan/js/acl.js' %}"></script>
+{% endblock %}
+
+{% block head_actions %}
+  <span class="acl-snapshot" title="Когда сняты конфигурации устройств">{{ snapshot_summary.text }}</span>
+{% endblock %}
+
+{% block body_class %} shell-body-fixed{% endblock %}
+
+{% block content %}
+<div class="acl shell-island">
+  {% include "ip_plan/_acl_question.html" with show_hint=True %}
+
+  {% if question.mode != 'traffic' %}
+    {% with lists_active=tab|default:'lists' %}
+    <div class="acl-catalog" x-data="aclCatalog({% if lists_active == 'groups' %}{{ catalog.groups_total }}{% else %}{{ catalog.lists_total }}{% endif %})">
+    <div class="acl-cat-tabs" role="tablist" aria-label="Каталог">
+      <a class="acl-cat-tab{% if lists_active != 'groups' %} is-active{% endif %}" role="tab"
+         aria-selected="{% if lists_active != 'groups' %}true{% else %}false{% endif %}"
+         href="{% url 'ip_plan:acl_lookup' %}?tab=lists">Списки доступа <span class="mono acl-cat-count"{% if lists_active != 'groups' %} x-text="countText()"{% endif %}>{{ catalog.lists_total|ru_number }}</span></a>
+      <a class="acl-cat-tab{% if lists_active == 'groups' %} is-active{% endif %}" role="tab"
+         aria-selected="{% if lists_active == 'groups' %}true{% else %}false{% endif %}"
+         href="{% url 'ip_plan:acl_lookup' %}?tab=groups">Группы адресов <span class="mono acl-cat-count"{% if lists_active == 'groups' %} x-text="countText()"{% endif %}>{{ catalog.groups_total|ru_number }}</span></a>
+    </div>
+
+    {% if lists_active == 'groups' %}
+      <div class="acl-cat-head" role="row">
+        <span class="cell">Группа адресов</span><span class="cell">Устройство</span><span class="cell">Используется</span><span class="cell acl-right">Адресов</span><span></span>
+      </div>
+      <div class="acl-cat-body">
+        {% for g in catalog.groups %}
+          {# Группа ведёт на список-пользователь с открытой панелью группы; без списка — на старую страницу группы #}
+          <a class="acl-cat-row{% if not g.used %} is-idle{% endif %}{% if forloop.counter0|divisibleby:2 %}{% else %} is-even{% endif %}"
+             data-device="{{ g.device }}"
+             href="{% if g.list_url %}{{ g.list_url }}{% else %}{{ g.detail_url }}{% endif %}"
+             {% if g.list_url and g.panel_url %}data-panel-url="{{ g.panel_url }}" @click.prevent="aclOpenPanel('{{ g.panel_url|escapejs }}')"{% endif %}
+             title="{{ g.name }} — {{ g.device }}">
+            <span class="cell mono acl-cat-name">{{ g.name }}</span>
+            <span class="cell mono acl-cat-dev">{{ g.device }}</span>
+            <span class="cell acl-cat-where">{{ g.used_text }}</span>
+            <span class="cell mono acl-cat-size acl-right">{{ g.member_count|ru_number }} {{ g.member_count|plural:"адрес,адреса,адресов" }}</span>
+            <span class="acl-cat-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></span>
+          </a>
+        {% empty %}
+          <div class="acl-empty">{{ catalog.empty_text|default:"Групп адресов в снимках не найдено" }}</div>
+        {% endfor %}
+        <div class="acl-empty is-hidden" :class="{ 'is-hidden': !filteredEmpty() }">У выбранных устройств нет групп адресов</div>
+      </div>
+    {% else %}
+      <div class="acl-cat-head" role="row">
+        <span class="cell">Список доступа</span><span class="cell">Устройство</span><span class="cell">Где применён</span><span class="cell acl-right">Правил</span><span></span>
+      </div>
+      <div class="acl-cat-body">
+        {% for l in catalog.lists %}
+          <a class="acl-cat-row{% if not l.applied %} is-idle{% endif %}{% if forloop.counter0|divisibleby:2 %}{% else %} is-even{% endif %}"
+             data-device="{{ l.device }}"
+             href="{{ l.list_url }}" title="{{ l.acl_name }} — {{ l.device }}{% if l.type_label %} · {{ l.type_label }}{% endif %}">
+            <span class="cell mono acl-cat-name">{{ l.acl_name }}{% if l.purpose %} <span class="acl-cat-purpose">{{ l.purpose }}</span>{% endif %}</span>
+            <span class="cell mono acl-cat-dev">{{ l.device }}</span>
+            <span class="cell acl-cat-where">{{ l.where_text }}</span>
+            <span class="cell mono acl-cat-size acl-right">{{ l.rule_count|ru_number }} {{ l.rule_count|plural:"правило,правила,правил" }}</span>
+            <span class="acl-cat-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></span>
+          </a>
+        {% empty %}
+          <div class="acl-empty">{{ catalog.empty_text|default:"Списков доступа в снимках не найдено" }}</div>
+        {% endfor %}
+        <div class="acl-empty is-hidden" :class="{ 'is-hidden': !filteredEmpty() }">У выбранных устройств нет списков доступа</div>
+      </div>
+    {% endif %}
+    </div>
+    {% endwith %}
+  {% endif %}
+</div>
+{% endblock %}

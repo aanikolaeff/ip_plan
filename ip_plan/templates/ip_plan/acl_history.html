@@ -1,0 +1,55 @@
+{% extends "ip_plan/base.html" %}
+
+{% block content %}
+  <section class="hero">
+    <div class="hero-title-row">
+      <h1 class="title">{{ device }} <span class="badge-acl-type">история снимков</span></h1>
+      <a class="btn-back" href="{% url 'ip_plan:acl_lookup' %}?device={{ device }}" title="Назад к ACL">← ACL</a>
+    </div>
+    <p class="subtitle">
+      Каждый файл — момент, когда конфигурация или политика устройства изменилась
+      (одинаковые снимки не сохраняются). Diff показан с предыдущим снимком того же
+      имени; строки с секретами скрыты.
+    </p>
+  </section>
+
+  {% include "ip_plan/_acl_snapshots.html" %}
+
+  <div class="acl-history-layout">
+    <div class="table-wrapper acl-history-list">
+      <table class="table acl-table">
+        <thead>
+          <tr><th>Снимок</th><th>Когда</th><th>Размер</th></tr>
+        </thead>
+        <tbody>
+          {% for row in history %}
+            <tr class="{% if row.name == selected %}acl-row-selected{% endif %}">
+              <td><a href="?file={{ row.name|urlencode }}">{{ row.snapshot }}</a></td>
+              <td>{{ row.ts|date:"d.m.Y H:i:s" }}</td>
+              <td>{{ row.size }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="3">Снимков ещё нет.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="acl-history-diff">
+      {% if diff %}
+        <p class="acl-hint">
+          <strong>{{ diff.file }}</strong>
+          {% if diff.previous %}против {{ diff.previous }}{% else %}— первый снимок, сравнивать не с чем{% endif %}
+          · строк {{ diff.lines }} · <span class="badge-status" data-status="permit">+{{ diff.added }}</span>
+          <span class="badge-status" data-status="deny">−{{ diff.removed }}</span>
+        </p>
+        {% if diff.diff %}
+          <pre class="acl-diff">{% for line in diff.diff %}<span class="{% if line|slice:':1' == '+' %}acl-diff-add{% elif line|slice:':1' == '-' %}acl-diff-del{% elif line|slice:':2' == '@@' %}acl-diff-hunk{% endif %}">{{ line }}</span>
+{% endfor %}</pre>
+        {% else %}
+          <p class="acl-hint">Различий нет.</p>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}

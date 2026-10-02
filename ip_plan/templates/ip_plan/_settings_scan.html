@@ -1,80 +1,74 @@
-<div class="set-panel">
-  <div class="set-panel-head">
-    <div>
-      <h2 class="set-panel-title">Сканирование и DNS</h2>
-      <p class="set-panel-desc">
-        Что nmap пропускает при обходе сетей и через какие серверы резолвятся имена.
-      </p>
-    </div>
+{% comment %}
+  «Скан и DNS» (SPEC §6; CONTRACT-settings §5). Контекст: dns_servers,
+  dns_skip_pattern, scan_exclude_prefixes, environments
+  [{name, url, has_token}], file_hash. Списки — textarea по значению в
+  строке (scan_save разбирает построчно). Форма на странице: ошибка
+  приходит в #modal-content со статусом ≥400 — hx-on открывает модалку.
+  Подключение к NetBox правит только суперпользователь (модалка env).
+{% endcomment %}
+<div class="st-screen is-gap20">
+  <div>
+    <h2 class="st-h2">Скан и DNS</h2>
+    <p class="st-lead">Что сканирование сетей пропускает и через какие серверы резолвятся имена. Хранится в <span class="mono">conf/config.json</span>.</p>
   </div>
 
-  <div class="set-panel-body">
-    <form class="set-form" hx-post="{% url 'ip_plan:settings_scan_save' %}"
-          hx-target="#modal-content" hx-indicator="#modal-spinner">
-      {% csrf_token %}
-      <input type="hidden" name="file_hash" value="{{ file_hash }}">
-
-      <div class="set-field">
-        <label class="field-label" for="c-dns">DNS-серверы</label>
-        <textarea class="field-control set-mono" id="c-dns" name="dns_servers" rows="4">{% for s in dns_servers %}{{ s }}
+  <form class="st-sec st-grid2" style="gap:18px; padding:20px"
+        hx-post="{% url 'ip_plan:settings_scan_save' %}" hx-target="#modal-content" hx-indicator="#modal-spinner"
+        hx-on::after-request="if (event.detail.xhr.status >= 400) { Alpine.store('modal').dirty = false; window.dispatchEvent(new CustomEvent('open-modal')); }">
+    {% csrf_token %}
+    <input type="hidden" name="file_hash" value="{{ file_hash }}">
+    <label class="st-field">
+      <span class="st-label">DNS-серверы</span>
+      <textarea class="st-input is-108" name="dns_servers" rows="4" spellcheck="false">{% for s in dns_servers %}{{ s }}
 {% endfor %}</textarea>
-        <div class="set-hint">По одному в строке. Используются при сканировании с включённым резолвом имён.</div>
-      </div>
-
-      <div class="set-field">
-        <label class="field-label" for="c-skip">Имена, которые не резолвим</label>
-        <input class="field-control set-mono" id="c-skip" name="dns_skip_pattern" value="{{ dns_skip_pattern }}">
-        <div class="set-hint">Регулярное выражение. Подходящие под него имена пропускаются.</div>
-      </div>
-
-      <div class="set-field">
-        <label class="field-label" for="c-excl">Сети, исключённые из сканирования</label>
-        <textarea class="field-control set-mono" id="c-excl" name="scan_exclude_prefixes" rows="5">{% for p in scan_exclude_prefixes %}{{ p }}
+      <span class="st-hint">По одному в строке</span>
+    </label>
+    <label class="st-field">
+      <span class="st-label">Сети, исключённые из сканирования</span>
+      <textarea class="st-input is-108" name="scan_exclude_prefixes" rows="4" spellcheck="false">{% for p in scan_exclude_prefixes %}{{ p }}
 {% endfor %}</textarea>
-        <div class="set-hint">По одной сети в строке, в формате CIDR — например <code>10.1.0.0/24</code>.</div>
-      </div>
-
-      <div class="set-form-actions">
-        <button type="submit" class="btn-modal-primary">Сохранить</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<div class="set-panel">
-  <div class="set-panel-head">
-    <div>
-      <h2 class="set-panel-title">Подключение к NetBox</h2>
-      <p class="set-panel-desc">
-        Куда синхронизация записывает результат. Ошибка здесь останавливает весь прогон,
-        поэтому правку доверяем только суперпользователю.
-      </p>
+      <span class="st-hint">По одной сети в строке, в формате CIDR</span>
+    </label>
+    <label class="st-field st-span">
+      <span class="st-label">Имена, которые не резолвим</span>
+      <input class="st-input is-mono" name="dns_skip_pattern" value="{{ dns_skip_pattern }}" spellcheck="false" autocomplete="off">
+      <span class="st-hint">Регулярное выражение — подходящие имена пропускаются</span>
+    </label>
+    <div class="st-span st-form-foot">
+      <button type="submit" class="st-btn st-btn-primary is-md">Сохранить</button>
     </div>
-  </div>
-  <div class="set-panel-body set-panel-body-flush">
-    <table class="set-table">
-      <thead><tr><th>Окружение</th><th>Адрес</th><th>Токен</th><th></th></tr></thead>
-      <tbody>
+  </form>
+
+  <section style="display:flex; flex-direction:column; gap:10px">
+    <div>
+      <span class="st-sub-title">Подключение к NetBox</span>
+      <div class="st-sub-desc">Куда синхронизация записывает результат. Ошибка здесь останавливает весь прогон, поэтому менять может только суперпользователь.</div>
+    </div>
+    <div class="st-tbl">
+      <div class="st-tbl-in st-cols-env-in">
+        <div class="st-thead st-cols-env">
+          <span class="st-cell is-first">Окружение</span><span class="st-cell">Адрес</span><span class="st-cell">Токен</span><span></span>
+        </div>
         {% for e in environments %}
-          <tr>
-            <td><span class="set-name">{{ e.name }}</span></td>
-            <td class="set-mono">{{ e.url }}</td>
-            <td>{% if e.has_token %}<span class="set-chip">задан</span>{% else %}<span class="set-muted">не задан</span>{% endif %}</td>
-            <td>
-              <div class="set-row-actions">
-                {% if user.is_superuser %}
-                  <button type="button" class="btn-modal-secondary btn-pill-sm"
-                          hx-get="{% url 'ip_plan:settings_env_edit' e.name %}"
-                          hx-target="#modal-content" hx-indicator="#modal-spinner"
-                          @click="$store.modal.dirty = false; $dispatch('open-modal')">Изменить</button>
-                {% else %}
-                  <span class="set-muted">нужен доступ суперпользователя</span>
-                {% endif %}
-              </div>
-            </td>
-          </tr>
+          <div class="st-tr st-cols-env is-48{% if forloop.counter|divisibleby:2 %} is-even{% endif %}">
+            <span class="st-cell is-first" style="font-weight:600">{{ e.name }}</span>
+            <span class="st-cell mono" style="font-size:12.5px" title="{{ e.url }}">{{ e.url|default:"—" }}</span>
+            <span class="st-cell">{% if e.has_token %}<span class="st-tag is-ok is-small">задан</span>{% else %}<span style="font-size:12.5px; color:var(--faint)">не задан</span>{% endif %}</span>
+            <span class="st-cell is-end">
+              {% if user.is_superuser %}
+                <button type="button" class="st-btn st-btn-outline"
+                        hx-get="{% url 'ip_plan:settings_env_edit' e.name %}"
+                        hx-target="#modal-content" hx-indicator="#modal-spinner"
+                        @click="$store.modal.dirty = false; $dispatch('open-modal')">Изменить</button>
+              {% else %}
+                <span style="font-size:12px; color:var(--faint)" title="Правит только суперпользователь">только чтение</span>
+              {% endif %}
+            </span>
+          </div>
+        {% empty %}
+          <div class="st-empty">В config.json нет окружений</div>
         {% endfor %}
-      </tbody>
-    </table>
-  </div>
+      </div>
+    </div>
+  </section>
 </div>

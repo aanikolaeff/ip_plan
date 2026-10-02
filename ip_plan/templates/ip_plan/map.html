@@ -1,0 +1,19 @@
+{% extends "ip_plan/base.html" %}
+{% load ip_plan_extras %}
+
+{% block extra_scripts %}
+  {% vite_asset "ip_plan/static_src/topo_map/main.jsx" %}
+{% endblock %}
+
+{% block body_class %} shell-body-fixed{% endblock %}
+
+{% block content %}
+  <h1 class="sr-only">Карта сети</h1>
+  {{ map_boot|json_script:"topo-map-boot" }}
+  <!-- Карта — React-остров static_src/topo_map (React Flow). Данные —
+       /map/data.json (services/topology_map.py), раскладка пользователя —
+       /map/layout.json (модель MapLayout). До монтирования — спиннер. -->
+  <div id="topo-map-root" class="shell-island">
+    <div class="shell-loading"><span class="shell-spinner" aria-hidden="true"></span>Загрузка карты…</div>
+  </div>
+{% endblock %}

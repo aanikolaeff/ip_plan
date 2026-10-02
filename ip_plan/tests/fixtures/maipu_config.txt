@@ -1,0 +1,62 @@
+terminal length 0
+                       ^
+% Invalid input detected at '^' marker
+
+lab-maipu-sw01#show running-config
+Building Configuration...done
+
+! Current configuration : 2048 bytes
+!
+hostname lab-maipu-sw01
+
+ip access-list standard 1
+ 10 permit host 10.200.9.10 log
+ 20 permit 10.200.9.0 0.0.0.255
+ 30 deny any
+ exit
+ip access-list standard NMS-HOSTS
+ 10 permit host 10.200.9.11
+ exit
+ip access-list extended 1001
+ 10 remark bastion to rdp
+ 20 permit tcp host 10.200.9.10 host 10.200.1.100 eq 3389
+ 30 deny tcp any any eq 3389 log
+ 40 permit udp 10.200.2.0 0.0.0.255 range 1024 65535 host 192.0.2.53 eq 53
+ 50 permit icmp any any 8 0
+ 60 permit ip any any time-range WORK l3-action-group g1
+ exit
+ip access-list extended UNUSED-EXT
+ permit ip 192.0.2.0 0.0.0.255 any
+ deny ip any any
+ exit
+access-list 5 permit 10.200.5.0 0.0.0.255
+access-list 1500 deny ip any any
+ipv6 access-list extended V6-ONLY
+ 10 permit ipv6 any any
+ exit
+
+vlan 10
+ ip access-group 1001 out
+ exit
+interface vlan10
+ ip address 10.200.10.1 255.255.255.0
+ ip access-group NMS-HOSTS in
+ exit
+interface 25ge0/0/1
+ fec mode base-r auto
+             ip access-group 1 in
+ exit
+global ip access-group 1500 in
+
+snmp-server start
+snmp-server community XXXXXXXX view default ro NMS-HOSTS
+snmp-server community YYYYYYYY view default ro
+
+line vty 0 15
+ access-class 1 in
+ login aaa
+ exit
+
+!end
+
+lab-maipu-sw01#

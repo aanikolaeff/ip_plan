@@ -1,0 +1,99 @@
+{% comment %}
+  Правая панель «Карточка адреса» по макету test_des/IpEdit.html. Грузится
+  HTMX-ом в #drawer-content (base.html), форма сохраняется POST'ом в ip_save,
+  ответ закрывает панель событием close-drawer и сообщает таблице
+  ip-addresses-changed. Контекст — views._edit_context.
+{% endcomment %}
+<div class="ipf ipd" x-data="ipEditForm()" @input="dirty = true" @change="dirty = true">
+  <form hx-post="{% url 'ip_plan:ip_save' ip_id %}" hx-target="#drawer-content" hx-swap="innerHTML" hx-indicator="#drawer-spinner" class="ipd-form">
+    {% csrf_token %}
+    <input type="hidden" name="address" value="{{ address }}">
+    <input type="hidden" name="cpe" value="{{ form.cpe.value|default:'' }}">
+    <input type="hidden" name="open_ports" value="{{ form.open_ports.value|default:'' }}">
+    <input type="hidden" name="os_guess" value="{{ form.os_guess.value|default:'' }}">
+
+    <div class="ipd-head">
+      <div class="ipd-crumb">
+        {% if prefix_ctx %}<span class="ip-mono">{{ prefix_ctx.prefix }}</span>{% if prefix_ctx.vlan_vid %} · VLAN {{ prefix_ctx.vlan_vid }}{% endif %}{% else %}Адрес вне заведённых подсетей{% endif %}
+      </div>
+      <button type="button" class="modal-close-btn" @click="$store.drawer.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="ipd-address">
+      <span class="ip-mono ipd-ip">{{ address_ip }}</span><span class="ip-mono ipd-mask">/{{ address_mask }}</span>
+      <button type="button" class="ipd-copy" title="Копировать адрес" @click="copy('{{ address_ip }}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button>
+    </div>
+    <div class="ipd-meta">
+      <span class="ipf-seg-dot" data-status="{{ status_value }}"></span>
+      <span x-text="statusLabel()">{{ form.status.value }}</span>
+      {% if dns_name %}<span class="ipd-dot">·</span><span class="ip-mono">{{ dns_name }}</span>{% endif %}
+      {% if site %}<span class="ipd-dot">·</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"></path><circle cx="12" cy="10" r="3"></circle></svg> {{ site.name }}{% if device_name %} <span class="ipd-faint">по устройству</span>{% endif %}{% endif %}
+    </div>
+    <div class="ipd-actions">
+      <button type="button" class="ipd-action" @click="run('check', 'Проверяю доступность…')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg> Проверить доступность</button>
+      <button type="button" class="ipd-action" @click="run('scan-ports', 'Сканирую порты…')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg> Сканировать порты</button>
+      <button type="button" class="ipd-action" @click="run('resolve-dns', 'Резолв DNS…')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path><path d="M2 12h20"></path></svg> Резолв DNS</button>
+    </div>
+    <div class="ipd-result" x-show="result" x-cloak x-text="result" :class="resultKind"></div>
+
+    <div class="ipd-body">
+      {% if form.non_field_errors %}
+        <div class="alert-modal-error">{{ form.non_field_errors }}</div>
+      {% endif %}
+
+      <div class="ipd-section-title">Основное</div>
+      <label class="field-label">Статус</label>
+      <div class="ipf-segment" role="radiogroup" aria-label="Статус">
+        {% for value, label in status_choices %}
+          <label class="ipf-seg">
+            <input type="radio" name="status" value="{{ value }}" {% if form.status.value == value %}checked{% endif %} @change="status = '{{ value }}'">
+            <span class="ipf-seg-dot" data-status="{{ value }}"></span><span>{{ label }}</span>
+          </label>
+        {% endfor %}
+      </div>
+      <label class="field-label ipf-gap" for="{{ form.dns_name.id_for_label }}">DNS-имя</label>
+      <input type="text" name="dns_name" id="{{ form.dns_name.id_for_label }}" class="field-control ip-mono" value="{{ form.dns_name.value|default:'' }}" maxlength="255">
+      <label class="field-label ipf-gap" for="{{ form.description.id_for_label }}">Описание</label>
+      <input type="text" name="description" id="{{ form.description.id_for_label }}" class="field-control" value="{{ form.description.value|default:'' }}" maxlength="200">
+      {{ form.description.errors }}
+
+      <div class="ipd-section-title">Классификация</div>
+      <div class="ipf-grid">
+        <div>
+          <label class="field-label" for="{{ form.os_installed.id_for_label }}">Операционная система</label>
+          <input type="text" name="os_installed" id="{{ form.os_installed.id_for_label }}" class="field-control" list="os-catalog-datalist" value="{{ form.os_installed.value|default:'' }}" maxlength="255">
+        </div>
+        <div>
+          <label class="field-label" for="{{ form.purpose.id_for_label }}">Назначение</label>
+          <input type="text" name="purpose" id="{{ form.purpose.id_for_label }}" class="field-control" value="{{ form.purpose.value|default:'' }}" maxlength="255">
+        </div>
+      </div>
+      <div class="ipf-tags">
+        {% include "ip_plan/_tag_input.html" %}
+      </div>
+
+      <div class="ipd-section-title">Комментарий</div>
+      <textarea name="comments" id="{{ form.comments.id_for_label }}" class="field-control ipf-textarea" rows="3" placeholder="Заметки для коллег: кто владелец, где стоит, что важно знать">{{ form.comments.value|default:'' }}</textarea>
+
+      <div class="ipd-section-title ipd-section-scan">Из сканирования <span class="ipd-faint">Заполняется синхронизацией</span></div>
+      <dl class="ipd-scan">
+        <dt>Интерфейс</dt><dd>{% if device_name %}<span class="ip-mono">{{ device_name }}</span>{% if interface_name %} <span class="ipd-faint">·</span> <span class="ip-mono">{{ interface_name }}</span>{% endif %}{% else %}<span class="ipd-faint">не назначен</span>{% endif %}</dd>
+        <dt>Открытые порты</dt><dd>{% for p in scan.open_ports %}<span class="ipf-chip ip-mono is-static">{{ p }}</span>{% empty %}<span class="ipd-faint">—</span>{% endfor %}</dd>
+        <dt>OS Guess</dt><dd>{{ scan.os_guess|default:"—" }}</dd>
+        <dt>CPE</dt><dd class="ip-mono">{{ scan.cpe|default:"—" }}</dd>
+        {% if scan.dns_records %}<dt>DNS-записи</dt><dd class="ip-mono">{{ scan.dns_records }}</dd>{% endif %}
+      </dl>
+    </div>
+
+    <div class="ipd-footer">
+      <button type="button" class="ipd-danger" @click="remove()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg> Удалить</button>
+      <span class="ipd-dirty" x-show="dirty" x-cloak>Есть изменения</span>
+      <span class="ipf-footer-spacer"></span>
+      <button type="button" class="btn-modal-secondary" @click="$store.drawer.requestClose()">Отмена</button>
+      <button type="submit" class="btn-modal-primary">Сохранить <kbd class="ipf-kbd">⌘↵</kbd></button>
+    </div>
+  </form>
+</div>
+<script>
+  // Контекст для Alpine-компонента ipEditForm (app.js): id и статусы.
+  window.__ipEdit = { id: {{ ip_id }}, status: "{{ status_value }}", labels: {{ status_labels_json|safe }} };
+</script>

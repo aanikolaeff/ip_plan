@@ -1,75 +1,99 @@
-<div class="modal-title-bar">
-  <h5>Добавить IP-адрес</h5>
-  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+{% comment %}
+  Модалка «Новый IP-адрес» по макету test_des/IpAdd.html: адрес с подсказкой
+  «свободен/занят» и чипами свободных адресов, статус сегментами, поля
+  классификации, комментарий по кнопке, «Добавить ещё один». Контекст даёт
+  views._add_context: form, prefix_ctx (подсеть + VLAN), free_list, status_choices.
+  Проверка «адрес свободен» — клиентская, по списку free_list из таблицы.
+{% endcomment %}
+<div class="ipf" x-data='ipAddForm({{ free_list|safe }}, "{{ form.address.value|default:""|escapejs }}")'>
+  <div class="modal-title-bar ipf-title">
+    <div>
+      <h5>Новый IP-адрес</h5>
+      {% if prefix_ctx %}
+        <div class="ipf-sub">в подсети <span class="ip-mono">{{ prefix_ctx.prefix }}</span>{% if prefix_ctx.vlan_vid %} · VLAN {{ prefix_ctx.vlan_vid }}{% endif %}{% if prefix_ctx.description %} · {{ prefix_ctx.description }}{% endif %}</div>
+      {% endif %}
+    </div>
+    <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>
+  <form hx-post="{% url 'ip_plan:ip_add' %}" hx-target="#modal-content" hx-swap="innerHTML" hx-indicator="#modal-spinner" class="ipf-form">
+    {% csrf_token %}
+    <input type="hidden" name="prefix" value="{{ prefix }}">
+    <input type="hidden" name="free" value="{{ free_csv }}">
+    <div class="modal-body-pad">
+      {% if form.non_field_errors %}
+        <div class="alert-modal-error">{{ form.non_field_errors }}</div>
+      {% endif %}
+      {% if add_another %}
+        <div class="ipf-note ipf-note-ok">Адрес добавлен, можно вводить следующий.</div>
+      {% endif %}
+
+      <label class="field-label" for="{{ form.address.id_for_label }}">Адрес</label>
+      <div class="ipf-address-row">
+        <input type="text" name="address" id="{{ form.address.id_for_label }}" class="field-control ip-mono ipf-address"
+               value="{{ form.address.value|default:'' }}" placeholder="10.0.0.0/24" autocomplete="off" x-model="address" required>
+        <span class="ipf-free-badge" :class="freeState()" x-text="freeLabel()"></span>
+      </div>
+      {{ form.address.errors }}
+      {% if free_csv %}
+        <div class="ipf-free-chips">
+          <span class="ipf-free-chips-label">Свободные:</span>
+          <template x-for="(a, i) in free" :key="a">
+            <button type="button" class="ipf-chip ip-mono" :class="{ on: address.split('/')[0] === a }" @click="pick(a)" x-text="a"></button>
+          </template>
+        </div>
+      {% endif %}
+
+      <label class="field-label ipf-gap">Статус</label>
+      <div class="ipf-segment" role="radiogroup" aria-label="Статус">
+        {% for value, label in status_choices %}
+          {% if value != 'slaac' %}
+            <label class="ipf-seg">
+              <input type="radio" name="status" value="{{ value }}" {% if form.status.value == value %}checked{% endif %}>
+              <span class="ipf-seg-dot" data-status="{{ value }}"></span><span>{{ label }}</span>
+            </label>
+          {% endif %}
+        {% endfor %}
+      </div>
+
+      <div class="ipf-grid">
+        <div>
+          <label class="field-label" for="{{ form.dns_name.id_for_label }}">DNS-имя</label>
+          <input type="text" name="dns_name" id="{{ form.dns_name.id_for_label }}" class="field-control ip-mono" value="{{ form.dns_name.value|default:'' }}" placeholder="host.corp.local" maxlength="255">
+        </div>
+        <div>
+          <label class="field-label" for="{{ form.description.id_for_label }}">Описание</label>
+          <input type="text" name="description" id="{{ form.description.id_for_label }}" class="field-control" value="{{ form.description.value|default:'' }}" placeholder="Что это за узел" maxlength="200">
+          {{ form.description.errors }}
+        </div>
+        <div>
+          <label class="field-label" for="{{ form.os_installed.id_for_label }}">Операционная система</label>
+          <input type="text" name="os_installed" id="{{ form.os_installed.id_for_label }}" class="field-control" list="os-catalog-datalist" value="{{ form.os_installed.value|default:'' }}" placeholder="Из справочника" maxlength="255">
+        </div>
+        <div>
+          <label class="field-label" for="{{ form.purpose.id_for_label }}">Назначение</label>
+          <input type="text" name="purpose" id="{{ form.purpose.id_for_label }}" class="field-control" value="{{ form.purpose.value|default:'' }}" placeholder="Роль узла в сети" maxlength="255">
+        </div>
+      </div>
+
+      <div class="ipf-tags">
+        {% include "ip_plan/_tag_input.html" %}
+      </div>
+
+      <div class="ipf-comment">
+        <button type="button" class="ipf-link" x-show="!comment" @click="comment = true">+ Добавить комментарий</button>
+        <div x-show="comment" x-cloak>
+          <label class="field-label" for="{{ form.comments.id_for_label }}">Комментарий</label>
+          <textarea name="comments" id="{{ form.comments.id_for_label }}" class="field-control ipf-textarea" rows="3" placeholder="Заметки для коллег: кто владелец, где стоит, что важно знать">{{ form.comments.value|default:'' }}</textarea>
+        </div>
+      </div>
+      {# служебные поля скана при создании пустые — их заполняет синхронизация #}
+      <input type="hidden" name="cpe" value=""><input type="hidden" name="open_ports" value=""><input type="hidden" name="os_guess" value="">
+    </div>
+    <div class="modal-footer-bar ipf-footer">
+      <label class="ipf-check"><input type="checkbox" name="add_another" value="1" {% if add_another %}checked{% endif %}> <span>Добавить ещё один</span></label>
+      <span class="ipf-footer-spacer"></span>
+      <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Отмена</button>
+      <button type="submit" class="btn-modal-primary">Добавить <kbd class="ipf-kbd">⌘↵</kbd></button>
+    </div>
+  </form>
 </div>
-<form hx-post="{% url 'ip_plan:ip_add' %}" hx-target="#modal-content" hx-swap="innerHTML" hx-indicator="#modal-spinner">
-  {% csrf_token %}
-  <div class="modal-body-pad">
-    {% if form.non_field_errors %}
-      <div class="alert-modal-error">{{ form.non_field_errors }}</div>
-    {% endif %}
-
-    <div class="field-group">
-      <div class="field-group-title">Основные поля</div>
-      <div class="ip-form-row">
-        <div class="ip-form-field-address">
-          <label class="field-label">{{ form.address.label }}</label>
-          {{ form.address }}
-          {{ form.address.errors }}
-        </div>
-        <div class="ip-form-field-status">
-          <label class="field-label">{{ form.status.label }}</label>
-          {{ form.status }}
-        </div>
-        <div class="ip-form-field-dns">
-          <label class="field-label">{{ form.dns_name.label }}</label>
-          {{ form.dns_name }}
-        </div>
-      </div>
-      <div class="row g-2">
-        <div class="col-12">
-          <label class="field-label">{{ form.description.label }}</label>
-          {{ form.description }}
-        </div>
-      </div>
-    </div>
-
-    <div class="field-group">
-      <div class="field-group-title">Кастомные поля</div>
-      <div class="row g-2">
-        <div class="col-md-4">
-          <label class="field-label">{{ form.cpe.label }}</label>
-          {{ form.cpe }}
-        </div>
-        <div class="col-md-4">
-          <label class="field-label">{{ form.open_ports.label }}</label>
-          {{ form.open_ports }}
-        </div>
-        <div class="col-md-4">
-          <label class="field-label">{{ form.os_guess.label }}</label>
-          {{ form.os_guess }}
-        </div>
-        <div class="col-md-4">
-          <label class="field-label">{{ form.os_installed.label }}</label>
-          {{ form.os_installed }}
-        </div>
-        <div class="col-md-8">
-          <label class="field-label">{{ form.purpose.label }}</label>
-          {{ form.purpose }}
-        </div>
-        <div class="col-12">
-          <label class="field-label">{{ form.comments.label }}</label>
-          {{ form.comments }}
-        </div>
-      </div>
-    </div>
-
-    <div class="row g-2">
-      {% include "ip_plan/_tag_input.html" %}
-    </div>
-  </div>
-  <div class="modal-footer-bar">
-    <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Отмена</button>
-    <button type="submit" class="btn-modal-primary">Добавить</button>
-  </div>
-</form>

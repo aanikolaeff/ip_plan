@@ -5,50 +5,40 @@
   {% vite_asset "ip_plan/static_src/ip_table/main.jsx" %}
 {% endblock %}
 
-{% block content %}
-  <!-- До завершения инициализации DataTables сервер показывал бы все
-       колонки видимыми, без восстановленных из localStorage ширин и с
-       нулевой статистикой в шапке — накрываем спиннером на весь экран,
-       чтобы пользователь увидел только готовый результат (убирается в JS,
-       см. revealTableAfterFirstLoad()). Важно: НЕ внутри .table-wrapper —
-       у неё backdrop-filter, а это свойство создаёт новый containing
-       block для position:fixed у потомков, и оверлей "прибился" бы к
-       границам именно .table-wrapper (которая до пагинации DataTables
-       может быть огромной высоты — все 1000+ строк рисует сервер), а не
-       к реальному вьюпорту. -->
-  <div class="table-loading-overlay" id="table-loading-overlay">
-    <div class="spinner-ring"></div>
-    <span>Загрузка таблицы…</span>
-  </div>
-  <section class="hero">
-    <!-- Визуально скрыт — заголовок страницы уже виден по активному табу
-         "IP План" в постоянной шапке (base.html/nav.css), <h1> тут только
-         для семантики документа/читалок экрана. -->
-    <h1 class="sr-only">IP план</h1>
-    <div class="hero-row">
-      <button type="button" class="btn-add"
-              hx-get="{% url 'ip_plan:ip_add' %}"
-              hx-target="#modal-content"
-              hx-indicator="#modal-spinner"
-              @click="$store.modal.dirty = false; $dispatch('open-modal')">
-        + Добавить IP
-      </button>
-      <span class="hero-stat-sep"></span>
-      <div class="hero-stats">
-        <span class="hero-stat"><strong id="stat-total">0</strong> Всего IP</span>
-        <span class="hero-stat-sep"></span>
-        <span class="hero-stat"><strong id="stat-active">0</strong> Активных</span>
-        <span class="hero-stat-sep"></span>
-        <span class="hero-stat"><strong id="stat-inactive">0</strong> Неактивных</span>
-      </div>
-    </div>
-  </section>
+{% comment %}
+  Кнопки раздела живут в шапке оболочки (base.html, block head_actions):
+  «Экспорт» и «Добавить IP», как в макете test_des/Elegant.html. «Добавить»
+  вызывает функцию React-острова, чтобы модалка получила текущую подсеть и
+  свободные адреса; если остров ещё не смонтирован — открывает пустую форму.
+{% endcomment %}
+{% block head_actions %}
+  <a class="shell-btn" href="{% url 'ip_plan:export_excel' %}" title="Выгрузить все адреса в Excel">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" x2="12" y1="15" y2="3"></line></svg>
+    Экспорт
+  </a>
+  <button type="button" class="shell-btn shell-btn-primary"
+          @click="if (window.ipTableOpenAdd) { window.ipTableOpenAdd(); } else { htmx.ajax('GET', '{% url 'ip_plan:ip_add' %}', {target: '#modal-content', indicator: '#modal-spinner'}); $store.modal.dirty = false; $dispatch('open-modal'); }">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+    Добавить IP
+  </button>
+{% endblock %}
 
-  <!-- Тулбар + таблица + пагинация — React/TanStack Table (см.
-       docs/plans/2026-09-03-ip-table-react-design.md). Данные — fetch к
-       /ip/list.json (views.ip_list_json), а не серверный рендер: сервер
-       эту часть страницы больше не готовит вообще, только hero-секцию
-       выше и модалки (ip_add_modal.html и т.д., по-прежнему HTMX, не
-       связаны с этим root'ом). -->
-  <div id="ip-table-root"></div>
+{% block body_class %} shell-body-fixed{% endblock %}
+
+{% block content %}
+  <h1 class="sr-only">Адреса</h1>
+
+  <!-- Полоса статусов, тулбар с фильтром и «Видом», таблица, свободные
+       диапазоны, пагинация и панель выделения — всё внутри React-острова
+       (static_src/ip_table, см. docs/plans/2026-09-03-ip-table-react-design.md
+       и test_des/design-review.md). Данные — fetch /ip/list.json; после
+       сохранения модалки/панели сервер шлёт событие ip-addresses-changed,
+       и остров перечитывает список. Внутри корня — спиннер на время до
+       монтирования React (его заменяет первый render); сам остров до
+       первого ответа /ip/list.json рисует такой же в теле таблицы, так что
+       оболочка и тулбар видны сразу, а не прячутся за полноэкранной
+       заглушкой. -->
+  <div id="ip-table-root" class="shell-island">
+    <div class="shell-loading"><span class="shell-spinner"></span>Загрузка адресов…</div>
+  </div>
 {% endblock %}

@@ -12,6 +12,9 @@
 function initAclDetailTable(tableSelector, loadingOverlayId) {
   document.addEventListener('DOMContentLoaded', function () {
     new DataTable(tableSelector, {
+      // Ширины колонок задаёт CSS (.acl-col-*), а не автоподбор по первым
+      // строкам: иначе имена правил без пробелов получали узкую колонку.
+      autoWidth: false,
       pageLength: 25,
       lengthMenu: [10, 25, 50, 100, 500, 1000],
       language: {

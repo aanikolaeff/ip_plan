@@ -1,0 +1,132 @@
+{% comment %}
+  Блок вопроса раздела ACL (SPEC-acl.md, раздел 0 и 1): вкладки «Найти адрес» /
+  «Проверить трафик (скоро)», кнопка выбора устройств с поповером, поле
+  «Адрес или подсеть», кнопка «Найти». Общий для главной (acl_home.html) и
+  результата (acl_where.html). Контекст — словарь `question` из контракта
+  (CONTRACT-acl.md), плюс необязательный `show_hint` (подсказка под формой
+  только на главной).
+
+  Форма — обычный GET на acl_where: <input name="q"> и по одному
+  <input name="device"> на устройство. Вместо отдельных hidden-полей именем
+  `device` названы сами чекбоксы устройств внутри поповера — они лежат внутри
+  <form>, поэтому браузер отправляет ровно те же параметры и без JS. Alpine
+  (aclQuestion в acl.js) только открывает/закрывает поповер, фильтрует список
+  и пересчитывает подпись кнопки. Показ/скрытие — классами is-open/is-hidden,
+  не x-show (см. предупреждение в CLAUDE.md, «Оболочка»).
+
+  Переключение вкладок — ссылками: «Проверить трафик» ведёт на главную с
+  ?mode=traffic (заглушка), «Найти адрес» — на главную без параметров.
+{% endcomment %}
+{% load ip_plan_extras %}
+<div class="acl-q">
+  <div class="acl-q-tabs" role="tablist" aria-label="Что сделать">
+    <a class="acl-q-tab{% if question.mode != 'traffic' %} is-active{% endif %}" role="tab"
+       aria-selected="{% if question.mode != 'traffic' %}true{% else %}false{% endif %}"
+       href="{% url 'ip_plan:acl_lookup' %}">Найти адрес</a>
+    <a class="acl-q-tab{% if question.mode == 'traffic' %} is-active{% endif %}" role="tab"
+       aria-selected="{% if question.mode == 'traffic' %}true{% else %}false{% endif %}"
+       href="{% url 'ip_plan:acl_lookup' %}?mode=traffic">Проверить трафик <span class="acl-soon">скоро</span></a>
+  </div>
+
+  {% if question.mode == 'traffic' %}
+    {# ── Заглушка «Проверить трафик» (SPEC раздел 5): предупреждение и форма без логики ── #}
+    <div class="acl-traffic-warn" role="status">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
+      Проверка трафика запланирована: экран показывает будущий вид, логика ещё не сделана.
+    </div>
+    <div class="acl-q-form acl-q-form-traffic" aria-disabled="true">
+      <div class="acl-q-field">
+        <span class="acl-q-label">Устройство</span>
+        <button type="button" class="acl-devbtn" disabled aria-haspopup="listbox" aria-expanded="false" title="В заглушке выбор устройства не работает">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="8" x="2" y="14" rx="2"></rect><path d="M6.01 18H6"></path><path d="M10.01 18H10"></path><path d="M15 10v4"></path><path d="M17.84 7.17a4 4 0 0 0-5.66 0"></path><path d="M20.66 4.34a8 8 0 0 0-11.31 0"></path></svg>
+          <span class="acl-devbtn-label">{{ question.button_label }}</span>
+          {% if question.button_count %}<span class="mono acl-devbtn-count">{{ question.button_count }}</span>{% endif %}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="acl-devbtn-chev" aria-hidden="true"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>
+        </button>
+      </div>
+      <label class="acl-q-field">
+        <span class="acl-q-label">Откуда</span>
+        <input type="text" class="acl-input mono acl-input-200" placeholder="10.30.4.17" aria-label="Адрес источника" disabled>
+      </label>
+      <span class="acl-q-arrow" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg></span>
+      <label class="acl-q-field">
+        <span class="acl-q-label">Куда</span>
+        <input type="text" class="acl-input mono acl-input-200" placeholder="10.20.30.20" aria-label="Адрес назначения" disabled>
+      </label>
+      <label class="acl-q-field">
+        <span class="acl-q-label">Протокол</span>
+        <span class="acl-input acl-pseudo-select mono" aria-disabled="true">tcp<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></span>
+      </label>
+      <label class="acl-q-field">
+        <span class="acl-q-label">Порт</span>
+        <input type="text" class="acl-input mono acl-input-90" placeholder="389" aria-label="Порт назначения" disabled>
+      </label>
+      <button type="button" class="acl-primary" disabled title="Логика проверки трафика ещё не сделана">Проверить</button>
+    </div>
+    <span class="acl-q-hint">Каждый список читается сверху вниз и срабатывает первое подходящее правило — так же, как на устройстве.</span>
+
+  {% else %}
+    {# Список площадок/устройств — для фильтра поповера и подписи кнопки на клиенте #}
+    {{ question.sites|json_script:"acl-q-sites" }}
+    <form class="acl-q-form" method="get" action="{% url 'ip_plan:acl_where' %}"
+          x-data="aclQuestion({{ question.devices_total|default:0 }})"
+          @keydown.escape.window="open = false">
+      <div class="acl-q-field acl-devwrap" @click.outside="open = false">
+        <span class="acl-q-label" id="acl-dev-label">Устройство</span>
+        <button type="button" class="acl-devbtn" :class="{ 'is-open': open }" @click="open = !open"
+                aria-haspopup="listbox" :aria-expanded="open ? 'true' : 'false'" aria-labelledby="acl-dev-label">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="8" x="2" y="14" rx="2"></rect><path d="M6.01 18H6"></path><path d="M10.01 18H10"></path><path d="M15 10v4"></path><path d="M17.84 7.17a4 4 0 0 0-5.66 0"></path><path d="M20.66 4.34a8 8 0 0 0-11.31 0"></path></svg>
+          <span class="acl-devbtn-label" x-text="buttonLabel()">{{ question.button_label }}</span>
+          <span class="mono acl-devbtn-count" x-text="buttonCount()">{{ question.button_count|default:'' }}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="acl-devbtn-chev" aria-hidden="true"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>
+        </button>
+
+        <div class="acl-devpop" :class="{ 'is-open': open }" role="listbox" aria-multiselectable="true" aria-label="Устройства">
+          <label class="acl-devpop-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+            <input type="text" aria-label="Найти устройство" placeholder="Имя устройства или площадка" x-model="filter" autocomplete="off">
+          </label>
+          <button type="button" class="acl-devpop-all" @click="selectAll()">
+            <span class="acl-radio" :class="{ 'is-on': selected.length === 0 }"></span>
+            <span class="acl-devpop-all-text">Все устройства со списками доступа</span>
+            <span class="mono acl-devpop-all-count">{{ question.devices_total }}</span>
+          </button>
+          <div class="acl-devpop-list">
+            {% for site in question.sites %}
+              <div class="acl-devpop-site" :class="{ 'is-hidden': !siteVisible('{{ site.label|escapejs }}') }">
+                {% if question.show_site_headers %}<div class="acl-devpop-sitehead">{{ site.label }}</div>{% endif %}
+                {% for d in site.devices %}
+                  <label class="acl-devpop-row" :class="{ 'is-hidden': !deviceVisible('{{ d.name|escapejs }}', '{{ site.label|escapejs }}') }">
+                    <input type="checkbox" name="device" value="{{ d.name }}" {% if d.selected %}checked{% endif %}
+                           @change="toggle('{{ d.name|escapejs }}', $event.target.checked)">
+                    <span class="mono acl-devpop-name">{{ d.name }}</span>
+                    <span class="acl-devpop-acls">{{ d.acl_count_text }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+            {% empty %}
+              <div class="acl-devpop-empty">На площадке нет устройств со списками доступа</div>
+            {% endfor %}
+          </div>
+          <div class="acl-devpop-foot">
+            <span x-text="footerText()">{{ question.footer_text }}</span>
+            <button type="button" class="acl-devpop-done" @click="open = false">Готово</button>
+          </div>
+        </div>
+      </div>
+
+      <label class="acl-q-field">
+        <span class="acl-q-label">Адрес или подсеть</span>
+        <span class="acl-search">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+          <input type="search" name="q" class="acl-input acl-input-420 mono" value="{{ question.query }}"
+                 placeholder="например 10.20.30.25 или 10.20.30.0/24" autocomplete="off" spellcheck="false" required>
+        </span>
+      </label>
+      <button type="submit" class="acl-primary">Найти</button>
+    </form>
+    {% if show_hint %}
+      <span class="acl-q-hint">Покажет все списки доступа и группы, где встречается адрес — напрямую, через подсеть или через группу.</span>
+    {% endif %}
+  {% endif %}
+</div>

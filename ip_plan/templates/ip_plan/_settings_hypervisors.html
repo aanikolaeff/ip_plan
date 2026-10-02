@@ -1,106 +1,13 @@
-<div class="set-panel">
-  <div class="set-panel-head">
-    <div>
-      <h2 class="set-panel-title">RedVirt / oVirt</h2>
-      <p class="set-panel-desc">
-        Откуда синхронизация забирает кластеры, хосты и виртуальные машины.
-        Адрес — это API-эндпоинт, а не веб-интерфейс.
-      </p>
-    </div>
-    <div class="set-panel-actions">
-      <button type="button" class="btn-modal-primary"
-              hx-get="{% url 'ip_plan:settings_source_add' 'redvirt' %}"
-              hx-target="#modal-content" hx-indicator="#modal-spinner"
-              @click="$store.modal.dirty = false; $dispatch('open-modal')">Добавить источник</button>
-    </div>
+{% comment %}
+  «Гипервизоры» (SPEC §5; CONTRACT-settings §4). Две одинаковые секции —
+  _settings_hv_section.html. Контекст: redvirt / vcenter =
+  [(index, source, test)], *_hash, *_last (итог шага последнего прогона).
+{% endcomment %}
+<div class="st-screen is-gap22">
+  <div>
+    <h2 class="st-h2">Гипервизоры</h2>
+    <p class="st-lead">Откуда синхронизация забирает кластеры, хосты и виртуальные машины. Указывается адрес API, а не веб-интерфейса.</p>
   </div>
-  <div class="set-panel-body set-panel-body-flush">
-    <table class="set-table">
-      <thead><tr><th>Источник</th><th>Адрес API</th><th>Проверка</th><th></th></tr></thead>
-      <tbody>
-        {% for i, s, test in redvirt %}
-          <tr>
-            <td><span class="set-name">{{ s.name }}</span></td>
-            <td class="set-mono">
-              {{ s.url }}
-              <span class="set-sub">пользователь: {{ s.user|default:"—" }}</span>
-            </td>
-            <td>
-              {% include "ip_plan/_settings_test_button.html" with kind="redvirt" key=s.name|default:s.url test=test %}
-            </td>
-            <td>
-              <div class="set-row-actions">
-                <button type="button" class="btn-modal-secondary btn-pill-sm"
-                        hx-get="{% url 'ip_plan:settings_source_edit' 'redvirt' i %}"
-                        hx-target="#modal-content" hx-indicator="#modal-spinner"
-                        @click="$store.modal.dirty = false; $dispatch('open-modal')">Изменить</button>
-                <form hx-post="{% url 'ip_plan:settings_source_delete' 'redvirt' i %}"
-                      hx-target="#modal-content"
-                      hx-confirm="Убрать источник «{{ s.name }}»? Машины этого кластера останутся в NetBox — они просто перестанут обновляться.">
-                  {% csrf_token %}
-                  <input type="hidden" name="file_hash" value="{{ redvirt_hash }}">
-                  <button type="submit" class="btn-danger-quiet">Убрать</button>
-                </form>
-              </div>
-            </td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="4" class="set-empty">Источников нет.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<div class="set-panel">
-  <div class="set-panel-head">
-    <div>
-      <h2 class="set-panel-title">vCenter</h2>
-      <p class="set-panel-desc">
-        Кластеры, хосты ESXi и виртуальные машины, включая диски и адреса из гостевых агентов.
-      </p>
-    </div>
-    <div class="set-panel-actions">
-      <button type="button" class="btn-modal-primary"
-              hx-get="{% url 'ip_plan:settings_source_add' 'vcenter' %}"
-              hx-target="#modal-content" hx-indicator="#modal-spinner"
-              @click="$store.modal.dirty = false; $dispatch('open-modal')">Добавить источник</button>
-    </div>
-  </div>
-  <div class="set-panel-body set-panel-body-flush">
-    <table class="set-table">
-      <thead><tr><th>Источник</th><th>Адрес</th><th>Проверка</th><th></th></tr></thead>
-      <tbody>
-        {% for i, s, test in vcenter %}
-          <tr>
-            <td><span class="set-name">{{ s.name }}</span></td>
-            <td class="set-mono">
-              {{ s.url }}
-              <span class="set-sub">пользователь: {{ s.user|default:"—" }}</span>
-            </td>
-            <td>
-              {% include "ip_plan/_settings_test_button.html" with kind="vcenter" key=s.name|default:s.url test=test %}
-            </td>
-            <td>
-              <div class="set-row-actions">
-                <button type="button" class="btn-modal-secondary btn-pill-sm"
-                        hx-get="{% url 'ip_plan:settings_source_edit' 'vcenter' i %}"
-                        hx-target="#modal-content" hx-indicator="#modal-spinner"
-                        @click="$store.modal.dirty = false; $dispatch('open-modal')">Изменить</button>
-                <form hx-post="{% url 'ip_plan:settings_source_delete' 'vcenter' i %}"
-                      hx-target="#modal-content"
-                      hx-confirm="Убрать источник «{{ s.name }}»? Машины этого кластера останутся в NetBox — они просто перестанут обновляться.">
-                  {% csrf_token %}
-                  <input type="hidden" name="file_hash" value="{{ vcenter_hash }}">
-                  <button type="submit" class="btn-danger-quiet">Убрать</button>
-                </form>
-              </div>
-            </td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="4" class="set-empty">Источников нет.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  {% include "ip_plan/_settings_hv_section.html" with kind="redvirt" rows=redvirt hash=redvirt_hash last=redvirt_last title="RedVirt / oVirt" file="conf/sources_redvirt.json" desc="Кластеры, хосты и виртуальные машины" %}
+  {% include "ip_plan/_settings_hv_section.html" with kind="vcenter" rows=vcenter hash=vcenter_hash last=vcenter_last title="vCenter" file="conf/sources_vcenter.json" desc="Кластеры, хосты ESXi и ВМ, включая адреса из гостевых агентов" %}
 </div>

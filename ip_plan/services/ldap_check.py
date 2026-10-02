@@ -121,9 +121,15 @@ def find_user(servers, bind_dn, bind_password, search_base, search_filter, usern
     raise LdapCheckError("Ни один сервер не ответил на поисковый запрос")
 
 
-def test_user(cfg_values, username, password):
+def test_user(cfg_values, username, password, info=None):
     """Полная имитация входа: найти пользователя, забиндиться его паролем,
-    проверить членство в require_group. Ничего не пишет в базу."""
+    проверить членство в require_group. Ничего не пишет в базу.
+
+    info (словарь) — если передан, в него складывается разобранный итог для
+    карточки «Проверить вход»: dn, groups (из заданных в настройках, где
+    человек состоит), staff, superuser."""
+    if info is None:
+        info = {}
     servers = cfg_values["servers"]
     dn = find_user(servers, cfg_values["bind_dn"], cfg_values["bind_password"],
                    cfg_values["user_search_base"], cfg_values["user_search_filter"], username)
@@ -134,6 +140,7 @@ def test_user(cfg_values, username, password):
         )
 
     steps = [f"найден: {dn}"]
+    info.update({"dn": dn, "groups": [], "staff": False, "superuser": False})
 
     conn = None
     try:
@@ -153,6 +160,7 @@ def test_user(cfg_values, username, password):
     if require_group:
         if _in_group(cfg_values, dn, require_group):
             steps.append(f"состоит в {require_group} — вход разрешён")
+            info["groups"].append(require_group)
         else:
             raise LdapCheckError(
                 f"Пользователь найден и пароль верный, но он НЕ состоит в группе "
@@ -164,8 +172,45 @@ def test_user(cfg_values, username, password):
         if group:
             has = _in_group(cfg_values, dn, group)
             steps.append(f"{label}: {'да' if has else 'нет'} ({group})")
+            if has:
+                info["groups"].append(group)
+                info["staff" if label == "is_staff" else "superuser"] = True
 
     return steps
+
+
+def directory_status(cfg_values):
+    """Короткая сводка для шапки «Вход и LDAP»: отвечает ли каталог и
+    сколько людей в группе входа. Ничего не бросает — возвращает словарь
+    {ok, message, members}; members=None, если группа не задана или не
+    прочиталась."""
+    try:
+        test_bind(cfg_values["servers"], cfg_values["bind_dn"], cfg_values["bind_password"])
+    except LdapCheckError as e:
+        return {"ok": False, "message": str(e).splitlines()[0], "members": None}
+
+    group = cfg_values.get("require_group")
+    if not group:
+        return {"ok": True, "message": "", "members": None}
+    conn = None
+    try:
+        conn = _connect(cfg_values["servers"][0])
+        if cfg_values["bind_dn"]:
+            conn.simple_bind_s(cfg_values["bind_dn"], cfg_values["bind_password"])
+        else:
+            conn.simple_bind_s()
+        found = conn.search_s(group, ldap.SCOPE_BASE, "(objectClass=*)", ["member"])
+        members = found[0][1].get("member", []) if found else []
+        return {"ok": True, "message": "", "members": len(members)}
+    except ldap.LDAPError as e:
+        return {"ok": True, "message": f"группу {group} прочитать не удалось: {_describe(e)}",
+                "members": None}
+    finally:
+        if conn is not None:
+            try:
+                conn.unbind_s()
+            except ldap.LDAPError:
+                pass
 
 
 def _in_group(cfg_values, user_dn, group_dn):

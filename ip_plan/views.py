@@ -20,11 +20,15 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 
 from .forms import (
+    STATUS_LABELS,
     CUSTOM_FIELD_KEYS, STATUS_CHOICES, IPAddressForm,
     RegulatorDocumentNoteForm, RegulatorEntryForm,
 )
 from .models import FirewallObjectName, RegulatorDocument, RegulatorEntry
-from .services import acl_store, firewall_blocklist, ioc_parser, os_catalog, sync_log
+from .services import (
+    acl_search, acl_store, firewall_blocklist, ioc_parser, os_catalog, regulator_sync, remote_gateway, ssh_access,
+    sync_config, sync_log, vm_console,
+)
 from .services.netbox_client import NetBoxAPIError, NetBoxClient
 from .services.network_tools import NetworkToolError, ping_check, resolve_ptr, scan_ports
 from .templatetags.ip_plan_extras import description_hint, effective_description
@@ -108,13 +112,22 @@ def _attach_role(client, ip):
         ip["_role"] = None
         ip["_parent_description"] = None
         ip["_guest_os"] = None
+        ip["_site"] = None
         return ip
     parent_id, is_device = ref
     parent = client.get_device(parent_id) if is_device else client.get_virtual_machine(parent_id)
     ip["_role"] = parent.get("role")
     ip["_parent_description"] = parent.get("description") or None
     ip["_guest_os"] = None if is_device else (parent.get("custom_fields") or {}).get("guest_os") or None
+    ip["_site"] = _site_ref(parent.get("site"))
     return ip
+
+
+def _site_ref(site):
+    """{"slug", "name"} площадки из вложенного объекта NetBox либо None."""
+    if not site:
+        return None
+    return {"slug": site.get("slug"), "name": site.get("name") or site.get("display") or site.get("slug")}
 
 
 def _attach_roles_bulk(client, ip_addresses):
@@ -129,13 +142,52 @@ def _attach_roles_bulk(client, ip_addresses):
             ip["_role"] = None
             ip["_parent_description"] = None
             ip["_guest_os"] = None
+            ip["_site"] = None
             continue
         parent_id, is_device = ref
         parent = (devices if is_device else vms).get(parent_id) or {}
         ip["_role"] = parent.get("role")
         ip["_parent_description"] = parent.get("description") or None
         ip["_guest_os"] = None if is_device else (parent.get("custom_fields") or {}).get("guest_os") or None
+        ip["_site"] = _site_ref(parent.get("site"))
     return ip_addresses
+
+
+def _attach_sites_from_prefixes(ip_addresses, prefixes):
+    """Площадка для адресов без назначения — по самому специфичному
+    префиксу NetBox, содержащему адрес и приписанному к площадке
+    (scope_type=dcim.site; префиксы получают её от устройства, с которого
+    прочитаны, см. netbox_network_setup.py). У самого IP-адреса поля site
+    в NetBox нет: площадка у него всегда производная — от устройства/ВМ,
+    на которые он назначен, иначе от подсети."""
+    scoped = []
+    for prefix in prefixes:
+        if prefix.get("scope_type") != "dcim.site" or not prefix.get("scope"):
+            continue
+        try:
+            scoped.append((ipaddress.ip_network(prefix["prefix"], strict=False), _site_ref(prefix["scope"])))
+        except ValueError:
+            continue
+    scoped.sort(key=lambda pair: pair[0].prefixlen, reverse=True)
+    for ip in ip_addresses:
+        if ip.get("_site"):
+            continue
+        try:
+            addr = ipaddress.ip_interface(ip["address"]).ip
+        except (KeyError, ValueError):
+            continue
+        ip["_site"] = next((site for net, site in scoped if addr in net), None)
+    return ip_addresses
+
+
+def _site_choices(client):
+    """Список (slug, name) всех площадок NetBox — для опций фильтра
+    «Площадка» в тулбаре. Именно справочник целиком, а не «встречающиеся
+    среди адресов», как у фильтра «Роль»: площадка — ключевой разрез
+    инфраструктуры, и список должен совпадать с тем, что в настройках
+    устройств; площадка без адресов (новая RDC) в фильтре тоже нужна —
+    пустой результат по ней сам по себе информация."""
+    return [(s["slug"], s["name"]) for s in client.list_sites()]
 
 
 def _distinct_roles(ip_addresses):
@@ -157,18 +209,43 @@ def _sorted_prefixes(prefixes):
     return sorted(prefixes, key=sort_key)
 
 
-def _saved_response(request, client, ip, oob, message):
-    """Ответ на успешное сохранение: OOB-обновление строки + закрытие модалки + тост."""
-    _attach_role(client, ip)
-    row_html = render_to_string(
-        "ip_plan/ip_row.html", {"ip": ip, "oob": oob}, request=request
-    )
-    response = HttpResponse(row_html)
-    response["HX-Trigger"] = json.dumps(
-        {"close-modal": None, "show-toast": {"message": message, "kind": "success"}}
-    )
+def _saved_response(request, client, ip, oob, message, close="close-modal"):
+    """Ответ на успешное сохранение: закрыть модалку/панель (close —
+    «close-modal» или «close-drawer»), показать тост и сообщить React-таблице
+    адресов, что данные изменились (событие ip-addresses-changed → она
+    перезагружает /ip/list.json). Раньше сюда рендерилась OOB-строка старой
+    DataTables-таблицы — в React-странице её некуда вставлять, параметр oob
+    оставлен только ради сигнатуры вызовов."""
+    triggers = {"show-toast": {"message": message, "kind": "success"},
+                "ip-addresses-changed": True}
+    if close:
+        triggers[close] = None
+    response = HttpResponse("")
+    response["HX-Trigger"] = json.dumps(triggers)
     response["HX-Reswap"] = "none"
     return response
+
+
+def _prefix_context(client, address, prefixes=None):
+    """Подсеть адреса для подзаголовков форм: самый специфичный префикс
+    NetBox, содержащий адрес, с VLAN (если задан). None — не нашли."""
+    try:
+        ip_obj = ipaddress.ip_interface(address).ip
+    except ValueError:
+        return None
+    best = None
+    for p in (prefixes if prefixes is not None else client.list_prefixes()):
+        try:
+            net = ipaddress.ip_network(p["prefix"], strict=False)
+        except (ValueError, KeyError):
+            continue
+        if ip_obj in net and (best is None or net.prefixlen > best[0].prefixlen):
+            best = (net, p)
+    if best is None:
+        return None
+    vlan = best[1].get("vlan") or {}
+    return {"prefix": str(best[0]), "vlan_vid": vlan.get("vid"), "vlan_name": vlan.get("name") or "",
+            "description": best[1].get("description") or ""}
 
 
 def _assignment_display(ip):
@@ -217,12 +294,14 @@ def serialize_ip(ip):
         "address": ip.get("address", ""),
         "status": {
             "value": (ip.get("status") or {}).get("value", "active"),
-            "label": (ip.get("status") or {}).get("label", ""),
+            "label": STATUS_LABELS.get((ip.get("status") or {}).get("value"),
+                                       (ip.get("status") or {}).get("label", "")),
         },
         "dns_name": ip.get("dns_name") or "",
         "dns_records": custom_fields.get("dns_records") or "",
         "assignment": _assignment_display(ip),
         "role": role,  # {"slug": ..., "name": ...} либо null
+        "site": ip.get("_site"),  # {"slug": ..., "name": ...} либо null — производная от устройства/ВМ/подсети
         # "Описание" редактируется инлайн только не-VM (для VM — read-only,
         # заполняется внешней синхронизацией) — см. effective_description/
         # description_hint в ip_plan_extras.py про то же разделение.
@@ -332,74 +411,123 @@ def export_excel(request):
     return response
 
 
-def _acl_page_context(ip_query, device_name):
-    """Общий контекст для acl_lookup() — и обычного GET (полная страница),
-    и HTMX-запроса (partial, реагирует и на ввод IP, и на смену дропбокса
-    устройства) — один и тот же URL для обоих, см. докстринг acl_lookup —
-    чтобы обе точки входа вели себя одинаково, включая прямое открытие
-    ссылки вида ?ip=...&device=....
+def set_site(request):
+    """Выбор площадки в боковом меню: кладёт slug в cookie и возвращает на
+    страницу, с которой пришли (?next=, только относительный путь)."""
+    from ip_plan.context_processors import SITE_COOKIE, SITE_ALL, SITE_NONE, site_options_cached
+    value = (request.GET.get("site") or SITE_ALL).strip()
+    if value not in (SITE_ALL, SITE_NONE) and not any(o["slug"] == value for o in site_options_cached()):
+        value = SITE_ALL
+    nxt = request.GET.get("next") or ""
+    if not nxt.startswith("/") or nxt.startswith("//"):
+        nxt = reverse("ip_plan:ip_list")
+    response = redirect(nxt)
+    response.set_cookie(SITE_COOKIE, value, max_age=365 * 24 * 3600, samesite="Lax")
+    return response
 
-    device_name фильтрует ОБА блока (результаты поиска и обзорную таблицу);
-    '' / None — «все устройства»."""
-    ip_query = (ip_query or "").strip()
-    device_name = (device_name or "").strip()
-    results, error = [], None
-    if ip_query:
-        try:
-            results = acl_store.search_ip(ip_query, device_name=device_name or None)
-        except ValueError:
-            error = f"«{ip_query}» — не похоже на IPv4-адрес"
-    return {
-        "ip_query": ip_query,
-        "selected_device": device_name,
-        "results": results,
-        "search_error": error,
-        "overview_rows": acl_store.overview(device_name=device_name or None),
-        "object_group_rows": acl_store.list_object_groups(device_name=device_name or None),
-    }
+
+def _acl_devices_for_site(request):
+    """Множество имён устройств выбранной площадки (по meta.json снимков) или
+    None, если выбраны все площадки."""
+    from ip_plan.context_processors import current_site, SITE_ALL, SITE_NONE
+    site = current_site(request)
+    if site == SITE_ALL:
+        return None
+    rows = acl_store.snapshot_info()
+    if site == SITE_NONE:
+        return {r["device"] for r in rows if not r.get("site")}
+    return {r["device"] for r in rows if r.get("site") == site}
+
+
+def _acl_site_context(request):
+    """(devices, site_labels, show_site_headers) для раздела ACL: устройства
+    выбранной в оболочке площадки (None — все), подписи площадок для меню
+    устройств и нужно ли рисовать заголовки площадок (только при «Все»)."""
+    from ip_plan.context_processors import current_site, SITE_ALL, site_options_cached
+    devices = _acl_devices_for_site(request)
+    labels = {}
+    for opt in site_options_cached() or []:
+        if isinstance(opt, dict) and opt.get("slug"):
+            labels[opt["slug"]] = opt.get("name") or opt["slug"]
+    return devices, labels, current_site(request) == SITE_ALL
 
 
 def acl_lookup(request):
-    """Страница «ACL» — поиск, какие ACL-правила на Cisco-устройствах
-    трогают заданный IP, плюс обзор всех загруженных ACL, с фильтром по
-    устройству (дропбокс, '' = все). Данные — только из
-    netbox-sync/config_backups/*/latest.cfg (см. acl_store.py), в NetBox
-    эта страница никогда не пишет и не читает.
+    """Главная раздела «ACL» (макет test_des/AclIndex): вопрос «где
+    встречается адрес или подсеть» с выбором устройств и каталог списков
+    доступа и групп адресов по всем устройствам площадки. ?tab=lists|groups —
+    вкладка каталога, ?mode=traffic — вкладка-заглушка «Проверить трафик».
+    Данные — только из снимков netbox-sync/config_backups (acl_store,
+    acl_search); в NetBox страница не ходит."""
+    devices, labels, headers = _acl_site_context(request)
+    mode = "traffic" if request.GET.get("mode") == "traffic" else "find"
+    tab = "groups" if request.GET.get("tab") == "groups" else "lists"
+    # ?device= — выбор устройств переживает переключение вкладок каталога
+    # (вкладки — ссылки; aclCatalog дописывает выбор в их href).
+    selected = [d for d in request.GET.getlist("device") if d]
+    return render(request, "ip_plan/acl_home.html", {
+        "question": acl_search.question(devices, "", selected, headers, labels, mode),
+        "catalog": acl_search.catalog(devices),
+        "snapshot_summary": acl_search.snapshot_summary(devices),
+        "tab": tab,
+    })
 
-    Один URL на обычный GET и на HTMX-запрос (форма поиска и дропбокс
-    устройства бьют сюда же, не в отдельный /acl/search/) — иначе
-    hx-push-url кладёт в адресную строку URL самого AJAX-запроса, и
-    F5/переход по «Назад» на нём отдавал бы голый фрагмент без <head>/CSS/
-    дропбокса (ровно так и было, пока это были разные эндпоинты — фрагмент
-    ошибочно принимали за "стили и дропбокс пропали")."""
-    context = _acl_page_context(request.GET.get("ip"), request.GET.get("device"))
-    if request.headers.get("HX-Request") == "true":
-        return render(request, "ip_plan/_acl_page_body.html", context)
-    context["device_choices"] = acl_store.list_device_names()
-    return render(request, "ip_plan/acl_lookup.html", context)
+
+def acl_where(request):
+    """Результат «Где встречается адрес» (макет AclWhere): ?q=<ip|cidr>,
+    ?device=<имя> (повторяемый; пусто — все устройства площадки). Категории
+    совпадения, цепочки «почему совпало» и свёртки широких/any считает
+    acl_search.search; фильтры роли и категории — на клиенте."""
+    devices, labels, headers = _acl_site_context(request)
+    q = (request.GET.get("q") or "").strip()
+    if not q:
+        return redirect("ip_plan:acl_lookup")
+    selected = [d for d in request.GET.getlist("device") if d]
+    result, error = None, None
+    try:
+        result = acl_search.search(q, devices=devices, selected=selected)
+    except acl_search.QueryError as exc:
+        error = str(exc)
+    return render(request, "ip_plan/acl_where.html", {
+        "question": acl_search.question(devices, q, selected, headers, labels),
+        "result": result,
+        "error": error,
+        "snapshot_summary": acl_search.snapshot_summary(devices),
+    })
 
 
 def acl_detail(request, device, acl_name):
-    """Полное содержимое одного ACL (все правила, включая remark) в виде
-    таблицы — переход сюда со строки обзорной таблицы на /acl/. Поиск —
-    штатный built-in search у DataTables (см. acl_detail.html), не
-    серверный: для ACL вроде '20' (32к+ правил) весь список рендерится
-    один раз, дальше фильтрация/пагинация — на клиенте, без повторных
-    round-trip на каждый символ."""
-    dev = acl_store.get_device(device)
-    if dev is None:
-        raise Http404(f"Устройство «{device}» не найдено в config_backups")
-    acl = dev.acl_by_name(acl_name)
-    if acl is None:
-        raise Http404(f"ACL «{acl_name}» не найден на {device}")
-
-    applications = [a for a in dev.applications if a.acl_name == acl.name]
-    return render(request, "ip_plan/acl_detail.html", {
-        "device": device,
-        "acl": acl,
-        "applications": applications,
-        "applied": bool(applications),
+    """Список правил одного ACL в порядке конфига (макет AclList): ?q=<ip|cidr>
+    подсвечивает совпадения, сворачивает блоки без совпадений и даёт
+    навигацию «1 из N». Правило отдаётся фрагментами (text/any/group/hit),
+    чтобы группы были кликабельны, а совпавшие части подсвечены."""
+    listing = acl_search.listing(device, acl_name, request.GET.get("q"))
+    if listing is None:
+        raise Http404(f"ACL «{acl_name}» на устройстве «{device}» не найден в config_backups")
+    devices, labels, headers = _acl_site_context(request)
+    return render(request, "ip_plan/acl_list.html", {
+        "listing": listing,
+        "question": acl_search.question(devices, listing["query"], [device], headers, labels),
+        "snapshot_summary": acl_search.snapshot_summary(devices),
     })
+
+
+def acl_rule_nodes_panel(request, device, acl_name, rule_id, side):
+    """HTMX-фрагмент панели узлов ViPNet, перечисленных прямо в правиле
+    (side = source|destination) — тот же шаблон, что у панели группы."""
+    panel = acl_search.rule_nodes_panel(device, acl_name, rule_id, side, request.GET.get("q"))
+    if panel is None:
+        raise Http404(f"Правило {rule_id} ({side}) в «{acl_name}» на {device} не найдено")
+    return render(request, "ip_plan/_acl_group_panel.html", {"panel": panel})
+
+
+def acl_group_panel(request, device, name):
+    """HTMX-фрагмент правой панели группы адресов (в #drawer-content):
+    члены группы, содержащие ?q=, идут первыми."""
+    panel = acl_search.group_panel(device, name, request.GET.get("q"))
+    if panel is None:
+        raise Http404(f"object-group «{name}» не найден на {device}")
+    return render(request, "ip_plan/_acl_group_panel.html", {"panel": panel})
 
 
 def acl_object_group_detail(request, device, name):
@@ -411,6 +539,25 @@ def acl_object_group_detail(request, device, name):
     if result is None:
         raise Http404(f"object-group «{name}» не найден на {device}")
     return render(request, "ip_plan/acl_object_group_detail.html", result)
+
+
+def acl_history(request, device):
+    """История снимков устройства (все файлы <dev>_<ts>.* из config_backups)
+    и diff выбранного снимка с предыдущим того же имени — «что изменилось в
+    политике». ?file=<имя файла> выбирает снимок; без него — самый свежий.
+    Строки с секретами в diff маскируются (acl_store._scrub)."""
+    if acl_store.get_device(device) is None and not acl_store.list_history(device):
+        raise Http404(f"Устройство «{device}» не найдено в config_backups")
+    history = acl_store.list_history(device)
+    selected = request.GET.get("file") or (history[0]["name"] if history else None)
+    diff = acl_store.diff_snapshot(device, selected) if selected else None
+    return render(request, "ip_plan/acl_history.html", {
+        "device": device,
+        "history": history,
+        "selected": selected,
+        "diff": diff,
+        "snapshot_rows": acl_store.snapshot_info(device_name=device),
+    })
 
 
 # --- Реестр блокировок регулятора (models.py) ---
@@ -446,7 +593,50 @@ def _regulator_letters_context(request):
     return {"documents": documents, "sort": sort}
 
 
+def _reg_snapshot_public(snap):
+    """Снимок xFW без объектов — для шаблонов."""
+    return {k: v for k, v in snap.items() if k not in ("objects", "names")} | {
+        "objects": [{"kind": k, "name": o.name, "wanted": o.wanted, "found": o.found, "fallback": o.fallback,
+                     "count": len(o.raw)} for k, o in snap["objects"].items()]}
+
+
 def regulator_list(request):
+    """Главная «Блокировки» (макет test_des/Reg): сводные карточки «всё ли
+    применено», проверка одного значения (?check=), вкладки ?tab=letters |
+    entries | sync. Сверка со снимком объектов xFW — services/regulator_sync."""
+    snap = regulator_sync.snapshot()
+    index = regulator_sync._value_index()
+    lists = regulator_sync.sync_lists(snap, index)
+    tab = request.GET.get("tab") if request.GET.get("tab") in ("letters", "entries", "sync") else "letters"
+    check_q = (request.GET.get("check") or "").strip()
+    context = {
+        "tab": tab,
+        "snapshot": _reg_snapshot_public(snap),
+        "summary": regulator_sync.summary(snap, index, lists),
+        "letters": regulator_sync.letters(snap, index),
+        "sync": lists,
+        "check_query": check_q,
+        "check": regulator_sync.check(check_q, snap, index) if check_q else None,
+    }
+    if tab == "entries":
+        entries = RegulatorEntry.objects.select_related("document").order_by("-created_at")
+        context["entries"] = regulator_sync.annotate(entries, snap, index)
+    return render(request, "ip_plan/reg_home.html", context)
+
+
+def regulator_commands(request):
+    """Мастер «Команды для xFW» (макет RegCmd): что изменится по каждому
+    объекту, команды, правила ViPNet, где менять списки, «Отметить, что
+    применили»."""
+    snap = regulator_sync.snapshot()
+    return render(request, "ip_plan/reg_commands.html", {
+        "snapshot": _reg_snapshot_public(snap),
+        "cmd": regulator_sync.commands(snap),
+        "applied": request.GET.get("applied") == "1",
+    })
+
+
+def _regulator_list_legacy(request):
     """Страница «Блокировки регулятора» — тот же принцип, что у acl_lookup:
     один URL на обычный GET и на HTMX (переключение сортировки бьёт сюда же,
     hx-push-url кладёт query-string в адресную строку). HTMX-ветка отдаёт
@@ -579,7 +769,25 @@ def regulator_document_detail(request, document_id):
     ЭТОГО письма. Замена прежнему workflow "модалка + выбор письма из
     списка на каждую запись"."""
     document = get_object_or_404(RegulatorDocument, pk=document_id)
-    return render(request, "ip_plan/regulator_document_detail.html", {"document": document})
+    return render(request, "ip_plan/reg_document.html", _reg_document_context(document))
+
+
+def _reg_document_context(document):
+    snap = regulator_sync.snapshot()
+    index = regulator_sync._value_index()
+    progress = next((x for x in regulator_sync.letters(snap, index) if x["id"] == document.id), None)
+    entries = regulator_sync.annotate(document.entries.select_related("document").order_by("-created_at"), snap, index)
+    order = {"pending": 0, "revoked_present": 1, "unknown": 2, "applied": 3, "removed": 4, "not_applicable": 5}
+    entries.sort(key=lambda e: order.get(e["fw_state"], 9))
+    return {"document": document, "progress": progress, "entries": entries,
+            "snapshot": _reg_snapshot_public(snap)}
+
+
+def regulator_document_entries(request, document_id):
+    """HTMX-фрагмент записей письма — перерисовка по событию
+    regulator-entries-changed (быстрый ввод, импорт, снятие)."""
+    document = get_object_or_404(RegulatorDocument, pk=document_id)
+    return render(request, "ip_plan/_reg_doc_entries.html", _reg_document_context(document))
 
 
 def _next_regulator_reference_no():
@@ -821,9 +1029,25 @@ def regulator_document_ioc_parse(request, document_id):
                 "note": ind.note,
             })
 
+    # Для экрана «Проверьте, что распознано»: дубль в этом письме (снят по
+    # умолчанию) и совпадения с другими письмами (подсвечены).
+    by_mv = {}
+    for e in RegulatorEntry.objects.select_related("document").all():
+        by_mv.setdefault((e.kind if e.kind != "url" else "fqdn", e.match_value), []).append(e)
+    for row in rows:
+        k = row["entry_kind"]
+        mv = RegulatorEntry.compute_match_value(k, row["value"])
+        found = by_mv.get((k if k != "url" else "fqdn", mv), [])
+        row["dup_here"] = any(e.document_id == document.id for e in found)
+        row["other_letters"] = sorted({(e.document_id, e.document.reference_no) for e in found
+                                       if e.document_id != document.id})
+        row["selected"] = not row["dup_here"]
     return render(request, "ip_plan/_regulator_ioc_preview.html", {
         "document": document,
         "rows": rows,
+        "summary": {"found": len(rows), "dups": sum(r["dup_here"] for r in rows),
+                    "elsewhere": sum(bool(r["other_letters"]) for r in rows),
+                    "selected": sum(r["selected"] for r in rows), "files": [f.name for f in files]},
         "warnings": warnings,
         "kind_choices": RegulatorEntry.KIND_CHOICES,
         "stamp_values": stamp_values,
@@ -1083,13 +1307,8 @@ def regulator_firewall_commands_apply(request):
         FirewallObjectName.objects.update_or_create(kind="ip", defaults={"current_name": ip_next_name})
     if fqdn_next_name:
         FirewallObjectName.objects.update_or_create(kind="fqdn", defaults={"current_name": fqdn_next_name})
-    html = render_to_string(
-        "ip_plan/_regulator_firewall_body.html", {**_regulator_firewall_context(), "oob": True}, request=request
-    )
-    response = HttpResponse(html)
-    response["HX-Trigger"] = json.dumps(
-        {"show-toast": {"message": "Текущие имена обновлены", "kind": "success"}}
-    )
+    response = HttpResponse("")
+    response["HX-Redirect"] = reverse("ip_plan:regulator_commands") + "?applied=1"
     return response
 
 
@@ -1134,15 +1353,26 @@ def ip_list_json(request):
         ip_addresses = client.list_ip_addresses()
         prefixes = _sorted_prefixes(client.list_prefixes())
         _attach_roles_bulk(client, ip_addresses)
+        _attach_sites_from_prefixes(ip_addresses, prefixes)
     except NetBoxAPIError as exc:
         logger.error("Не удалось получить список IP-адресов/подсетей (JSON): %s", exc)
         return JsonResponse({"error": str(exc)}, status=502)
 
     return JsonResponse({
         "results": [serialize_ip(ip) for ip in ip_addresses],
-        "prefixes": [p["prefix"] for p in prefixes],
+        # Подсети — объектами (01.10.2026): меню «Фильтр» показывает VLAN и
+        # описание рядом с CIDR, модалка добавления — подзаголовок «в подсети …».
+        "prefixes": [{
+            "prefix": p["prefix"],
+            "vlan": ({"vid": p["vlan"].get("vid"), "name": p["vlan"].get("name") or ""}
+                     if p.get("vlan") else None),
+            "description": p.get("description") or "",
+            "site": ({"slug": p["scope"].get("slug"), "name": p["scope"].get("name")}
+                     if p.get("scope_type") == "dcim.site" and p.get("scope") else None),
+        } for p in prefixes],
         "status_choices": STATUS_CHOICES,
         "role_choices": _distinct_roles(ip_addresses),
+        "site_choices": _site_choices(client),
     })
 
 
@@ -1252,9 +1482,9 @@ def ip_add(request):
     """GET — форма добавления (для модального окна), POST — создание записи в NetBox."""
     if request.method == "POST":
         form = IPAddressForm(request.POST)
+        client = NetBoxClient()
         if form.is_valid():
             try:
-                client = NetBoxClient()
                 tag_ids = client.resolve_tags(form.cleaned_data["tags"])
                 payload = _build_payload(form.cleaned_data, tag_ids)
                 ip = client.create_ip_address(payload)
@@ -1262,19 +1492,50 @@ def ip_add(request):
                 logger.error("Не удалось создать IP-адрес: %s", exc)
                 form.add_error(None, str(exc))
             else:
+                if request.POST.get("add_another"):
+                    # Галочка «Добавить ещё один»: модалка остаётся, форма
+                    # очищается (статус и подсеть сохраняются), таблица
+                    # перечитывается событием ip-addresses-changed.
+                    fresh = IPAddressForm(initial={"status": form.cleaned_data["status"]})
+                    response = render(request, "ip_plan/ip_add_modal.html",
+                                      _add_context(client, fresh, request.POST.get("prefix", ""),
+                                                   request.POST.get("free", ""), add_another=True))
+                    response["HX-Trigger"] = json.dumps({
+                        "ip-addresses-changed": True,
+                        "show-toast": {"message": "IP-адрес добавлен", "kind": "success"}})
+                    return response
                 return _saved_response(
                     request, client, ip, "beforeend:#ip-table-body", "IP-адрес добавлен"
                 )
-        return render(request, "ip_plan/ip_add_modal.html", {"form": form}, status=400)
+        return render(request, "ip_plan/ip_add_modal.html",
+                      _add_context(client, form, request.POST.get("prefix", ""),
+                                   request.POST.get("free", "")), status=400)
 
-    # ?address= — предзаполнение из кнопки "+" у строки свободного диапазона
-    # (первый свободный адрес этого диапазона); остальные поля пустые.
+    # ?address= — предзаполнение из «Занять первый» у строки свободного
+    # диапазона; ?prefix= и ?free= (до 8 свободных адресов через запятую) —
+    # подзаголовок «в подсети …» и чипы «Свободные» в модалке.
     initial = {"status": "active"}
     prefill_address = request.GET.get("address")
     if prefill_address:
         initial["address"] = prefill_address
     form = IPAddressForm(initial=initial)
-    return render(request, "ip_plan/ip_add_modal.html", {"form": form})
+    return render(request, "ip_plan/ip_add_modal.html",
+                  _add_context(NetBoxClient(), form, request.GET.get("prefix", ""),
+                               request.GET.get("free", "")))
+
+
+def _add_context(client, form, prefix, free, add_another=False):
+    free_list = [a.strip() for a in (free or "").split(",") if a.strip()][:8]
+    prefix_ctx = None
+    if prefix:
+        try:
+            prefix_ctx = _prefix_context(client, prefix.split("/")[0] + "/32",
+                                         client.list_prefixes())
+        except NetBoxAPIError:
+            prefix_ctx = {"prefix": prefix, "vlan_vid": None, "vlan_name": "", "description": ""}
+    return {"form": form, "prefix_ctx": prefix_ctx, "prefix": prefix,
+            "free_list": json.dumps(free_list), "free_csv": ",".join(free_list),
+            "status_choices": STATUS_CHOICES, "add_another": add_another}
 
 
 def ip_edit_modal(request, ip_id):
@@ -1286,17 +1547,45 @@ def ip_edit_modal(request, ip_id):
         return render(request, "ip_plan/_modal_error.html", {"error": str(exc)})
 
     form = IPAddressForm(initial=_ip_to_initial(ip))
-    interface_name = (ip.get("assigned_object") or {}).get("name") or "—"
-    return render(
-        request,
-        "ip_plan/ip_edit_modal.html",
-        {
-            "form": form,
-            "ip_id": ip_id,
-            "address": ip.get("address", ""),
-            "interface_name": interface_name,
+    return render(request, "ip_plan/ip_edit_panel.html", _edit_context(form, ip_id, ip))
+
+
+def _edit_context(form, ip_id, ip):
+    """Контекст правой панели карточки адреса (ip_edit_panel.html)."""
+    client = NetBoxClient()
+    try:
+        _attach_role(client, ip)
+    except NetBoxAPIError:
+        pass
+    try:
+        prefix_ctx = _prefix_context(client, ip.get("address", ""))
+    except NetBoxAPIError:
+        prefix_ctx = None
+    assigned = ip.get("assigned_object") or {}
+    device = (assigned.get("device") or assigned.get("virtual_machine") or {}).get("name")
+    custom_fields = ip.get("custom_fields") or {}
+    address = ip.get("address", "")
+    return {
+        "form": form,
+        "ip_id": ip_id,
+        "address": address,
+        "address_ip": address.split("/")[0],
+        "address_mask": address.split("/")[1] if "/" in address else "",
+        "status_value": (ip.get("status") or {}).get("value", "active"),
+        "status_choices": STATUS_CHOICES,
+        "status_labels_json": json.dumps(STATUS_LABELS, ensure_ascii=False),
+        "dns_name": ip.get("dns_name") or "",
+        "site": ip.get("_site"),
+        "device_name": device or "",
+        "interface_name": assigned.get("name") or "",
+        "prefix_ctx": prefix_ctx,
+        "scan": {
+            "open_ports": [p.strip() for p in (custom_fields.get("open_ports") or "").split(",") if p.strip()],
+            "os_guess": custom_fields.get("os_guess") or "",
+            "cpe": custom_fields.get("cpe") or "",
+            "dns_records": custom_fields.get("dns_records") or "",
         },
-    )
+    }
 
 
 def ip_save(request, ip_id):
@@ -1312,14 +1601,14 @@ def ip_save(request, ip_id):
             logger.error("Не удалось обновить IP-адрес %s: %s", ip_id, exc)
             form.add_error(None, str(exc))
         else:
-            return _saved_response(request, client, ip, "true", "IP-адрес сохранён")
+            return _saved_response(request, client, ip, "true", "IP-адрес сохранён",
+                                   close="close-drawer")
 
-    return render(
-        request,
-        "ip_plan/ip_edit_modal.html",
-        {"form": form, "ip_id": ip_id, "address": form.data.get("address", "")},
-        status=400,
-    )
+    try:
+        current = client.get_ip_address(ip_id)
+    except NetBoxAPIError:
+        current = {"address": form.data.get("address", ""), "status": {"value": form.data.get("status", "active")}}
+    return render(request, "ip_plan/ip_edit_panel.html", _edit_context(form, ip_id, current), status=400)
 
 
 @require_http_methods(["PATCH"])
@@ -1363,6 +1652,101 @@ def ip_delete(request, ip_id):
         return JsonResponse({"error": str(exc)}, status=exc.status_code or 502)
 
     return JsonResponse({"ok": True})
+
+
+@require_http_methods(["POST"])
+def ip_console(request, ip_id):
+    """POST — консоль виртуальной машины, которой назначен адрес: файл .vv
+    (RedVirt/oVirt, remote-viewer) или ссылка vmrc:// (vCenter). Логика и
+    причины отказов — services/vm_console.py."""
+    try:
+        client = NetBoxClient()
+        ip = client.get_ip_address(ip_id)
+        vm_ref = (ip.get("assigned_object") or {}).get("virtual_machine")
+        if not vm_ref:
+            return JsonResponse({"error": "Адрес не назначен виртуальной машине — консоль гипервизора "
+                                          "есть только у ВМ; для остального используйте SSH/VNC/RDP"}, status=400)
+        vm = client.get_virtual_machine(vm_ref["id"])
+        cluster = client.get_cluster(vm["cluster"]["id"]) if vm.get("cluster") else None
+    except NetBoxAPIError as exc:
+        logger.error("Консоль ВМ для IP %s: NetBox: %s", ip_id, exc)
+        return JsonResponse({"error": str(exc)}, status=exc.status_code or 502)
+    try:
+        result = vm_console.console_for_vm(vm, cluster)
+    except vm_console.ConsoleError as exc:
+        return JsonResponse({"error": str(exc)}, status=exc.status)
+    if not result:
+        return JsonResponse({"error": f"ВМ «{vm.get('name')}» не найдена ни в одном настроенном гипервизоре"}, status=404)
+    return JsonResponse(result)
+
+
+@require_http_methods(["POST"])
+def ip_connect(request, ip_id):
+    """POST {proto: ssh|ssh-key|rdp|vnc|console, username?} — сессия в браузере
+    через шлюз Guacamole; в ответе {url} для новой вкладки. Адрес хоста
+    берётся из NetBox по id записи, не из запроса. Логин и пароль спрашивает
+    сам шлюз; у консоли ВМ (RedVirt) пароль VNC одноразовый, от гипервизора;
+    ssh-key — вход служебной учётной записью и ключом из «Настроек»
+    (services/ssh_access.py). См. services/remote_gateway.py."""
+    if not remote_gateway.enabled():
+        return JsonResponse({"error": "Шлюз удалённого доступа не настроен"}, status=503)
+    if not remote_gateway.allowed_for(request.user):
+        return JsonResponse({"error": "Подключение через шлюз доступно только администраторам"}, status=403)
+    try:
+        body = json.loads(request.body or b"{}")
+    except ValueError:
+        body = {}
+    proto = str(body.get("proto") or "").lower()
+    username = str(body.get("username") or "")[:128]
+    if proto not in (*remote_gateway.PROTOCOLS, "console", "ssh-key"):
+        return JsonResponse({"error": f"Неизвестный протокол «{proto}»"}, status=400)
+    try:
+        client = NetBoxClient()
+        ip = client.get_ip_address(ip_id)
+        host = ip["address"].split("/")[0]
+        label = ip.get("dns_name") or host
+        if proto == "console":
+            vm_ref = (ip.get("assigned_object") or {}).get("virtual_machine")
+            if not vm_ref:
+                return JsonResponse({"error": "Адрес не назначен виртуальной машине — консоль гипервизора "
+                                              "есть только у ВМ"}, status=400)
+            vm = client.get_virtual_machine(vm_ref["id"])
+            cluster = client.get_cluster(vm["cluster"]["id"]) if vm.get("cluster") else None
+    except NetBoxAPIError as exc:
+        logger.error("Шлюз, IP %s: NetBox: %s", ip_id, exc)
+        return JsonResponse({"error": str(exc)}, status=exc.status_code or 502)
+    try:
+        if proto == "console":
+            info = vm_console.console_for_vm(vm, cluster, web=True)
+            if not info:
+                return JsonResponse({"error": f"ВМ «{vm.get('name')}» не найдена ни в одном источнике RedVirt"},
+                                    status=404)
+            protocol, label, target = "vnc", vm.get("name") or label, f"{info['host']}:{info['port']}"
+            params = remote_gateway.connection_parameters("vnc", info["host"], info["port"],
+                                                          password=info["password"])
+        elif proto == "ssh-key":
+            try:
+                key_cfg = ssh_access.load()[0]
+            except sync_config.SyncConfigError as exc:
+                return JsonResponse({"error": str(exc)}, status=500)
+            if not ssh_access.configured(key_cfg):
+                return JsonResponse({"error": "Ключ не задан — «Настройки» → «Доступ к хостам»"}, status=409)
+            protocol, target = "ssh", f"{key_cfg['username']}@{host}"
+            params = remote_gateway.connection_parameters(
+                "ssh", host, port=key_cfg.get("port"), username=key_cfg["username"],
+                private_key=key_cfg["private_key"], passphrase=key_cfg.get("passphrase") or "")
+        else:
+            protocol, target = proto, host
+            params = remote_gateway.connection_parameters(proto, host, username=username)
+        url = remote_gateway.open_session(request.user.get_username(), protocol, label, params)
+    except vm_console.ConsoleError as exc:
+        return JsonResponse({"error": str(exc)}, status=exc.status)
+    except remote_gateway.GatewayError as exc:
+        return JsonResponse({"error": str(exc)}, status=exc.status)
+    # Журнал подключений: кто, чем и куда. Пока строкой в лог контейнера.
+    logger.info("Шлюз: %s открыл %s к %s (%s, IP id %s)", request.user.get_username(), proto, label, target, ip_id)
+    what = {"console": "Консоль ВМ", "ssh-key": "SSH по ключу"}.get(proto, proto.upper())
+    return JsonResponse({"url": url, "message": f"{what} → {label}: сессия открыта в новой вкладке"})
 
 
 @require_http_methods(["POST"])

@@ -36,6 +36,9 @@ PING_RETRIES = 2
 TCP_TIMEOUT = 5
 SSH_TIMEOUT = 15
 API_TIMEOUT = 15
+# SNMPv3 (Континент): агент молчит и на неверные реквизиты, и на адрес не из
+# списка разрешённых хостов, так что таймаут здесь — единственный сигнал.
+SNMP_TIMEOUT = 8
 
 # Запись «выполняется» старше этого времени считается сорванной: скорее всего
 # контейнер перезапустили в середине проверки и поток умер вместе с ним.
@@ -133,6 +136,76 @@ def _check_ssh(cfg):
                  time.monotonic() - started)
 
 
+def _check_snmp(cfg, host, port):
+    """SNMP GET sysName/sysDescr с реквизитами из раздела «SNMP» устройства.
+
+    v2c — первая community из списка (у кластеров ViPNet она адресует активную
+    ноду), v3 — пользователь с паролями. Только чтение двух скаляров.
+    Различить «нет маршрута», «адрес не в списке разрешённых хостов» и
+    «неверные реквизиты» по ответу нельзя: агент молчит во всех трёх случаях
+    (у Континента — по документации, у Cisco с ACL — по факту), и текст шага
+    об этом говорит прямо.
+    """
+    started = time.monotonic()
+    try:
+        import asyncio
+        import warnings
+        from puresnmp import Client, PyWrapper, V2C
+        from puresnmp.credentials import V3, Auth, Priv
+    except ImportError:
+        return _step("SNMP", STEP_SKIPPED, "модуль puresnmp недоступен", time.monotonic() - started)
+    # DES в SNMPv3 — это TripleDES с 8-байтным ключом по RFC 3414; cryptography
+    # предупреждает об устаревшем API на каждый пакет. Шум в логе, не проблема.
+    warnings.filterwarnings("ignore", module=r"puresnmp_plugins\.priv\.des")
+
+    version = sc.snmp_version(cfg)
+    if version == "v2c":
+        communities = cfg.get("snmp_communities") or []
+        if isinstance(communities, str):
+            communities = [c.strip() for c in communities.split(",") if c.strip()]
+        if not communities:
+            return _step("SNMP", STEP_FAILED, "SNMP v2c: community не задана", time.monotonic() - started)
+        creds, label = V2C(communities[0]), "v2c"
+    elif version == "v3":
+        user = cfg.get("snmp_user") or ""
+        if not user or not cfg.get("snmp_auth_password"):
+            return _step("SNMP", STEP_FAILED, "SNMP v3: не заданы имя безопасности или пароль аутентификации",
+                         time.monotonic() - started)
+        auth = Auth(cfg["snmp_auth_password"].encode(), (cfg.get("snmp_auth_proto") or "md5").lower())
+        priv = None
+        if cfg.get("snmp_priv_password"):
+            priv = Priv(cfg["snmp_priv_password"].encode(), (cfg.get("snmp_priv_proto") or "des").lower())
+        creds, label = V3(user, auth=auth, priv=priv), f"v3 {'authPriv' if priv else 'authNoPriv'} «{user}»"
+    else:
+        return _step("SNMP", STEP_SKIPPED, "раздел SNMP не заполнен", time.monotonic() - started)
+
+    async def _get():
+        client = PyWrapper(Client(host, creds, port=port))
+        return await client.multiget(["1.3.6.1.2.1.1.5.0", "1.3.6.1.2.1.1.1.0"])   # sysName, sysDescr
+
+    def _text(value):
+        return value.decode("utf-8", "replace").strip() if isinstance(value, bytes) else str(value).strip()
+
+    try:
+        sysname, sysdescr = asyncio.run(asyncio.wait_for(_get(), timeout=SNMP_TIMEOUT))
+    except asyncio.TimeoutError:
+        return _step("SNMP", STEP_FAILED,
+                     f"{host}:{port}/udp — нет ответа за {SNMP_TIMEOUT} с: нет маршрута, адрес "
+                     f"проверяющего не в списке разрешённых хостов SNMP на устройстве или "
+                     f"неверные реквизиты (агент молчит во всех трёх случаях)",
+                     time.monotonic() - started)
+    except Exception as e:
+        text = f"{type(e).__name__}: {e}"
+        if "Digest" in text or "UnknownUser" in text or "Decrypt" in text:
+            text = "реквизиты SNMP v3 отклонены устройством"
+        return _step("SNMP", STEP_FAILED, text, time.monotonic() - started)
+    detail = f"{label}: {_text(sysname) or '(sysName пуст)'}"
+    descr = _text(sysdescr)
+    if descr:
+        detail += f" — {descr[:70]}"
+    return _step("SNMP", STEP_OK, detail, time.monotonic() - started)
+
+
 def _check_api(url, user, password, label, verify=False):
     """HTTP-проверка API гипервизора. Пароль в шаги не попадает."""
     started = time.monotonic()
@@ -164,6 +237,22 @@ def _run_device(key):
     cfg = sc.effective(raw, data.get("device_types") or {})
 
     host = cfg.get("host")
+
+    # Континент: SNMPv3 вместо TCP+SSH. UDP-порт нечем «прощупать» отдельно,
+    # так что после ICMP сразу GET с реквизитами.
+    if sc.transport(cfg.get("interfaces_parser", "")) == "snmp":
+        if cfg.get("cluster_peer_of") and not host:
+            return [_step("Проверка", STEP_SKIPPED,
+                          f"инвентарная запись резервной платформы для «{cfg['cluster_peer_of']}»: "
+                          f"своего подключения нет, данные приходят с активной ноды", 0)], ""
+        if not host:
+            return [_step("Проверка", STEP_FAILED, "у устройства не задан адрес", 0)], "адрес не задан"
+        port = int(cfg.get("snmp_port") or 161)
+        steps = [_check_icmp(host), _check_snmp(cfg, host, port)]
+        if steps[-1]["status"] == STEP_FAILED:
+            return steps, steps[-1]["detail"]
+        return steps, ""
+
     port = int(cfg.get("port") or 22)
     if not host:
         return [_step("Проверка", STEP_FAILED, "у устройства не задан адрес", 0)], \
@@ -179,6 +268,14 @@ def _run_device(key):
     steps.append(ssh)
     if ssh["status"] == STEP_FAILED:
         return steps, ssh["detail"]
+    # Раздел «SNMP» заполнен — значит, на него рассчитывают, и он проверяется
+    # наравне с SSH: молчащий агент при настроенной community — ошибка, а не
+    # «ну и ладно».
+    if sc.snmp_version(cfg):
+        snmp = _check_snmp(cfg, host, int(cfg.get("snmp_port") or 161))
+        steps.append(snmp)
+        if snmp["status"] == STEP_FAILED:
+            return steps, snmp["detail"]
     return steps, ""
 
 

@@ -1,0 +1,527 @@
+/* ══ Раздел «ACL» — новый дизайн по макету test_des (SPEC-acl.md) ═════════
+   Подключается только на страницах раздела (block extra_head). Старые стили
+   .acl-table/.acl-tabs и т.п. для прежних страниц (история, карточка
+   объекта) остаются в style.css — здесь только новые экраны: главная
+   (каталог), «Где встречается адрес», список правил и панель группы.
+
+   Токены макета (--canvas, --soft, --line, --accent-soft, --ok/--warn/--off…)
+   объявлены в style.css. Ниже добавлены те, которых там не было, и алиасы
+   коротких имён макета (--text, --muted, --faint, --surface) на имена
+   приложения — чтобы разметка читалась как спецификация. */
+
+:root {
+  --hit: #fff3c4;
+  --hit-line: rgba(217, 160, 0, .45);
+  --warn-soft: #fef7e6;
+  --ok-t: #047857;
+  --warn-t: #b45309;
+  --danger-t: #c4262c;
+}
+:root[data-theme="dark"] {
+  --hit: rgba(250, 204, 21, .18);
+  --hit-line: rgba(250, 204, 21, .45);
+  --warn-soft: rgba(251, 191, 36, .12);
+  --ok-t: #6ee7b7;
+  --warn-t: #fcd34d;
+  --danger-t: #fca5a5;
+}
+
+.acl, .acl-panel {
+  --text: var(--text-main);
+  --muted: var(--text-muted);
+  --faint: var(--text-faint);
+  --surface: var(--bg-surface);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 20px;
+}
+.acl *, .acl-panel * { box-sizing: border-box; }
+.acl .mono, .acl-panel .mono, .acl-crumb-name { font-family: var(--font-mono); font-variant-ligatures: none; }
+.acl button, .acl input, .acl-panel button, .acl-panel input { font-family: inherit; }
+.acl a, .acl-panel a { color: var(--accent); text-decoration: none; }
+.acl a:hover, .acl-panel a:hover { text-decoration: underline; }
+.acl .cell { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0 12px; min-width: 0; }
+.acl .ghost { transition: background .15s ease, color .15s ease; }
+.acl .ghost:hover, .acl-panel .ghost:hover { background: var(--hover); color: var(--text); }
+/* Строки таблиц: свой класс, а не .row из макета — .row занят Bootstrap
+   (flex-wrap + ширина 100% у потомков) и ломает grid-раскладку строк. */
+.acl-cat-row, .acl-hit-row, .acl-lrow, .acl-devpop-row { transition: background .12s ease; }
+.acl-cat-row:hover, .acl-hit-row:hover, .acl-lrow:hover { background: var(--softer); }
+.acl .gchip { transition: box-shadow .12s ease, background .12s ease; }
+.acl .gchip:hover { box-shadow: inset 0 0 0 1px var(--accent-line); }
+.acl .sec { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.acl input::placeholder, .acl-panel input::placeholder { color: var(--faint); }
+.acl .is-hidden, .acl-panel .is-hidden { display: none !important; }
+.acl-grow { flex-grow: 1; }
+.acl-right { text-align: right; }
+
+/* Корень раздела — shell-island: столбец на всю высоту области содержимого,
+   прокручивается только тело таблицы (.acl-cat-body / .acl-where-body /
+   .acl-list-body). Горизонтальные отступы даёт сам .shell-body (24px). */
+.acl { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+
+/* ── Шапка оболочки: дата снимка и крошка списка ─────────────────────── */
+.acl-snapshot { font-size: 12.5px; color: var(--text-faint); white-space: nowrap; margin-right: 6px; }
+.acl-crumb-slash { color: var(--line-strong); font-size: 15px; margin-left: 2px; }
+.acl-crumb-name { font-size: 19px; line-height: 28px; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
+
+/* ── Блок вопроса (_acl_question.html) ───────────────────────────────── */
+.acl-q { flex-shrink: 0; display: flex; flex-direction: column; gap: 14px; padding: 0 0 22px; }
+.acl-q-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--line); }
+.acl-q-tab {
+  height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 2px;
+  font-size: 13.5px; font-weight: 500; color: var(--muted); text-decoration: none;
+  transition: color .15s ease;
+}
+.acl-q-tab:hover { color: var(--text); text-decoration: none; }
+.acl-q-tab.is-active { color: var(--text); font-weight: 600; box-shadow: inset 0 -2px 0 var(--text); }
+.acl-soon { padding: 0 7px; border-radius: 999px; background: var(--soft); font-size: 11px; font-weight: 500; color: var(--muted); }
+
+.acl-q-form { display: flex; align-items: flex-end; gap: 12px; margin: 0; }
+.acl-q-form-traffic { gap: 10px; }
+.acl-q-field { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+.acl-q-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.acl-q-hint { font-size: 12.5px; color: var(--faint); }
+.acl-q-arrow { height: 42px; display: flex; align-items: center; color: var(--faint); }
+
+.acl-input {
+  height: 42px; padding: 0 14px;
+  border: 1px solid var(--line-strong); border-radius: 10px;
+  background: var(--surface); color: var(--text);
+  font-size: 13.5px; outline: none;
+}
+.acl-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.acl-input:disabled { color: var(--faint); background: var(--softer); cursor: not-allowed; }
+.acl-input-420 { width: 420px; }
+.acl-input-200 { width: 200px; }
+.acl-input-90 { width: 90px; }
+.acl-pseudo-select { width: 96px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px 0 12px; color: var(--faint); }
+.acl-search { position: relative; display: flex; align-items: center; }
+.acl-search > svg { position: absolute; left: 13px; color: var(--muted); pointer-events: none; }
+.acl-search .acl-input { padding-left: 38px; }
+.acl-primary {
+  height: 42px; padding: 0 20px; border: 0; border-radius: 10px;
+  background: var(--primary); color: var(--primary-text);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.acl-primary:hover { filter: brightness(1.12); }
+.acl-primary:disabled { opacity: .5; cursor: not-allowed; filter: none; }
+
+/* Кнопка выбора устройств + поповер (раздел 1) */
+.acl-devwrap { position: relative; }
+.acl-devbtn {
+  width: 300px; height: 42px; display: flex; align-items: center; gap: 9px; padding: 0 10px 0 12px;
+  border: 1px solid var(--line-strong); border-radius: 10px;
+  background: var(--surface); color: var(--text);
+  font-size: 13px; text-align: left; cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.acl-devbtn > svg:first-child { flex-shrink: 0; color: var(--muted); }
+.acl-devbtn.is-open { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.acl-devbtn:disabled { cursor: not-allowed; color: var(--muted); background: var(--softer); }
+.acl-devbtn-label { flex-grow: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.acl-devbtn-count { font-size: 11.5px; color: var(--faint); }
+.acl-devbtn-chev { color: var(--faint); flex-shrink: 0; }
+
+.acl-devpop {
+  display: none;  /* открывается классом .is-open (Alpine :class) */
+  position: absolute; top: 74px; left: 0; z-index: 50; width: 380px;
+  flex-direction: column;
+  border-radius: 12px; background: var(--surface);
+  box-shadow: 0 0 0 1px rgba(28, 28, 34, .07), 0 20px 50px -12px rgba(28, 28, 34, .25);
+  overflow: hidden;
+}
+:root[data-theme="dark"] .acl-devpop { box-shadow: var(--pop-shadow); }
+.acl-devpop.is-open { display: flex; }
+.acl-devpop-search { position: relative; display: flex; align-items: center; border-bottom: 1px solid var(--line); margin: 0; }
+.acl-devpop-search svg { position: absolute; left: 13px; color: var(--faint); pointer-events: none; }
+.acl-devpop-search input { width: 100%; height: 42px; padding: 0 12px 0 34px; border: 0; background: transparent; color: var(--text); font-size: 13px; outline: none; }
+.acl-devpop-all {
+  height: 38px; display: flex; align-items: center; gap: 10px; margin: 6px 6px 0; padding: 0 10px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--text);
+  font-size: 13px; font-weight: 600; text-align: left; cursor: pointer;
+}
+.acl-devpop-all:hover { background: var(--hover); }
+.acl-devpop-all-text { flex-grow: 1; }
+.acl-devpop-all-count { font-size: 11.5px; color: var(--faint); font-weight: 400; }
+.acl-radio { width: 14px; height: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--line-strong); }
+.acl-radio.is-on { background: var(--accent); box-shadow: none; }
+.acl-radio.is-on::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #fff; }
+.acl-devpop-list { max-height: 360px; overflow: auto; padding: 4px 6px 6px; }
+.acl-devpop-sitehead { padding: 10px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.acl-devpop-row { height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 8px; cursor: pointer; margin: 0; }
+.acl-devpop-row:hover { background: var(--hover); }
+.acl-devpop-row input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); flex-shrink: 0; }
+.acl-devpop-name { flex-grow: 1; font-size: 12.5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.acl-devpop-acls { font-size: 11.5px; color: var(--faint); white-space: nowrap; }
+.acl-devpop-empty { padding: 14px 10px; font-size: 12.5px; color: var(--muted); }
+.acl-devpop-foot { height: 42px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px 0 14px; border-top: 1px solid var(--line); background: var(--softer); font-size: 12px; color: var(--muted); }
+.acl-devpop-done { height: 28px; padding: 0 12px; border: 0; border-radius: 7px; background: var(--primary); color: var(--primary-text); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+
+/* Заглушка «Проверить трафик» (раздел 5) */
+.acl-traffic-warn { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; background: var(--warn-soft); color: var(--warn-t); font-size: 12.5px; }
+.acl-traffic-warn svg { flex-shrink: 0; }
+
+/* ── Главная: каталог (раздел 2) ─────────────────────────────────────── */
+.acl-cat-tabs { flex-shrink: 0; display: flex; align-items: baseline; gap: 18px; padding: 0 0 10px; }
+.acl-cat-tab { font-size: 13px; font-weight: 500; color: var(--muted); text-decoration: none; }
+.acl-cat-tab:hover { color: var(--text); text-decoration: none; }
+.acl-cat-tab.is-active { color: var(--text); font-weight: 600; }
+.acl-cat-count { font-size: 11.5px; color: var(--faint); }
+
+.acl-cat-head, .acl-cat-row { display: grid; grid-template-columns: 240px 150px minmax(0, 1fr) 120px 24px; align-items: center; }
+.acl-cat-head { flex-shrink: 0; height: 36px; border-radius: 8px 8px 0 0; background: var(--soft); color: var(--muted); font-size: 12px; font-weight: 600; }
+.acl-cat-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 0 16px; }
+.acl-cat-row { height: 42px; border-bottom: 1px solid var(--line); color: var(--text); text-decoration: none; }
+.acl-cat-row:hover { text-decoration: none; color: var(--text); }
+.acl-cat-row.is-even { background: var(--softer); }
+.acl-cat-name { font-weight: 500; }
+.acl-cat-purpose { font-family: var(--font-sans); font-weight: 400; font-size: 12px; color: var(--faint); margin-left: 6px; }
+.acl-cat-dev, .acl-cat-where, .acl-cat-size { font-size: 12.5px; color: var(--muted); }
+.acl-cat-row.is-idle .acl-cat-name { color: var(--muted); }
+.acl-cat-row.is-idle .acl-cat-where { color: var(--faint); }
+.acl-cat-chev { display: flex; color: var(--faint); }
+.acl-empty { padding: 36px 0; text-align: center; font-size: 13px; color: var(--muted); }
+.acl-error { padding: 12px 14px; border-radius: 10px; background: rgba(229, 72, 77, .08); background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger-t); font-size: 13px; }
+
+/* ── Результат «Где встречается адрес» (раздел 3) ────────────────────── */
+.acl-where { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.acl-summary { flex-shrink: 0; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 0 0 14px; }
+.acl-summary-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.acl-summary-line { font-size: 15px; line-height: 24px; }
+.acl-summary-line b { font-weight: 600; }
+.acl-summary-q { font-weight: 600; }
+.acl-summary-sub { font-size: 12.5px; color: var(--muted); }
+.acl-summary-deny { color: var(--danger-t); font-weight: 600; }
+
+.acl-seg { flex-shrink: 0; display: flex; padding: 3px; border-radius: 9px; background: var(--soft); }
+.acl-seg-btn { height: 28px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 500; cursor: pointer; transition: background .12s ease, color .12s ease; }
+.acl-seg-btn:hover { color: var(--text); }
+.acl-seg-btn.is-on { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(28, 28, 34, .08); }
+
+.acl-cats { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 0 14px; }
+.acl-cats-label { margin-right: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.acl-cats-hint { font-size: 12px; color: var(--faint); }
+.acl-gchip {
+  height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 11px;
+  border: 0; border-radius: 999px; background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text);
+  font-size: 12.5px; font-weight: 500; cursor: pointer;
+}
+.acl-gchip.is-on { background: var(--text); color: var(--surface); font-weight: 600; box-shadow: none; }
+.acl-gchip.is-on .acl-dot.is-all { background: var(--surface); }
+.acl-gchip-n { font-size: 11.5px; opacity: .7; }
+
+/* Точки категорий: цвет = способ попадания (и в чипах, и в «Совпало по», и у свёрток) */
+.acl-dot { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: var(--text); display: inline-block; }
+.acl-dot.is-all { background: var(--text); }
+.acl-dot.is-exact { background: var(--accent); }
+.acl-dot.is-net { background: var(--info); }
+.acl-dot.is-obj { background: var(--warn); }
+.acl-dot.is-broad { background: var(--off); }
+.acl-dot.is-any { background: var(--line-strong); }
+
+/* Таблица результата: колонки общие для шапки, строк и свёрток */
+.acl-where-head, .acl-hit-row, .acl-hit-c { display: grid; grid-template-columns: 84px minmax(0, 1fr) 112px 300px 120px 190px 36px; align-items: center; }
+.acl-where-head { flex-shrink: 0; height: 34px; border-radius: 8px 8px 0 0; background: var(--soft); color: var(--muted); font-size: 12px; font-weight: 600; }
+.acl-where-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 0 24px; }
+
+.acl-group-head { height: 42px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--surface); white-space: nowrap; }
+.acl-group-icon { display: flex; color: var(--muted); }
+.acl-group-dev { font-weight: 600; }
+.acl-group-model { font-size: 12.5px; color: var(--faint); }
+.acl-group-slash { color: var(--line-strong); }
+.acl-group-list { font-weight: 600; }
+.acl-group-purpose { font-size: 12.5px; color: var(--muted); }
+.acl-group-count { font-size: 12px; color: var(--faint); }
+.acl-group-open { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.acl-status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ok-t); }
+.acl-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+.acl-status.is-off { color: var(--muted); }
+.acl-status.is-off .acl-status-dot { background: var(--off); }
+
+.acl-hit-row { height: 44px; border-bottom: 1px solid var(--line); }
+.acl-hit.is-even .acl-hit-row { background: var(--softer); }
+.acl-hit.is-open .acl-hit-row, .acl-hit.is-open .acl-hit-row:hover { background: var(--accent-soft); }
+.acl-hit-row.is-inactive { opacity: .6; }
+.acl-hit-id { font-size: 12px; color: var(--faint); }
+.acl-hit-name { height: 44px; border: 0; background: transparent; color: var(--text); font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; }
+.acl-hit-flag { font-size: 11px; font-weight: 500; color: var(--faint); margin-left: 4px; }
+.acl-pill { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+/* Плашки действий: запасной цвет перед color-mix для браузеров без него */
+.acl-pill.is-pass { background: rgba(16, 185, 129, .12); background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok-t); }
+.acl-pill.is-drop { background: rgba(229, 72, 77, .10); background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger-t); }
+.acl-pill.is-nat { background: var(--accent-soft); color: var(--accent); }
+.acl-hit-flow { display: flex; align-items: center; gap: 8px; }
+.acl-addr-chip { flex-shrink: 0; height: 22px; display: inline-flex; align-items: center; padding: 0 8px; border-radius: 6px; background: var(--hit); box-shadow: inset 0 0 0 1px var(--hit-line); color: var(--text); font-size: 12px; font-weight: 600; }
+.acl-hit-arrow { flex-shrink: 0; display: flex; color: var(--faint); }
+.acl-hit-other { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12.5px; color: var(--muted); }
+.acl-hit-svc { font-size: 12.5px; color: var(--muted); }
+.acl-hit-via { display: flex; align-items: center; gap: 7px; }
+.acl-hit-via-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12.5px; color: var(--muted); }
+.acl-hit-via-token { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12.5px; color: var(--text); }
+.acl-hit-chev { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: transparent; color: var(--faint); cursor: pointer; justify-self: center; }
+.acl-hit-chev svg { transition: transform .15s ease; }
+.acl-hit.is-open .acl-hit-chev svg { transform: rotate(180deg); }
+
+/* Раскрытое правило */
+.acl-hit-details { display: none; grid-template-columns: 1fr 1fr 220px; gap: 24px; padding: 16px 20px 18px 96px; border-bottom: 1px solid var(--line); background: var(--softer); }
+.acl-hit.is-open .acl-hit-details { display: grid; }
+.acl-hit-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.acl-hit-why { grid-column: 1 / 3; }
+.acl-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.acl-chip {
+  height: 24px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px;
+  border: 0; border-radius: 6px; background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--muted);
+  font-size: 12px; white-space: nowrap;
+}
+.acl-chip.is-hit { background: var(--hit); box-shadow: inset 0 0 0 1px var(--hit-line); color: var(--text); font-weight: 600; }
+.acl-chip.is-any { color: var(--faint); }
+.acl-chip.is-link { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.acl-chip.is-link:hover { box-shadow: inset 0 0 0 1px var(--accent-line); }
+.acl-chip.is-chain { color: var(--text); }
+.acl-chip-note { font-family: var(--font-sans); font-size: 11.5px; color: var(--faint); }
+.acl-hit-svc-full { font-size: 12.5px; }
+.acl-chain { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 12.5px; }
+.acl-chain-sep { color: var(--faint); }
+.acl-hit-links { display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; gap: 8px; font-size: 12.5px; font-weight: 600; }
+.acl-link-btn { padding: 0; border: 0; background: transparent; color: var(--accent); font-size: inherit; font-weight: inherit; cursor: pointer; text-align: left; }
+.acl-link-btn:hover { text-decoration: underline; }
+
+/* Свёртки «Через широкие наборы» и «Правила с any» */
+.acl-folds { margin-top: 18px; display: flex; flex-direction: column; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; }
+.acl-fold-head { min-height: 58px; display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.acl-fold-head:last-child { border-bottom: 0; }
+.acl-fold-any { min-height: 52px; }
+.acl-fold-text { flex-grow: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.acl-fold-text b, .acl-fold-head b { font-weight: 600; }
+.acl-fold-n { font-size: 12px; color: var(--faint); }
+.acl-fold-desc { font-size: 12.5px; color: var(--muted); }
+.acl-fold-objs { display: flex; flex-wrap: wrap; gap: 6px; }
+.acl-fold-obj { height: 22px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 6px; background: var(--soft); font-size: 11.5px; color: var(--muted); }
+.acl-fold-obj-net { color: var(--faint); }
+.acl-fold-obj-n { color: var(--text); }
+.acl-fold-btn { height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text); font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.acl-fold-rows { display: none; }
+.acl-fold-rows.is-open { display: block; }
+.acl-fold-row:nth-child(even) .acl-hit-c { background: var(--softer); }
+.acl-hit-c { height: 40px; border-bottom: 1px solid var(--line); color: var(--muted); }
+.acl-hit-c-name { font-size: 12.5px; }
+.acl-hit-c-link { color: var(--text); }
+.acl-hit-c-dev { font-size: 11.5px; color: var(--faint); }
+.acl-hit-c-flow, .acl-hit-c-svc, .acl-hit-c-via { font-size: 12px; }
+.acl-fold-rest { height: 40px; display: flex; align-items: center; gap: 4px; padding: 0 16px; border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--faint); }
+.acl-fold-rest .acl-link-btn { font-weight: 600; }
+
+/* ── Список правил (раздел 4) ────────────────────────────────────────── */
+.acl-list-sub { flex-shrink: 0; margin: -6px 0 8px; font-size: 13px; color: var(--muted); }
+.acl-list-sub-faint { color: var(--faint); }
+.acl-list-tabs { padding-bottom: 4px; }
+.acl-ltool { flex-shrink: 0; height: 64px; display: flex; align-items: center; gap: 10px; }
+.acl-ltool-form { display: flex; align-items: center; gap: 10px; margin: 0; }
+.acl-ltool-search { margin: 0; }
+.acl-ltool-input { width: 380px; height: 38px; padding: 0 110px 0 36px; font-size: 13px; }
+.acl-ltool-nav { position: absolute; right: 6px; display: flex; align-items: center; gap: 2px; }
+.acl-ltool-counter { font-size: 12px; color: var(--muted); margin-right: 4px; white-space: nowrap; }
+.acl-ltool-cur { color: var(--text); }
+.acl-ltool-arrow { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+.acl-ltool-arrow:disabled { opacity: .4; cursor: default; }
+.acl-check { display: flex; align-items: center; gap: 8px; margin: 0 0 0 6px; font-size: 13px; color: var(--text); cursor: pointer; }
+.acl-check input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
+
+.acl-list-head, .acl-lrow { display: grid; grid-template-columns: 64px 96px minmax(0, 1fr) 220px; align-items: center; gap: 16px; }
+.acl-list-head { flex-shrink: 0; height: 36px; border-radius: 8px 8px 0 0; background: var(--soft); color: var(--muted); font-size: 12px; font-weight: 600; }
+.acl-list-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 0 8px; }
+.acl-lrow { height: 36px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.acl-lrow.is-even { background: var(--softer); }
+.acl-lrow.is-current, .acl-lrow.is-current:hover { box-shadow: inset 3px 0 0 var(--accent); background: var(--accent-soft); }
+.acl-lrow.is-inactive { opacity: .55; }
+.acl-lrow-seq { text-align: right; font-size: 12px; color: var(--faint); }
+.acl-lrow-act { display: flex; align-items: center; gap: 7px; }
+.acl-lrow-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--off); }
+.acl-lrow-dot.is-permit { background: var(--ok); }
+.acl-lrow-dot.is-deny { background: var(--danger); }
+.acl-lrow-dot.is-nat { background: var(--accent); }
+.acl-lrow-word { white-space: pre; font-weight: 500; color: var(--muted); }
+.acl-lrow-word.is-permit { color: var(--ok-t); }
+.acl-lrow-word.is-deny { color: var(--danger-t); }
+.acl-lrow-word.is-nat { color: var(--accent); }
+.acl-lrow-rule { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.acl-frag { white-space: pre; }
+.acl-frag.is-hit { padding: 1px 4px; border-radius: 4px; background: var(--hit); color: var(--text); }
+.acl-frag-any { color: var(--faint); }
+.acl-frag-group { padding: 0 2px; border: 0; background: transparent; font-family: inherit; font-size: inherit; color: var(--accent); cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.acl-frag-group.is-hit { color: var(--text); background: var(--hit); border-radius: 4px; }
+.acl-frag-group:hover { text-decoration-style: solid; }
+.acl-lrow-match { font-family: var(--font-sans); font-size: 12px; color: var(--faint); padding-right: 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.acl-lremark { height: 32px; display: flex; align-items: center; padding-left: 192px; border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--faint); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Свёртка «N правил без совпадений» — штриховка, клик разворачивает */
+.acl-gap-head {
+  width: 100%; height: 32px; display: flex; align-items: center; gap: 10px; padding-left: 80px;
+  border: 0; border-bottom: 1px solid var(--line);
+  background: repeating-linear-gradient(135deg, transparent 0 7px, var(--softer) 7px 8px);
+  font-size: 12px; color: var(--faint); text-align: left; cursor: pointer;
+}
+.acl-gap-head:hover { color: var(--muted); }
+.acl-gap-hint { font-weight: 600; color: var(--accent); opacity: 0; transition: opacity .12s ease; }
+.acl-gap-head:hover .acl-gap-hint, .acl-gap-head[aria-expanded="true"] .acl-gap-hint { opacity: 1; }
+.acl-gap-rows { display: none; }
+.acl-gap-rows.is-open { display: block; }
+
+/* «Только совпадения»: прячем правила без совпадения и ремарки, свёртки остаются */
+.acl-list.is-only .acl-lrow:not(.is-match), .acl-list.is-only .acl-lremark { display: none; }
+
+.acl-list-foot { flex-shrink: 0; height: 44px; display: flex; align-items: center; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+
+/* ── Панель группы адресов (раздел 4.1) — внутри .drawer оболочки ───── */
+.acl-panel { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+.acl-panel-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 18px 14px 14px 22px; }
+.acl-panel-titles { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.acl-panel-kicker { font-size: 12px; color: var(--muted); }
+.acl-panel-name { margin: 0; font-size: 19px; line-height: 28px; font-weight: 600; overflow-wrap: anywhere; }
+.acl-panel-meta { font-size: 12.5px; color: var(--muted); }
+.acl-panel-close { width: 30px; height: 30px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.acl-panel-search { padding: 0 22px 12px; }
+.acl-panel-search .acl-search > svg { left: 11px; }
+.acl-panel-input { width: 100%; height: 36px; padding-left: 32px; border-radius: 9px; font-size: 12.5px; }
+.acl-panel-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 22px; }
+.acl-member { height: 32px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.acl-member-text { display: inline-block; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text); }
+.acl-member-text.is-hit { padding: 1px 4px; border-radius: 4px; background: var(--hit); }
+.acl-member-text.is-group { color: var(--accent); }
+.acl-member-text.is-exclusion { color: var(--danger-t); }
+.acl-member-kw { font-family: var(--font-sans); font-size: 11.5px; color: var(--faint); }
+.acl-member-note { flex-shrink: 0; font-family: var(--font-sans); font-size: 12px; color: var(--faint); }
+.acl-member-rest { height: 36px; display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--faint); }
+.acl-member-empty { padding: 20px 0; }
+.acl-panel-foot { display: flex; align-items: center; gap: 10px; padding: 10px 22px 14px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+.acl-panel-foot-note { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.acl-panel-detail { font-weight: 600; white-space: nowrap; }
+
+/* Вложенная группа в панели — кликабельна, открывает свою панель */
+.acl-member-link {
+  border: 0; padding: 0; background: transparent; font: inherit; color: var(--accent);
+  text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer;
+}
+
+/* Обёртка каталога (компонент aclCatalog) — продолжает flex-колонку .acl,
+   чтобы тело каталога по-прежнему прокручивалось внутри панели */
+.acl-catalog { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+
+/* Узел ViPNet в строке правила — имя из iplir, идентификатор в подсказке */
+.acl-frag-node { text-decoration: underline dotted; text-underline-offset: 3px; text-decoration-color: var(--line-strong); }
+
+/* Панель группы из узлов ViPNet: строка на узел — имя, адреса, код тегом;
+   панель шире под такой контент (ширина drawer задана в shell.css) */
+.drawer:has(.acl-panel.is-wide) { width: min(720px, calc(100vw - 20px)); }
+.acl-member-nodew { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.acl-member-nodew.is-hit { background: var(--hit); margin: 0 -8px; padding: 4px 8px; border-radius: 6px; }
+.acl-member-name { flex: 0 1 auto; min-width: 0; color: var(--text); font-weight: 500; }
+.acl-member-ips { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+.acl-member-tag { flex-shrink: 0; height: 20px; padding: 0 6px; border-radius: 5px; background: var(--soft); color: var(--muted); font-size: 11px; line-height: 20px; }
+
+/* Пары адресов узла: реальный → виртуальный, «за NAT», легенда */
+.acl-member-ips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.acl-pair { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 12px; }
+.acl-ip-real { color: var(--text); }
+.acl-ip-virt { color: var(--info); }
+.acl-arrow { color: var(--faint); }
+.acl-ip-nat { padding: 0 6px; border-radius: 5px; background: var(--soft); color: var(--muted); font-family: var(--font-sans); font-size: 11px; line-height: 18px; }
+.acl-panel-legend { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; margin: 0 22px 8px; padding: 8px 10px; border-radius: 8px; background: var(--softer); color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+.acl-panel-legend .mono { font-size: 11.5px; }
+
+/* Строка узла растёт по высоте под несколько пар адресов: имя не переносится и
+   не сжимается, пары переносятся сами, тег прижат к правому краю сверху */
+.acl-member-nodew { height: auto; min-height: 36px; align-items: flex-start; justify-content: flex-start; padding: 8px 0; line-height: 20px; }
+.acl-member-nodew.is-hit { padding: 8px 8px; }
+.acl-member-nodew .acl-member-name { flex: 0 0 auto; max-width: 55%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acl-member-nodew .acl-member-ips { flex: 1 1 auto; min-width: 0; }
+.acl-member-nodew .acl-member-tag { margin-left: auto; align-self: flex-start; }
+.acl-member-nodew .acl-member-note { align-self: flex-start; }
+
+/* Фильтр «нет в iplir» в панели группы */
+.acl-panel-search { display: flex; align-items: center; gap: 10px; }
+.acl-panel-search .acl-search { flex: 1 1 auto; min-width: 0; }
+.acl-panel-filter { flex-shrink: 0; height: 30px; }
+.acl-missing-text, .acl-ip-missing { color: var(--warn-t); }
+.acl-ip-missing { background: var(--warn-soft); }
+.acl-member-nodew.is-missing .acl-member-name { color: var(--muted); }
+
+/* Чип «N узлов ViPNet» в правиле — как группа, но с другим подчёркиванием */
+.acl-frag-nodes { text-decoration-style: dashed; }
+
+/* Теги в строке правила: имя (оранжевый), источник (голубой), назначение (серый) */
+.acl-tag {
+  display: inline-block; max-width: 100%; height: 22px; padding: 0 8px; border-radius: 6px;
+  font: inherit; font-size: 12px; line-height: 22px; vertical-align: middle;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 0;
+  color: var(--text); background: var(--soft);
+}
+.acl-tag-name { background: var(--warn-soft); color: var(--warn-t); font-weight: 600; max-width: 320px; }
+.acl-tag-src { background: #e6f4fb; color: #0b5e86; }
+.acl-tag-dst { background: var(--soft); color: var(--muted); }
+.acl-tag.is-any { opacity: .75; }
+.acl-tag.is-link { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; text-decoration-color: currentColor; }
+.acl-tag.is-link:hover { filter: brightness(.96); text-decoration-style: solid; }
+.acl-tag.is-hit { box-shadow: inset 0 0 0 1px var(--hit-line); background: var(--hit); color: var(--text); }
+.acl-lrow-rule .acl-tag { max-width: 42%; }
+.acl-lrow-rule .acl-tag-name { max-width: 30%; }
+:root[data-theme="dark"] .acl-tag-src { background: rgba(14,165,233,.16); color: #7dd3fc; }
+
+/* Длинное имя в шапке панели — мельче и с переносом по словам, а не по буквам */
+.acl-panel-name { overflow-wrap: break-word; }
+.acl-panel-name.is-long { font-size: 15px; line-height: 22px; }
+
+/* Сервис правила — светло-салатовый стикер; больше двух записей — кликабельный */
+.acl-tag-svc { background: #e8f7e2; color: #2f6b1f; max-width: 36%; }
+:root[data-theme="dark"] .acl-tag-svc { background: rgba(74,222,128,.14); color: #86efac; }
+
+/* Ячейка правила — flex: имя и сервис не сжимаются, ужимаются источник и назначение */
+.acl-lrow-rule { display: flex; align-items: center; min-width: 0; gap: 0; }
+.acl-lrow-rule > .acl-frag { flex-shrink: 0; white-space: pre; }
+.acl-lrow-rule .acl-tag { flex: 0 1 auto; min-width: 56px; max-width: none; }
+.acl-lrow-rule .acl-tag-name { flex-shrink: 0; max-width: 280px; }
+.acl-lrow-rule .acl-tag-svc { flex-shrink: 0; max-width: 260px; }
+
+/* Иконки-разделители между блоками правила (lucide-контуры через mask):
+   перед источником — стрелка из линии, перед назначением — стрелка в линию,
+   перед сервисом — вилка. Стикеры без иконок. */
+.acl-lrow-rule .acl-tag { margin: 0; }
+.acl-sep {
+  flex-shrink: 0; display: inline-block; width: 13px; height: 13px; margin: 0 9px;
+  background: var(--faint);
+  -webkit-mask: var(--ico) center / contain no-repeat; mask: var(--ico) center / contain no-repeat;
+}
+/* имя · источник — крупная точка */
+.acl-sep-src { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='5' fill='%23000'/%3E%3C/svg%3E"); width: 11px; height: 11px; margin: 0 7px; }
+/* источник → назначение — простая стрелка */
+.acl-sep-dst { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 12h16'/%3E%3Cpath d='m14 6 6 6-6 6'/%3E%3C/svg%3E"); }
+.acl-sep-svc { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22v-5'/%3E%3Cpath d='M9 8V2'/%3E%3Cpath d='M15 8V2'/%3E%3Cpath d='M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z'/%3E%3C/svg%3E"); }
+
+/* Туннелируемый диапазон координатора, через который совпал адрес */
+.acl-tunnel { color: var(--warn-t); }
+.acl-tunnel.is-hit { padding: 0 6px; border-radius: 5px; background: var(--hit); box-shadow: inset 0 0 0 1px var(--hit-line); color: var(--text); }
+
+/* Выключенное правило — помимо приглушения, явная пометка рядом с именем */
+.acl-off { flex-shrink: 0; margin-left: 6px; padding: 0 6px; border-radius: 5px; background: var(--soft); color: var(--muted); font-family: var(--font-sans); font-size: 11px; line-height: 18px; }
+
+/* Фильтры списка правил (ViPNet): действие и состояние */
+.acl-lfilters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 0 12px; }
+.acl-lf-label { font-size: 12px; font-weight: 600; color: var(--muted); margin-right: 2px; }
+.acl-lf-sep { width: 1px; height: 18px; margin: 0 6px; background: var(--line-strong); }
+.acl-lf-shown { margin-left: auto; font-size: 12px; color: var(--faint); }
+.acl-lfilters .acl-lrow-dot { margin-right: -2px; }
+.acl-lrow.is-filtered { display: none !important; }
+
+/* При активном фильтре свёртки «без совпадений» раскрыты, их заголовки скрыты:
+   видны только правила, прошедшие фильтр */
+.acl-list.is-filtering .acl-gap-head { display: none; }
+.acl-list.is-filtering .acl-gap-rows { display: block; }
+
+/* Крошки ACL / устройство / раздел и вкладки секций в стиле «Найти адрес» */
+.acl-crumb-dev { font-family: var(--font-mono); font-size: 15px; line-height: 28px; font-weight: 500; color: var(--text-muted); text-decoration: none; white-space: nowrap; }
+.acl-crumb-dev:hover { color: var(--accent); text-decoration: underline; }
+.acl-list-tabs { margin: 4px 0 6px; }
+.acl-list-tabs .acl-cat-count { margin-left: 4px; font-size: 11.5px; color: var(--faint); font-weight: 400; }

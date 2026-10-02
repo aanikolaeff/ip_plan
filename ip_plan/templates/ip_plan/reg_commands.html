@@ -1,0 +1,217 @@
+{% extends "ip_plan/base.html" %}
+{% load static ip_plan_extras %}
+
+{% comment %}
+  Мастер «Команды для xFW» (SPEC-reg.md, раздел 4; макет RegCmd). Контекст —
+  applied (вернулись после «Отметить, что применили»), snapshot и cmd
+  {blocks, rules, any_changes, blocked, blocked_reason, snapshot{at_text,
+  waiting}} (CONTRACT-reg.md).
+
+  Четыре шага сверху вниз: 1 — что изменится по каждому объекту (числа и
+  чипы +добавить / −убрать, длинные списки свёрнуты «+ ещё N»); 2 — команды
+  в тёмном блоке с «Копировать» (копируется полная команда, на экране она
+  обрезана, «Целиком» разворачивает); 3 — где поменять объекты в правилах
+  ViPNet (cmd.rules); 4 — форма «Отметить, что применили» (POST
+  regulator_firewall_commands_apply, имена только у изменённых блоков —
+  ровно те, что показаны, сервер их не пересчитывает).
+  Шаги 2–4 недоступны, если cmd.blocked (нет снимка) или изменений нет.
+  Пока snapshot.waiting (имена уже продвинуты, новый снимок не снят) —
+  предупреждение, а повторная отметка заблокирована: она продвинула бы имя
+  на объект, которого на xFW ещё нет.
+{% endcomment %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'ip_plan/css/acl.css' %}">
+  <link rel="stylesheet" href="{% static 'ip_plan/css/reg.css' %}">
+{% endblock %}
+{% block extra_scripts %}
+  <script src="{% static 'ip_plan/js/reg.js' %}"></script>
+{% endblock %}
+
+{% block head_extra %}
+  <span class="reg-crumb-slash" aria-hidden="true">/</span>
+  <span class="reg-crumb-title">Команды для xFW</span>
+{% endblock %}
+
+{% block head_actions %}
+  <a class="reg-head-btn is-quiet" href="{% url 'ip_plan:regulator_list' %}" title="Вернуться к письмам">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg>
+    К письмам
+  </a>
+{% endblock %}
+
+{% block body_class %} shell-body-fixed{% endblock %}
+
+{% block content %}
+<div class="acl reg shell-island" x-data="regCmd()">
+  <p class="reg-cmd-sub">
+    firewall <span class="mono">{{ snapshot.device }}</span>
+    {% if cmd.snapshot.at_text %} · учтён снимок от {{ cmd.snapshot.at_text }}{% else %} · снимка объектов нет{% endif %}
+    · на xFW нельзя править список — создаётся новый с очередным номером
+  </p>
+
+  {% if applied or cmd.blocked or cmd.snapshot.waiting or not cmd.any_changes %}
+    <div class="reg-cmd-alerts">
+      {% if applied %}
+        <div class="reg-alert is-ok" role="status">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+          <span><b>Отмечено, что новые списки применены.</b> Текущие имена объектов: {% for o in snapshot.objects %}<span class="mono">@{{ o.wanted }}</span>{% if not forloop.last %} и {% endif %}{% endfor %} — следующие команды считаются от них.</span>
+        </div>
+      {% endif %}
+      {% if cmd.blocked %}
+        <div class="reg-alert is-danger" role="alert">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+          <span><b>Команды подготовить нельзя.</b> {{ cmd.blocked_reason }}</span>
+        </div>
+      {% elif cmd.snapshot.waiting %}
+        <div class="reg-alert" role="status">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
+          <span><b>Ждём новый снимок xFW.</b> Имена уже продвинуты до {% for b in cmd.blocks %}{% if b.fallback %}<span class="mono">@{{ b.wanted }}</span> {% endif %}{% endfor %}, а в снимке их ещё нет — изменения ниже посчитаны по старым объектам ({% for b in cmd.blocks %}{% if b.fallback %}<span class="mono">@{{ b.from }}</span> {% endif %}{% endfor %}). Статусы «на xFW» обновятся после следующего синка.</span>
+        </div>
+      {% elif not cmd.any_changes %}
+        <div class="reg-alert is-ok" role="status">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+          <span><b>Изменений нет, применять нечего.</b> Всё активное из писем уже стоит на xFW, снятого там не осталось.</span>
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <div class="reg-steps-wrap">
+    <ol class="reg-steps">
+
+      {# ── Шаг 1: что изменится ─────────────────────────────────────────── #}
+      <li class="reg-step">
+        <div class="reg-step-rail"><span class="reg-step-badge">1</span><span class="reg-step-line"></span></div>
+        <div class="reg-step-body">
+          <div class="reg-step-title">Проверьте, что изменится</div>
+          <div class="reg-step-text">Новый список = всё, что уже стоит на xFW, плюс новые активные записи из писем, минус снятые регулятором.</div>
+          <div class="reg-step-content reg-diff">
+            {% for b in cmd.blocks %}
+              <section class="reg-diff-sec" x-data="{ all: false }">
+                <div class="reg-diff-head">
+                  <span class="reg-diff-title">{{ b.title }}</span>
+                  <span class="mono reg-diff-names">
+                    {% if not b.found %}<span style="color: var(--danger-t)">@{{ b.wanted }} нет в снимке</span>
+                    {% elif b.changed %}@{{ b.from }} → <b>@{{ b.to }}</b>
+                    {% else %}@{{ b.from }} · без изменений{% endif %}
+                  </span>
+                </div>
+                <div class="reg-diff-nums">
+                  <div class="reg-diff-num"><div class="reg-diff-num-label">Уже на xFW</div><div class="reg-diff-num-value">{% if b.found %}{{ b.keep_count|ru_number }}{% else %}?{% endif %}</div></div>
+                  <div class="reg-diff-num is-add"><div class="reg-diff-num-label">Добавятся</div><div class="reg-diff-num-value">+{{ b.add|length|ru_number }}</div></div>
+                  <div class="reg-diff-num is-del"><div class="reg-diff-num-label">Уберутся (сняты)</div><div class="reg-diff-num-value">−{{ b.remove|length|ru_number }}</div></div>
+                </div>
+                {% if b.add or b.remove %}
+                  <div class="reg-diff-chips" :class="{ 'is-all': all }">
+                    {% for v in b.remove %}<span class="mono reg-diff-chip is-del{% if forloop.counter > 60 %} is-extra{% endif %}" title="Уберётся: снята во всех письмах">{{ v }}</span>{% endfor %}
+                    {% for v in b.add %}<span class="mono reg-diff-chip is-add{% if forloop.counter > 60 %} is-extra{% endif %}">+ {{ v }}</span>{% endfor %}
+                    {% if b.add|length > 60 or b.remove|length > 60 %}
+                      <button type="button" class="reg-diff-more" :class="{ 'is-hidden': all }" @click="all = true">{% if b.add|length > 60 %}+ ещё {{ b.add|length|add:"-60"|ru_number }}{% else %}показать все{% endif %}</button>
+                    {% endif %}
+                  </div>
+                {% else %}
+                  <div class="reg-diff-same">{% if b.found %}Список на xFW уже совпадает с реестром{% else %}Объекта нет в снимке — сравнить не с чем{% endif %}</div>
+                {% endif %}
+              </section>
+            {% endfor %}
+          </div>
+        </div>
+      </li>
+
+      {# ── Шаг 2: команды ───────────────────────────────────────────────── #}
+      <li class="reg-step{% if cmd.blocked or not cmd.any_changes %} is-off{% endif %}">
+        <div class="reg-step-rail"><span class="reg-step-badge">2</span><span class="reg-step-line"></span></div>
+        <div class="reg-step-body">
+          <div class="reg-step-title">Скопируйте команды в консоль xFW</div>
+          <div class="reg-step-text">Нужен admin-режим. Команда создаёт новый объект — старый пока продолжает работать.</div>
+          <div class="reg-step-content">
+            {% if cmd.blocked %}
+              <span class="reg-step-off-note">Недоступно: нет снимка объектов xFW.</span>
+            {% elif not cmd.any_changes %}
+              <span class="reg-step-off-note">Команды не нужны — изменений нет.</span>
+            {% else %}
+              <div class="reg-cmds">
+                {% for b in cmd.blocks %}{% if b.changed and b.command %}
+                  {% with prefix="firewall ip-object add name @"|add:b.to|add:" " %}
+                  <div class="reg-cmd" :class="{ 'is-wrapped': wrapped['{{ b.kind }}'] }">
+                    <div class="reg-cmd-line" title="Команда для {{ b.title|lower }}"><span class="reg-cmd-prompt">xfw# </span>firewall ip-object add name <span class="reg-cmd-name">@{{ b.to }}</span> {{ b.command|cut:prefix }}</div>
+                    <code class="is-hidden" data-cmd-full="{{ b.kind }}">{{ b.command }}</code>
+                    <div class="reg-cmd-side">
+                      <span class="reg-cmd-count">{{ b.count|ru_number }} {{ b.count|plural:"значение,значения,значений" }}</span>
+                      <button type="button" class="reg-cmd-btn is-ghost" @click="toggleWrap('{{ b.kind }}')" x-text="wrapped['{{ b.kind }}'] ? 'Свернуть' : 'Целиком'">Целиком</button>
+                      <button type="button" class="reg-cmd-btn" @click="copy('{{ b.kind }}')">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
+                        <span x-text="copied === '{{ b.kind }}' ? 'Скопировано' : 'Копировать'">Копировать</span>
+                      </button>
+                    </div>
+                  </div>
+                  {% endwith %}
+                {% endif %}{% endfor %}
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </li>
+
+      {# ── Шаг 3: веб-интерфейс ViPNet ──────────────────────────────────── #}
+      <li class="reg-step{% if cmd.blocked or not cmd.any_changes %} is-off{% endif %}">
+        <div class="reg-step-rail"><span class="reg-step-badge">3</span><span class="reg-step-line"></span></div>
+        <div class="reg-step-body">
+          <div class="reg-step-title">Замените списки в веб-интерфейсе ViPNet</div>
+          <div class="reg-step-text">
+            В {{ cmd.rules|length|plural:"правиле,правилах,правилах" }}
+            {% for r in cmd.rules %}<span class="mono">{{ r }}</span>{% if forloop.revcounter == 2 %} и {% elif not forloop.last %}, {% endif %}{% endfor %}
+            поставьте новые объекты вместо старых. По SSH этот шаг недоступен.
+          </div>
+          {% if not cmd.blocked and cmd.any_changes %}
+            <div class="reg-step-content reg-rules">
+              {% for b in cmd.blocks %}{% if b.changed %}
+                <span class="reg-rule"><span class="reg-rule-map mono">@{{ b.from }} → <b>@{{ b.to }}</b></span></span>
+              {% endif %}{% endfor %}
+            </div>
+          {% endif %}
+        </div>
+      </li>
+
+      {# ── Шаг 4: отметить, что применили ───────────────────────────────── #}
+      <li class="reg-step{% if applied %} is-done{% elif cmd.blocked or not cmd.any_changes %} is-off{% endif %}">
+        <div class="reg-step-rail">
+          <span class="reg-step-badge">{% if applied %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>{% else %}4{% endif %}</span>
+        </div>
+        <div class="reg-step-body">
+          <div class="reg-step-title">Отметьте, что применили</div>
+          <div class="reg-step-text">Номер следующего списка будет считаться от новых имён.</div>
+          <div class="reg-step-content">
+            {% if applied %}
+              <div class="reg-mark" style="margin-bottom: 12px">
+                <button type="button" class="reg-mark-btn is-done" disabled>✓ Отмечено: текущие имена {% for o in snapshot.objects %}@{{ o.wanted }}{% if not forloop.last %} и {% endif %}{% endfor %}</button>
+              </div>
+            {% endif %}
+            {% if cmd.blocked %}
+              <span class="reg-step-off-note">Недоступно: нет снимка объектов xFW.</span>
+            {% elif not cmd.any_changes %}
+              {% if not applied %}<span class="reg-step-off-note">Отмечать нечего.</span>{% endif %}
+            {% elif cmd.snapshot.waiting %}
+              <span class="reg-step-off-note">Следующую отметку можно будет сделать после нового снимка xFW — иначе имя уйдёт вперёд объекта, которого на firewall ещё нет.</span>
+            {% else %}
+              {# Только изменённые блоки и ровно показанные имена (сервер их не пересчитывает) #}
+              <form class="reg-mark" hx-post="{% url 'ip_plan:regulator_firewall_commands_apply' %}" hx-swap="none" hx-disabled-elt="find button[type=submit]">
+                {% csrf_token %}
+                {% for b in cmd.blocks %}{% if b.changed %}<input type="hidden" name="{{ b.kind }}_next_name" value="{{ b.to }}">{% endif %}{% endfor %}
+                <button type="button" class="reg-mark-btn" :class="{ 'is-hidden': confirm }" @click="confirm = true">
+                  Отметить, что применили: {% for b in cmd.blocks %}{% if b.changed %}@{{ b.to }} {% endif %}{% endfor %}
+                </button>
+                <span class="reg-mark-hint" :class="{ 'is-hidden': confirm }">Следующие команды будут считаться уже от этих имён</span>
+                <span class="reg-mark-hint is-hidden" :class="{ 'is-hidden': !confirm }" style="color: var(--text)">Объекты {% for b in cmd.blocks %}{% if b.changed %}<span class="mono">@{{ b.to }}</span> {% endif %}{% endfor %}созданы на xFW и стоят в правилах? Отменить отметку нельзя.</span>
+                <button type="submit" class="reg-mark-btn is-hidden" :class="{ 'is-hidden': !confirm }">Да, применили</button>
+                <button type="button" class="reg-mini-btn is-hidden" :class="{ 'is-hidden': !confirm }" @click="confirm = false">Отмена</button>
+              </form>
+            {% endif %}
+          </div>
+        </div>
+      </li>
+    </ol>
+  </div>
+</div>
+{% endblock %}

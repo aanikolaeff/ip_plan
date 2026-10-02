@@ -1,0 +1,347 @@
+{% extends "ip_plan/base.html" %}
+{% load static ip_plan_extras %}
+
+{% comment %}
+  Главная раздела «Блокировки» (SPEC-reg.md, раздел 1; макет Reg / RegEntries /
+  RegSync). Контекст — tab, check_query, check, summary, letters, sync,
+  snapshot, entries (только при tab=entries) — CONTRACT-reg.md.
+
+  Сверху вниз: сводные карточки «всё ли применено» → проверка значения
+  (GET-форма с полем check, текущая вкладка уходит скрытым полем) → вкладки
+  ссылками ?tab= → содержимое вкладки. Заголовок «Блокировки» рисует
+  оболочка; рядом (head_extra) — плашка firewall, справа (head_actions) —
+  «Команды для xFW» и «Новое письмо». Прокручивается только тело таблицы
+  (body_class shell-body-fixed). Разметка и стили — на общем с ACL корне
+  .acl (acl.css) + свои классы reg-* (reg.css), логика — reg.js.
+{% endcomment %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'ip_plan/css/acl.css' %}">
+  <link rel="stylesheet" href="{% static 'ip_plan/css/reg.css' %}">
+{% endblock %}
+{% block extra_scripts %}
+  <script src="{% static 'ip_plan/js/reg.js' %}"></script>
+{% endblock %}
+
+{% block head_extra %}
+  {# Письма общие для всех площадок (решение 01.10) — плашка не про «выбранную площадку», а про firewall с блокировками #}
+  <span class="reg-fw-badge{% if not snapshot.available %} is-warn{% endif %}"
+        title="Firewall, на котором применяются блокировки{% if snapshot.model %} · {{ snapshot.model }}{% endif %}{% if snapshot.at_text %} · снимок объектов {{ snapshot.at_text }}{% else %} · снимка объектов нет{% endif %}">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path></svg>
+    firewall <span class="mono">{{ snapshot.device }}</span>
+  </span>
+{% endblock %}
+
+{% block head_actions %}
+  <a class="reg-head-btn" href="{% url 'ip_plan:regulator_commands' %}">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" x2="20" y1="19" y2="19"></line></svg>
+    Команды для xFW
+  </a>
+  {# Номер и дата проставляются сервером автоматически, ответ — HX-Redirect на карточку нового письма #}
+  <button type="button" class="reg-head-btn-primary" hx-post="{% url 'ip_plan:regulator_document_add' %}" hx-swap="none" hx-disabled-elt="this"
+          title="Создать письмо с очередным номером и сразу открыть его">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+    Новое письмо
+  </button>
+{% endblock %}
+
+{% block body_class %} shell-body-fixed{% endblock %}
+
+{% block content %}
+{% now "Y" as cur_year %}
+<div class="acl reg shell-island">
+
+  {# ── Сводные карточки (1.2) ─────────────────────────────────────────── #}
+  <div class="reg-cards">
+    <div class="reg-card">
+      <span class="reg-card-label">Активно в реестре</span>
+      <span class="reg-card-value">{{ summary.active_total|ru_number }}</span>
+      <span class="reg-card-note" title="Без хэшей (IOC): firewall их не фильтрует — активных хэшей {{ summary.active_hash|ru_number }}"><span class="mono">{{ summary.active_ip|ru_number }}</span> IP · <span class="mono">{{ summary.active_domains|ru_number }}</span> {{ summary.active_domains|plural:"домен,домена,доменов" }} и URL</span>
+    </div>
+
+    {% if not snapshot.available %}
+      <div class="reg-card">
+        <span class="reg-card-label"><span class="reg-dot is-warn"></span>Ждут применения</span>
+        <span class="reg-card-value is-faint">—</span>
+        <span class="reg-card-note is-warn">нет снимка xFW — сверить не с чем</span>
+      </div>
+    {% elif summary.pending_count %}
+      <div class="reg-card is-warn">
+        <span class="reg-card-label"><span class="reg-dot is-warn"></span>Ждут применения</span>
+        <span class="reg-card-value">{{ summary.pending_count|ru_number }}</span>
+        <a class="reg-card-link" href="{% url 'ip_plan:regulator_commands' %}">есть в письмах, нет на xFW · подготовить команды →</a>
+      </div>
+    {% else %}
+      <div class="reg-card">
+        <span class="reg-card-label"><span class="reg-dot is-ok"></span>Ждут применения</span>
+        <span class="reg-card-value">0</span>
+        <span class="reg-card-note">{% if summary.revoked_present_count %}всё применено, но <a class="reg-card-link" href="?tab=sync">{{ summary.revoked_present_count|ru_number }} {{ summary.revoked_present_count|plural:"снята,сняты,снято" }} и ещё стоит →</a>{% else %}всё применено{% endif %}</span>
+      </div>
+    {% endif %}
+
+    <div class="reg-card">
+      <span class="reg-card-label"><span class="reg-dot is-info"></span>Только на xFW</span>
+      <span class="reg-card-value{% if not snapshot.available %} is-faint{% endif %}">{% if snapshot.available %}{{ summary.only_fw_count|ru_number }}{% else %}—{% endif %}</span>
+      {% if summary.only_fw_count %}
+        <a class="reg-card-link" href="?tab=sync">стоят на firewall, нет ни в одном письме →</a>
+      {% else %}
+        <span class="reg-card-note">{% if snapshot.available %}всё на xFW есть в письмах{% else %}нет снимка xFW{% endif %}</span>
+      {% endif %}
+    </div>
+
+    <div class="reg-card">
+      <span class="reg-card-label">Снимок xFW</span>
+      {% if snapshot.available %}
+        <span class="reg-card-value is-text">{{ snapshot.at_text|default:"время неизвестно" }}</span>
+        {% with first=snapshot.at_text|slice:":7" second=snapshot.at_text|slice:":5" %}
+          {% if snapshot.waiting_snapshot %}
+            <span class="reg-card-note is-warn" title="После «Отметить, что применили» имена объектов продвинуты, а новый снимок xFW ещё не снят">ждём новый снимок: {% for o in snapshot.objects %}{% if o.fallback %}@{{ o.wanted }} {% endif %}{% endfor %}</span>
+          {% elif first != "сегодня" and second != "вчера" %}
+            <span class="reg-card-note is-warn" title="Снимок старше суток — статусы «на xFW» могут быть неактуальны">снимок старше суток</span>
+          {% else %}
+            <span class="reg-card-note is-objs">{% for o in snapshot.objects %}{% if o.found %}@{{ o.name }}{% else %}<span title="Объекта с текущим именем нет в снимке — статусы «на xFW» по нему недостоверны" style="color: var(--danger-t)">@{{ o.wanted }} — нет</span>{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}</span>
+          {% endif %}
+        {% endwith %}
+      {% else %}
+        <span class="reg-card-value is-text is-faint">нет снимка</span>
+        <span class="reg-card-note">объекты {% for o in snapshot.objects %}@{{ o.wanted }}{% if not forloop.last %} · {% endif %}{% endfor %} не найдены</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Проверить адрес или домен (1.3) — поиск по Enter, вкладка сохраняется ── #}
+  <form class="reg-check" method="get" action="{% url 'ip_plan:regulator_list' %}">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    <label class="reg-check-field">
+      <span class="reg-check-label">Проверить адрес или домен</span>
+      <span class="reg-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+        <input type="search" name="check" class="reg-check-input" value="{{ check_query }}" placeholder="IP, домен или URL"
+               autocomplete="off" spellcheck="false" aria-label="Проверить адрес или домен">
+      </span>
+    </label>
+
+    {% if check %}
+      <div class="reg-verdict is-{{ check.outcome }}" role="status">
+        {% if check.outcome == 'blocked' %}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+        {% elif check.outcome == 'pending' %}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
+        {% elif check.outcome == 'revoked_present' %}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+        {% else %}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+        {% endif %}
+        <span class="reg-verdict-title">{{ check.title }}</span>
+        <span>
+          {{ check.kind_label }}{% if check.normalized|lower != check.query|lower %} <span class="mono">{{ check.normalized }}</span>{% endif %}
+          {% if check.letters %}
+            {% if check.letters|length == 1 %}{% with l=check.letters.0 %}
+              · письмо <a class="mono" href="{{ l.url }}">{{ l.reference_no }}</a> от {{ l.document_date|date:"d.m.Y" }} · {% if l.status == 'active' %}активна{% else %}снята{% endif %}
+            {% endwith %}{% else %}
+              · в {{ check.letters|length }} {{ check.letters|length|plural:"письме,письмах,письмах" }}:
+              {% for l in check.letters %}<a class="mono" href="{{ l.url }}" title="от {{ l.document_date|date:'d.m.Y' }}">{{ l.reference_no }}</a>{% if l.status != 'active' %} (снята){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
+            {% endif %}
+          {% endif %}
+          {% if check.object %} · на xFW в <span class="mono">@{{ check.object }}</span>{% endif %}
+          {% if check.via %} · входит в <span class="mono">{{ check.via }}</span>{% endif %}
+          {% if check.outcome == 'not_found' %} · ни в реестре, ни на xFW{% endif %}
+        </span>
+        {% if check.outcome == 'pending' %}<a class="reg-verdict-cta" href="{% url 'ip_plan:regulator_commands' %}">подготовить команды →</a>{% endif %}
+      </div>
+    {% elif check_query %}
+      <div class="reg-verdict is-not_found" role="status">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+        <span class="reg-verdict-title">Не удалось распознать</span>
+        <span>«<span class="mono">{{ check_query }}</span>» — введите IP-адрес, домен или URL</span>
+      </div>
+    {% endif %}
+  </form>
+
+  {# ── Вкладки (1.4) — ссылками, проверка значения сохраняется ─────────── #}
+  {% with chk=check_query|urlencode %}
+  <div class="acl-q-tabs reg-tabs" role="tablist" aria-label="Разделы реестра">
+    <a class="acl-q-tab{% if tab == 'letters' %} is-active{% endif %}" role="tab" aria-selected="{% if tab == 'letters' %}true{% else %}false{% endif %}"
+       href="?tab=letters{% if chk %}&amp;check={{ chk }}{% endif %}">Письма <span class="reg-tab-count">{{ summary.letters_count|ru_number }}</span></a>
+    <a class="acl-q-tab{% if tab == 'entries' %} is-active{% endif %}" role="tab" aria-selected="{% if tab == 'entries' %}true{% else %}false{% endif %}"
+       href="?tab=entries{% if chk %}&amp;check={{ chk }}{% endif %}">Все записи <span class="reg-tab-count">{{ summary.entries_total|ru_number }}</span></a>
+    <a class="acl-q-tab{% if tab == 'sync' %} is-active{% endif %}" role="tab" aria-selected="{% if tab == 'sync' %}true{% else %}false{% endif %}"
+       href="?tab=sync{% if chk %}&amp;check={{ chk }}{% endif %}">{% if summary.sync_issues_count %}<span class="reg-dot is-warn" aria-hidden="true"></span>{% endif %}Сверка с xFW <span class="reg-tab-count">{% if snapshot.available %}{{ summary.sync_issues_count|ru_number }}{% else %}—{% endif %}</span></a>
+  </div>
+  {% endwith %}
+
+  {% if tab == 'entries' %}
+    {# ── Все записи (1.6): фильтры на клиенте (regEntries в reg.js) ─────── #}
+    <div class="reg-entries-wrap reg" x-data="regEntries()">
+      <div class="reg-toolbar">
+        <div class="reg-toolbar-left" role="group" aria-label="Тип записи">
+          <button type="button" class="acl-gchip" :class="{ 'is-on': kind === 'all' }" :aria-pressed="kind === 'all'" @click="setKind('all')">Все <span class="mono acl-gchip-n" x-text="num(counts.all)"></span></button>
+          <button type="button" class="acl-gchip" :class="{ 'is-on': kind === 'ip' }" :aria-pressed="kind === 'ip'" @click="setKind('ip')">IP <span class="mono acl-gchip-n" x-text="num(counts.ip)"></span></button>
+          <button type="button" class="acl-gchip" :class="{ 'is-on': kind === 'fqdn' }" :aria-pressed="kind === 'fqdn'" @click="setKind('fqdn')">Домены <span class="mono acl-gchip-n" x-text="num(counts.fqdn)"></span></button>
+          <button type="button" class="acl-gchip" :class="{ 'is-on': kind === 'url' }" :aria-pressed="kind === 'url'" @click="setKind('url')">URL <span class="mono acl-gchip-n" x-text="num(counts.url)"></span></button>
+          <span class="reg-chip-sep" aria-hidden="true"></span>
+          <button type="button" class="acl-gchip" :class="{ 'is-on': st === 'all' }" @click="setSt('all')">Любой статус</button>
+          <button type="button" class="acl-gchip is-hidden" :class="{ 'is-on': st === 'pending', 'is-hidden': !counts.pending }" @click="setSt('pending')"><span class="reg-dot is-warn"></span>Ждут применения <span class="mono acl-gchip-n" x-text="num(counts.pending)"></span></button>
+          <button type="button" class="acl-gchip is-hidden" :class="{ 'is-on': st === 'revoked_present', 'is-hidden': !counts.revoked_present }" @click="setSt('revoked_present')"><span class="reg-dot is-danger"></span>Сняты, но стоят <span class="mono acl-gchip-n" x-text="num(counts.revoked_present)"></span></button>
+          <button type="button" class="acl-gchip is-hidden" :class="{ 'is-on': st === 'revoked', 'is-hidden': !counts.revoked }" @click="setSt('revoked')">Снятые <span class="mono acl-gchip-n" x-text="num(counts.revoked)"></span></button>
+        </div>
+        <div class="reg-toolbar-right">
+          <label class="reg-search is-small">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+            <input type="search" class="reg-input" placeholder="Найти значение" aria-label="Найти значение" x-model="q" @input.debounce.200ms="limit = 200; apply()">
+          </label>
+          <label class="reg-check-box">
+            <input type="checkbox" x-model="hashes" @change="limit = 200; apply()">
+            Показать хэши (IOC) · <span class="mono" x-text="num(counts.hash)">{{ summary.active_hash|ru_number }}</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="reg-thead reg-entries-head" role="row">
+        <span class="cell">Тип</span><span class="cell">Значение</span><span class="cell">Письмо</span><span class="cell">Статус</span><span class="cell">На xFW</span><span class="cell">Добавлена</span>
+      </div>
+      <div class="reg-tbody">
+        {% for e in entries %}
+          <div class="reg-row reg-entry{% if e.status != 'active' %} is-revoked{% endif %}{% if e.kind == 'hash' %} is-filtered{% endif %}"
+               data-kind="{{ e.kind }}" data-status="{{ e.status }}" data-fw="{{ e.fw_state }}"
+               data-search="{{ e.value|lower }} {{ e.match_value|lower }} {{ e.document.reference_no|lower }}">
+            <span class="cell"><span class="reg-kind">{{ e.kind_label }}</span></span>
+            <span class="cell mono reg-entry-value" title="{{ e.value }}">{{ e.value }}</span>
+            <span class="cell mono reg-entry-doc"><a href="{{ e.document.url }}" title="Письмо от {{ e.document.document_date|date:'d.m.Y' }}">{{ e.document.reference_no }}</a>{% if e.other_letters %}<span class="reg-entry-others" title="Это же значение есть в письмах: {% for o in e.other_letters %}{{ o.reference_no }}{% if not forloop.last %}, {% endif %}{% endfor %}">+{{ e.other_letters|length }}</span>{% endif %}</span>
+            <span class="cell reg-entry-status"{% if e.status != 'active' %} title="Снята{% if e.revoked_at %} {{ e.revoked_at|date:'d.m.Y H:i' }}{% endif %}{% if e.revoked_reason %} · {{ e.revoked_reason }}{% endif %}"{% endif %}>{{ e.status_label }}</span>
+            <span class="cell reg-fw is-{{ e.fw_state }}"{% if e.fw_via %} title="Входит в подсеть {{ e.fw_via }} на xFW"{% endif %}><span class="reg-fw-dot"></span>{{ e.fw_state_label }}{% if e.fw_via %} <span class="reg-fw-via">через подсеть</span>{% endif %}</span>
+            <span class="cell mono reg-entry-added" title="{{ e.created_at|date:'d.m.Y H:i' }}">{% if e.created_at|date:"Y" == cur_year %}{{ e.created_at|date:"d.m" }}{% else %}{{ e.created_at|date:"d.m.Y" }}{% endif %}</span>
+          </div>
+        {% empty %}
+          <div class="reg-empty">В реестре пока нет записей — откройте письмо и добавьте их вручную или из файлов</div>
+        {% endfor %}
+        {% if entries %}
+          <div class="reg-empty is-hidden" :class="{ 'is-hidden': match > 0 }">Под фильтр ничего не подходит</div>
+          <div class="reg-more is-hidden" :class="{ 'is-hidden': rest() <= 0 }">
+            Показано <span class="mono" x-text="num(shown)"></span> из <span class="mono" x-text="num(match)"></span> ·
+            <button type="button" class="reg-link-btn" @click="more()">Показать ещё 200</button>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+  {% elif tab == 'sync' %}
+    {# ── Сверка с xFW (1.7): три секции, без «Привязать к письму» (решение 01.10) ── #}
+    <div class="reg-sync">
+      {% if not snapshot.available %}
+        <div class="reg-alert is-wide">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+          <span><b>Снимка объектов xFW нет — сверка невозможна.</b> Объекты {% for o in snapshot.objects %}<span class="mono">@{{ o.wanted }}</span>{% if not forloop.last %} и {% endif %}{% endfor %} не найдены в конфигурации {{ snapshot.device }}; дождитесь следующего синка.</span>
+        </div>
+      {% elif not summary.sync_issues_count %}
+        <div class="reg-sync-ok">Реестр и xFW совпадают — расхождений нет</div>
+      {% else %}
+        {% if snapshot.waiting_snapshot %}
+          <div class="reg-alert is-wide">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
+            <span><b>Ждём новый снимок.</b> Имена объектов уже продвинуты отметкой «применили», а сверка пока идёт по старому снимку ({% for o in snapshot.objects %}<span class="mono">@{{ o.name }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}).</span>
+          </div>
+        {% endif %}
+
+        <section class="reg-sec" x-data="regSyncSection()">
+          <div class="reg-sec-head is-warn">
+            <div class="reg-sec-top">
+              <span class="reg-sec-title">Ждут применения · <span class="mono">{{ sync.pending|length|ru_number }}</span></span>
+              {% if sync.pending %}<a class="reg-sec-cta" href="{% url 'ip_plan:regulator_commands' %}">Подготовить команды →</a>{% endif %}
+            </div>
+            <span class="reg-sec-desc">Есть в активных записях писем, но их нет в текущих списках на xFW</span>
+          </div>
+          {% for p in sync.pending %}
+            <div class="reg-row reg-sline">
+              <span class="cell reg-sline-kind">{{ p.kind_label }}</span>
+              <span class="cell mono reg-sline-value" title="{{ p.value }}">{{ p.value }}</span>
+              <span class="cell mono reg-sline-doc">{% with l=p.letters.0 %}<a href="{{ l.url }}">{{ l.reference_no }}</a>{% endwith %}{% if p.letters|length > 1 %}<span class="reg-entry-others" title="{% for l in p.letters %}{{ l.reference_no }}{% if not forloop.last %}, {% endif %}{% endfor %}">+{{ p.letters|length|add:"-1" }}</span>{% endif %}</span>
+            </div>
+          {% empty %}
+            <div class="reg-sec-empty">Всё из писем уже стоит на xFW</div>
+          {% endfor %}
+          {% if sync.pending|length > 200 %}
+            <div class="reg-more" :class="{ 'is-hidden': all }">Показаны первые 200 · <button type="button" class="reg-link-btn" @click="showAll()">Показать все {{ sync.pending|length|ru_number }}</button></div>
+          {% endif %}
+        </section>
+
+        {% if sync.revoked_present %}
+          <section class="reg-sec" x-data="regSyncSection()">
+            <div class="reg-sec-head is-danger">
+              <div class="reg-sec-top">
+                <span class="reg-sec-title">Сняты, но ещё стоят · <span class="mono">{{ sync.revoked_present|length|ru_number }}</span></span>
+                <a class="reg-sec-cta" href="{% url 'ip_plan:regulator_commands' %}">Подготовить команды →</a>
+              </div>
+              <span class="reg-sec-desc">Сняты во всех письмах, где встречались, но всё ещё есть в списках на xFW — уберутся новым списком</span>
+            </div>
+            {% for p in sync.revoked_present %}
+              <div class="reg-row reg-sline">
+                <span class="cell reg-sline-kind">{{ p.kind_label }}</span>
+                <span class="cell mono reg-sline-value" title="{{ p.value }}{% if p.revoked_at %} · снята {{ p.revoked_at|date:'d.m.Y' }}{% endif %}">{{ p.value }}</span>
+                <span class="cell mono reg-sline-doc">{% with l=p.letters.0 %}<a href="{{ l.url }}">{{ l.reference_no }}</a>{% endwith %}{% if p.letters|length > 1 %}<span class="reg-entry-others">+{{ p.letters|length|add:"-1" }}</span>{% endif %}</span>
+              </div>
+            {% endfor %}
+            {% if sync.revoked_present|length > 200 %}
+              <div class="reg-more" :class="{ 'is-hidden': all }">Показаны первые 200 · <button type="button" class="reg-link-btn" @click="showAll()">Показать все {{ sync.revoked_present|length|ru_number }}</button></div>
+            {% endif %}
+          </section>
+        {% endif %}
+
+        <section class="reg-sec" x-data="regSyncSection()">
+          <div class="reg-sec-head">
+            <span class="reg-sec-title">Только на xFW · <span class="mono">{{ sync.only_fw|length|ru_number }}</span></span>
+            <div class="reg-sec-desc">Стоят в списках firewall, но не относятся ни к одному письму — добавлены вручную или до ведения реестра</div>
+          </div>
+          {% for p in sync.only_fw %}
+            <div class="reg-row reg-sline">
+              <span class="cell reg-sline-kind">{{ p.kind_label }}</span>
+              <span class="cell mono reg-sline-value" title="{{ p.value }}">{{ p.value }}</span>
+              <span class="cell mono reg-sline-obj" title="Объект на xFW">@{{ p.object }}</span>
+            </div>
+          {% empty %}
+            <div class="reg-sec-empty">На xFW нет ничего сверх писем</div>
+          {% endfor %}
+          {% if sync.only_fw|length > 200 %}
+            <div class="reg-more" :class="{ 'is-hidden': all }">Показаны первые 200 · <button type="button" class="reg-link-btn" @click="showAll()">Показать все {{ sync.only_fw|length|ru_number }}</button></div>
+          {% endif %}
+        </section>
+      {% endif %}
+    </div>
+
+  {% else %}
+    {# ── Письма (1.5) — свежие сверху ──────────────────────────────────── #}
+    <div class="reg-thead reg-letters-head" role="row">
+      <span class="cell">Номер письма</span><span class="cell">Дата ▾</span><span class="cell">Примечание</span><span class="cell acl-right">Записей</span><span class="cell">Применено на xFW</span><span class="cell">Добавил</span><span></span>
+    </div>
+    <div class="reg-tbody">
+      {% for l in letters|dictsortreversed:"document_date" %}
+        <a class="reg-row reg-letter{% if forloop.counter0|divisibleby:2 %}{% else %} is-even{% endif %}" href="{{ l.url }}"
+           title="{{ l.reference_no }} от {{ l.document_date|date:'d.m.Y' }}: {{ l.ip }} IP · {{ l.fqdn }} доменов · {{ l.url_count }} URL · {{ l.hash }} хэшей{% if l.revoked %} · снято {{ l.revoked }}{% endif %}">
+          <span class="cell mono reg-letter-no">{{ l.reference_no }}</span>
+          <span class="cell mono reg-letter-date">{{ l.document_date|date:"d.m.Y" }}</span>
+          <span class="cell reg-letter-note">{{ l.note|default:"—" }}</span>
+          <span class="cell mono reg-letter-count">{{ l.total|ru_number }}</span>
+          <span class="cell reg-applied">
+            {% if not l.known %}
+              <span class="reg-applied-text is-faint">нет снимка</span>
+            {% elif not l.applicable %}
+              <span class="reg-applied-text is-faint" title="В письме нет активных IP, доменов и URL — применять на firewall нечего">{% if l.total %}нечего применять{% else %}пусто{% endif %}</span>
+            {% else %}
+              <span class="reg-bar{% if l.all_applied %} is-done{% endif %}"><span style="width: {{ l.pct }}%"></span></span>
+              {% if l.all_applied %}
+                <span class="reg-applied-text is-done">все</span>
+              {% else %}
+                <span class="reg-applied-text"><span class="mono">{{ l.applied|ru_number }}</span> из <span class="mono">{{ l.applicable|ru_number }}</span></span>
+              {% endif %}
+            {% endif %}
+          </span>
+          <span class="cell reg-letter-by">{{ l.created_by|default:"—" }}</span>
+          <span class="reg-chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></span>
+        </a>
+      {% empty %}
+        <div class="reg-empty"><b>Писем пока нет</b> — добавьте первое кнопкой «Новое письмо»</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -12,12 +12,13 @@ ACL и блокировки, а это самостоятельная подси
 """
 import json
 import logging
+import re
 
 from functools import wraps
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -26,26 +27,33 @@ from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 
+from .context_processors import SITE_COOKIE, site_options_cached
 from .models import LdapConfig, LocalAccount, SettingsAudit
-from .services import connection_test, ldap_check, settings_bundle
+from .services import connection_test, ldap_check, remote_gateway, settings_bundle, ssh_access
+from .services import sync_overview
 from .services import sync_config as sc
 
 logger = logging.getLogger(__name__)
 
-# Вкладки раздела. Ключ — часть URL, "perm" — какой флаг нужен.
-# Разделы. "file" — что этот раздел реально правит: рельс слева показывает
+# Разделы. "file" — что этот раздел реально правит: рейка слева показывает
 # его под названием, чтобы человек видел, какой файл на диске (или какая
 # таблица в базе) стоит за экраном. Это не украшение: те же имена он потом
-# ищет на прод-хосте, когда разбирается с прогоном синка.
+# ищет на прод-хосте, когда разбирается с прогоном синка. "group" — заголовок
+# группы в рейке (макет test_des/Settings*.html).
 TABS = [
-    {"key": "devices",     "title": "Оборудование", "file": "conf/devices.json",       "perm": "staff"},
-    {"key": "models",      "title": "Модели",       "file": "conf/devices.json",       "perm": "staff"},
-    {"key": "hypervisors", "title": "Гипервизоры",  "file": "conf/sources_*.json",     "perm": "staff"},
-    {"key": "scan",        "title": "Скан и DNS",   "file": "conf/config.json",        "perm": "staff"},
-    {"key": "ldap",        "title": "Вход и LDAP",  "file": "база ip_plan",            "perm": "superuser"},
-    {"key": "users",       "title": "Пользователи", "file": "база ip_plan",            "perm": "superuser"},
-    {"key": "audit",       "title": "Журнал",       "file": "база ip_plan",            "perm": "staff"},
+    {"key": "sync",        "title": "Запуск и расписание", "file": "full_sync.sh",        "perm": "staff",     "group": "Синхронизация"},
+    {"key": "devices",     "title": "Оборудование",    "file": "conf/devices.json",       "perm": "staff",     "group": "Источники данных"},
+    {"key": "models",      "title": "Модели",          "file": "conf/devices.json",       "perm": "staff",     "group": "Источники данных"},
+    {"key": "hypervisors", "title": "Гипервизоры",     "file": "conf/sources_*.json",     "perm": "staff",     "group": "Источники данных"},
+    {"key": "scan",        "title": "Скан и DNS",      "file": "conf/config.json",        "perm": "staff",     "group": "Источники данных"},
+    {"key": "ldap",        "title": "Вход и LDAP",     "file": "база ip_plan",            "perm": "superuser", "group": "Доступ"},
+    {"key": "users",       "title": "Пользователи",    "file": "база ip_plan",            "perm": "superuser", "group": "Доступ"},
+    {"key": "access",      "title": "Доступ к хостам", "file": "conf/ssh_access.json",    "perm": "staff",     "group": "Доступ"},
+    {"key": "audit",       "title": "Журнал изменений", "file": "база ip_plan",           "perm": "staff",     "group": "История"},
 ]
+DEFAULT_TAB = "sync"
+# Разделы, которым не нужен смонтированный conf/ netbox-sync.
+_DB_TABS = {"ldap", "users", "audit"}
 
 def _require(check, what):
     """Свой декоратор вместо user_passes_test: тот при непрохождении
@@ -92,25 +100,51 @@ def _error_modal(request, message, status=400):
 
 # ── Страница ───────────────────────────────────────────────────────────────
 
-@staff_required
-def settings_page(request, tab="devices"):
-    # Вкладки LDAP и "Пользователи" — только суперпользователю: там
-    # управление тем, кто вообще может войти. Невидимые вкладки не просто
-    # не рисуются, но и недоступны по прямой ссылке.
-    visible = [t for t in TABS if t["perm"] != "superuser" or request.user.is_superuser]
-    if tab not in {t["key"] for t in visible}:
-        if tab in {t["key"] for t in TABS}:
-            raise PermissionDenied("Требуется доступ суперпользователя")
-        tab = "devices"
+def _visible_tabs(user):
+    return [t for t in TABS if t["perm"] != "superuser" or user.is_superuser]
 
-    ctx = {
-        "tabs": visible,
-        "active_tab": tab,
+
+def _rail(user, active):
+    """Группы рейки: [{title, items: [tab + dot]}]. Точка у «Запуск и
+    расписание» — состояние последнего прогона (warn — ошибка или оборван,
+    accent — идёт)."""
+    state = sync_overview.overview()["state"] if active != "sync" else None
+    groups = []
+    for tab in _visible_tabs(user):
+        item = dict(tab, dot="")
+        if tab["key"] == "sync" and state is not None:
+            item["dot"] = {"failed": "warn", "aborted": "warn", "running": "accent"}.get(state, "")
+        if not groups or groups[-1]["title"] != tab["group"]:
+            groups.append({"title": tab["group"], "items": []})
+        groups[-1]["items"].append(item)
+    return groups
+
+
+def _page_ctx(request, active):
+    """Общее для всех страниц раздела: рейка и состояние каталога conf."""
+    return {
+        "tabs": _visible_tabs(request.user),
+        "rail": _rail(request.user, active),
+        "active_tab": active,
         "conf_available": sc.available(),
         "conf_dir": sc.conf_dir(),
         "sync_running": sc.sync_running(),
     }
-    if not ctx["conf_available"]:
+
+
+@staff_required
+def settings_page(request, tab=DEFAULT_TAB):
+    # Вкладки LDAP и "Пользователи" — только суперпользователю: там
+    # управление тем, кто вообще может войти. Невидимые вкладки не просто
+    # не рисуются, но и недоступны по прямой ссылке.
+    visible = _visible_tabs(request.user)
+    if tab not in {t["key"] for t in visible}:
+        if tab in {t["key"] for t in TABS}:
+            raise PermissionDenied("Требуется доступ суперпользователя")
+        tab = DEFAULT_TAB
+
+    ctx = _page_ctx(request, tab)
+    if not ctx["conf_available"] and tab not in _DB_TABS and tab != "sync":
         return render(request, "ip_plan/settings.html", ctx)
 
     try:
@@ -120,92 +154,291 @@ def settings_page(request, tab="devices"):
     return render(request, "ip_plan/settings.html", ctx)
 
 
-# Подписи чипов в колонке «Синхронизируется», в порядке шагов синка.
+# Короткие ярлыки шагов для чипов «Что собираем» (как в макете — латиницей,
+# моноширинным), в порядке шагов синка.
 _CHIP_LABELS = [
-    ("sync_interfaces", "интерфейсы"),
-    ("import_vlans", "VLAN"),
-    ("import_prefixes", "префиксы"),
-    ("sync_macs", "MAC"),
-    ("sync_lldp", "LLDP"),
-    ("backup_config", "конфигурация"),
-    ("sync_blocklist", "блокировки"),
+    ("sync_interfaces", "interfaces"),
+    ("import_vlans", "vlans"),
+    ("import_prefixes", "prefixes"),
+    ("sync_macs", "macs"),
+    ("sync_lldp", "lldp"),
+    ("backup_config", "config"),
+    ("sync_blocklist", "blocklist"),
 ]
 assert {k for k, _ in _CHIP_LABELS} == set(sc.SYNC_FLAGS)
+_FLAG_TITLES = {
+    "sync_interfaces": "интерфейсы и адрес управления",
+    "import_vlans": "VLAN",
+    "import_prefixes": "префиксы сетей",
+    "sync_macs": "MAC-таблица",
+    "sync_lldp": "LLDP-соседи",
+    "backup_config": "снимок конфигурации",
+    "sync_blocklist": "списки блокировок firewall",
+}
 
-# Откуда у шага взялось «включено» — цветом, а не подписью под строкой.
+# Откуда у шага взялось его состояние — цветом чипа (легенда под таблицей).
+# both — задано и у модели, и на устройстве; model — унаследовано от модели;
+# dev — включено только на устройстве; off — у модели включено, на
+# устройстве явно выключено (явный false, см. device_save).
 _CHIP_TITLES = {
-    "own": "включено и у модели, и на этом устройстве",
-    "inherited": "включено у модели, устройство наследует",
-    "override": "включено на этом устройстве; у модели выключено",
+    "both": "включено и у модели, и на этом устройстве",
+    "model": "включено у модели, устройство наследует",
+    "dev": "включено только на этом устройстве; у модели выключено",
+    "off": "у модели включено, на этом устройстве выключено",
 }
 
 
 def _chips(cfg, model_cfg, eff):
-    """Чипы включённых шагов с пометкой происхождения."""
+    """Чипы шагов с пометкой происхождения, включая «выключено здесь»."""
     chips = []
     for flag, label in _CHIP_LABELS:
-        if not eff.get(flag):
-            continue
-        if flag not in cfg:
-            kind = "inherited"
-        elif not model_cfg.get(flag):
-            kind = "override"
+        if eff.get(flag):
+            if flag not in cfg:
+                kind = "model"
+            elif not model_cfg.get(flag):
+                kind = "dev"
+            else:
+                kind = "both"
+        elif model_cfg.get(flag) and cfg.get(flag) is False:
+            kind = "off"
         else:
-            kind = "own"
-        chips.append({"label": label, "kind": kind, "title": _CHIP_TITLES[kind]})
+            continue
+        chips.append({"label": label, "kind": kind,
+                      "title": f"{_FLAG_TITLES[flag]}: {_CHIP_TITLES[kind]}"})
+    if model_cfg.get("cluster"):
+        chips.append({"label": "cluster", "kind": "model",
+                      "title": f"кластер {model_cfg['cluster']} — задан у модели"})
     return chips
 
 
+def _plural(n, one, few, many):
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return few
+    return many
+
+
+def _device_subtitle(cfg, model_cfg, site_label):
+    """Подпись под именем устройства в списке."""
+    if cfg.get("cluster_peer_of"):
+        return f"резерв для {cfg['cluster_peer_of']}"
+    parts = []
+    status = cfg.get("status") or "active"
+    if status != "active":
+        parts.append(status)
+    if model_cfg.get("cluster") == "vipnet_failover":
+        parts.append("кластер ViPNet")
+    if cfg.get("cluster_reserve"):
+        parts.append(f"резерв — {cfg['cluster_reserve']}")
+    if cfg.get("network_core"):
+        parts.append("ядро сети")
+    parts.append(site_label)
+    return " · ".join(parts)
+
+
+def _device_connection(cfg, transport):
+    if cfg.get("cluster_peer_of") or not cfg.get("host"):
+        return "без подключения"
+    if transport == "snmp":
+        version = sc.snmp_version(cfg)
+        user = cfg.get("snmp_user")
+        return f"snmp {version}{' ' + user if user else ''}@{cfg['host']}"
+    port = cfg.get("port")
+    suffix = f":{port}" if port and int(port) != 22 else ""
+    return f"{cfg.get('username', '')}@{cfg['host']}{suffix}"
+
+
+def _changed_devices(existing):
+    """Устройства, правленные после начала последнего шага Devices: эти
+    правки ещё не в NetBox. Пусто — если логов нет (сравнивать не с чем)."""
+    since = sync_overview.devices_step_started()
+    if since is None:
+        return []
+    names = (SettingsAudit.objects.filter(scope="devices", created_at__gt=since)
+             .exclude(action="delete").values_list("target", flat=True))
+    return sorted({n for n in names if n in existing})
+
+
+# Подписи разделов журнала и категории вкладок (Все / Запуски синхронизации /
+# Источники данных / Доступ).
+_AUDIT_SCOPES = {
+    "devices": ("Оборудование", "conf"),
+    "device_types": ("Модели", "conf"),
+    "sources_redvirt": ("Гипервизоры", "conf"),
+    "sources_vcenter": ("Гипервизоры", "conf"),
+    "config": ("Скан и DNS", "conf"),
+    "import": ("Импорт", "conf"),
+    "export": ("Экспорт", "conf"),
+    "sync": ("Синхронизация", "sync"),
+    "ssh_access": ("Доступ к хостам", "access"),
+    "ldap": ("Вход и LDAP", "access"),
+    "users": ("Пользователи", "access"),
+}
+AUDIT_CATEGORIES = [
+    ("", "Все"),
+    ("sync", "Запуски синхронизации"),
+    ("conf", "Источники данных"),
+    ("access", "Доступ"),
+]
+_AUDIT_ACTIONS = {
+    "create": ("add", "добавлено"),
+    "update": ("change", "изменено"),
+    "delete": ("delete", "удалено"),
+}
+
+
+def _audit_row(entry):
+    label, category = _AUDIT_SCOPES.get(entry.scope, (entry.scope, "conf"))
+    if entry.scope == "config" and entry.target.startswith("environments."):
+        label = "Подключение к NetBox"
+    if entry.scope == "import":
+        kind, action = "import", "импорт"
+    elif entry.scope == "export":
+        kind, action = "export", "экспорт"
+    elif entry.scope == "sync":
+        kind, action = "run", "запуск"
+    else:
+        kind, action = _AUDIT_ACTIONS.get(entry.action, ("change", entry.action))
+    return {
+        "when": sync_overview.human_when(entry.created_at),
+        "when_full": entry.created_at,
+        "username": entry.username,
+        "scope_label": label,
+        "category": category,
+        "target": entry.target,
+        "action_kind": kind,
+        "action_label": action,
+        "details": entry.details,
+    }
+
+
+def _initials(user):
+    full = " ".join(x for x in (user.first_name, user.last_name) if x).strip()
+    if full:
+        return "".join(w[0] for w in full.split()[:2]).upper()
+    letters = re.sub(r"[^\w]", "", user.username)
+    return (letters[:2] or user.username[:2]).upper()
+
+
+def _site_filter(request):
+    """Площадка из переключателя оболочки (cookie ip_plan_site): slug или
+    None — «все площадки» / «без площадки» в Настройках означают всё."""
+    value = request.COOKIES.get(SITE_COOKIE) or "all"
+    return None if value in ("all", "__none__") else value
+
+
 def _tab_context(request, tab):
+    if tab == "sync":
+        return {"sync": sync_overview.overview()}
+
     if tab == "devices":
         data, digest = sc.load("devices")
         types = data.get("device_types") or {}
+        site_names = {s["slug"]: s["name"] for s in site_options_cached()}
+        site = _site_filter(request)
+        all_devices = data.get("devices") or {}
         devices = []
-        for name, cfg in (data.get("devices") or {}).items():
+        for name, cfg in all_devices.items():
+            site_slug = cfg.get("site") or sc.DEFAULT_SITE_SLUG
+            if site and site_slug != site:
+                continue
             # Синк читает настройки устройства поверх настроек его модели
             # (см. _resolve в netbox_devices_sync.py), поэтому шаги показываем
             # по этой же, эффективной, картине: сбор MAC-таблицы, например,
-            # задан у моделей, и по собственным полям устройства его не видно
-            # — в списке получалось «ничего не собираем» там, где собирается.
+            # задан у моделей, и по собственным полям устройства его не видно.
             eff = sc.effective(cfg, types)
             model_cfg = types.get(cfg.get("model")) or {}
+            transport = sc.transport(model_cfg.get("interfaces_parser", ""))
+            site_label = site_names.get(site_slug, site_slug)
             devices.append({"name": name, "cfg": cfg, "eff": eff,
+                            "model": cfg.get("model", ""),
+                            "site_slug": site_slug, "site_label": site_label,
+                            "subtitle": _device_subtitle(cfg, model_cfg, site_label),
+                            "connection": _device_connection(cfg, transport),
+                            "transport": transport,
+                            "snmp_version": sc.snmp_version(cfg),
                             "chips": _chips(cfg, model_cfg, eff),
-                            # Шаг, выключенный на устройстве вопреки модели.
-                            # Без этой подписи строка молчала бы о том, что
-                            # человек шаг снял: чипа нет — и непонятно, потому
-                            # ли, что нигде не включено, или потому что снято.
-                            "off_here": sorted(k for k in sc.SYNC_FLAGS
-                                               if model_cfg.get(k) and cfg.get(k) is False),
-                            "has_password": bool(cfg.get("password"))})
+                            "testable": bool(cfg.get("host")) and not cfg.get("cluster_peer_of"),
+                            # Для клиентского поиска по имени, адресу и модели.
+                            "search": " ".join(str(x) for x in (
+                                name, cfg.get("host", ""), cfg.get("mgmt_ip", ""),
+                                cfg.get("model", ""))).lower()})
         tests = connection_test.state_for("device", [d["name"] for d in devices])
         for item in devices:
             item["test"] = tests.get(item["name"])
-        return {"devices": devices, "device_types": sorted((data.get("device_types") or {})),
-                "file_hash": digest}
+        changed = _changed_devices(set(all_devices))
+        count = len(devices)
+        return {
+            "devices": devices,
+            "device_count": count,
+            "device_count_label": _plural(count, "устройство", "устройства", "устройств"),
+            "site_filter": site,
+            "site_filter_label": site_names.get(site, site) if site else "",
+            "changed_devices": changed,
+            "changed_label": (f"Изменено {len(changed)} "
+                              f"{_plural(len(changed), 'устройство', 'устройства', 'устройств')}"),
+            "chip_legend": _CHIP_TITLES,
+            "file_hash": digest,
+        }
 
     if tab == "models":
         data, digest = sc.load("devices")
         used = {}
         for name, cfg in (data.get("devices") or {}).items():
             used.setdefault(cfg.get("model"), []).append(name)
-        types = [{"name": n, "cfg": c, "used_by": used.get(n, [])}
-                 for n, c in (data.get("device_types") or {}).items()]
-        return {"device_type_rows": types, "file_hash": digest}
+        rows, vendors = [], {}
+        for name, cfg in (data.get("device_types") or {}).items():
+            vendor = cfg.get("manufacturer") or "—"
+            vendors[vendor] = vendors.get(vendor, 0) + 1
+            parser = cfg.get("interfaces_parser", "")
+            rows.append({
+                "name": name, "cfg": cfg,
+                "manufacturer": vendor,
+                "initials": vendor[:2].upper(),
+                "role": cfg.get("role", ""),
+                "parser": parser,
+                "transport": sc.transport(parser),
+                "cluster": cfg.get("cluster", ""),
+                "defaults": [label for flag, label in _CHIP_LABELS if cfg.get(flag)],
+                "used_by": sorted(used.get(name, [])),
+                "search": f"{name} {parser}".lower(),
+            })
+        rows.sort(key=lambda r: (r["manufacturer"].lower(), r["name"].lower()))
+        return {
+            "device_type_rows": rows,
+            "vendors": sorted(vendors.items(), key=lambda kv: kv[0].lower()),
+            "mac_capable": [p for p in sc.INTERFACE_PARSERS if p in sc.MAC_CAPABLE_PARSERS],
+            "lldp_capable": [p for p in sc.INTERFACE_PARSERS if p in sc.LLDP_CAPABLE_PARSERS],
+            "file_hash": digest,
+        }
 
     if tab == "hypervisors":
         redvirt, rv_hash = sc.load("sources_redvirt")
         vcenter, vc_hash = sc.load("sources_vcenter")
+        site_names = {s["slug"]: s["name"] for s in site_options_cached()}
+        for s in (*redvirt, *vcenter):
+            slug = s.get("site") or sc.DEFAULT_SITE_SLUG
+            s["site_label"] = site_names.get(slug, slug)
         rv_tests = connection_test.state_for("redvirt", [s.get("name") or s.get("url") for s in redvirt])
         vc_tests = connection_test.state_for("vcenter", [s.get("name") or s.get("url") for s in vcenter])
+        # Индекс в файле передаётся как есть: источники адресуются им в URL
+        # формы и удаления (source_save пересобирает объект по индексу).
         return {
             "redvirt": [(i, s, rv_tests.get(s.get("name") or s.get("url")))
                         for i, s in enumerate(redvirt)],
             "redvirt_hash": rv_hash,
+            "redvirt_last": sync_overview.step_info("RedVirt"),
             "vcenter": [(i, s, vc_tests.get(s.get("name") or s.get("url")))
                         for i, s in enumerate(vcenter)],
             "vcenter_hash": vc_hash,
+            "vcenter_last": sync_overview.step_info("vCenter"),
         }
+
+    if tab == "access":
+        cfg, digest = ssh_access.load()
+        return {"ssh": ssh_access.summary(cfg), "file_hash": digest,
+                "gateway_enabled": remote_gateway.enabled()}
 
     if tab == "scan":
         data, digest = sc.load("config")
@@ -236,14 +469,58 @@ def _tab_context(request, tab):
     if tab == "users":
         rows = []
         for u in User.objects.select_related("local_account").order_by("username"):
-            rows.append({"user": u, "is_local": hasattr(u, "local_account"),
-                         "account": getattr(u, "local_account", None)})
+            account = getattr(u, "local_account", None)
+            if not u.is_active:
+                state, state_label = "off", "отключена"
+            elif account is not None and account.must_change_password:
+                state, state_label = "warn", "нужна смена пароля"
+            else:
+                state, state_label = "ok", "активна"
+            rows.append({"user": u, "is_local": account is not None, "account": account,
+                         "initials": _initials(u),
+                         "full_name": " ".join(x for x in (u.first_name, u.last_name) if x),
+                         "state": state, "state_label": state_label,
+                         "last_login": sync_overview.human_when(u.last_login) if u.last_login else ""})
         return {"user_rows": rows}
 
     if tab == "audit":
-        return {"audit_rows": SettingsAudit.objects.all()[:200]}
+        category = request.GET.get("cat", "")
+        if category not in {key for key, _ in AUDIT_CATEGORIES}:
+            category = ""
+        entries = SettingsAudit.objects.all()
+        if category:
+            scopes = [scope for scope, (_l, cat) in _AUDIT_SCOPES.items() if cat == category]
+            entries = entries.filter(scope__in=scopes)
+        return {"audit_rows": [_audit_row(e) for e in entries[:200]],
+                "audit_category": category,
+                "audit_categories": AUDIT_CATEGORIES}
 
     return {}
+
+
+# ── Запуск и расписание ────────────────────────────────────────────────────
+# Запуск синка из интерфейса — заглушка (решение 01.10.2026): ip_plan живёт в
+# контейнере, full_sync.sh — на хосте, канала между ними нет. Экран честно
+# показывает последний и идущий прогон по логу и lock-файлу, а кнопки
+# запуска/остановки отвечают, что запуск пока делается на хосте.
+
+@staff_required
+def sync_state(request):
+    """Тело экрана синхронизации — его перерисовывает опрос, пока идёт прогон."""
+    return render(request, "ip_plan/_settings_sync_body.html",
+                  {"sync": sync_overview.overview()})
+
+
+@staff_required
+def sync_run(request):
+    if request.method != "POST":
+        return _error_modal(request, "Ожидался POST", status=405)
+    response = HttpResponse(status=204)
+    response["HX-Trigger"] = json.dumps({"show-toast": {
+        "message": "Запуск из интерфейса пока не подключён: синхронизация запускается на хосте "
+                   "(full_sync.sh) по расписанию или вручную.",
+        "kind": "info"}})
+    return response
 
 
 # ── Оборудование ───────────────────────────────────────────────────────────
@@ -343,6 +620,9 @@ def import_preview(request):
         "summary": result["summary"],
         "optional": result["optional"],
         "sources": sources,
+        # config.json (токены NetBox) и LDAP напрямую правит только
+        # суперпользователь — импорт не должен быть обходным путём.
+        "can_apply_global": request.user.is_superuser,
     })
 
 
@@ -364,6 +644,11 @@ def import_apply(request):
     apply_config = bool(request.POST.get("apply_config"))
     apply_ldap = bool(request.POST.get("apply_ldap"))
 
+    if (apply_config or apply_ldap) and not request.user.is_superuser:
+        return _error_modal(
+            request,
+            "Подключение к NetBox и настройки LDAP импортирует только суперпользователь — "
+            "снимите эти пункты или попросите его.", status=403)
     if not selected and not apply_config and not apply_ldap:
         return _error_modal(request, "Не отмечено ни одной записи")
 
@@ -460,9 +745,13 @@ assert {k for k, _, _ in _DEVICE_FLAG_FIELDS} == set(sc.SYNC_FLAGS)
 
 
 def _device_flag_fields(cfg, device_types):
-    """(ключ, подпись, пояснение, отмечен, унаследован) для блока флагов."""
+    """(ключ, подпись, пояснение, отмечен, унаследован, на модели) для блока
+    флагов. «На модели» — включён ли шаг у модели: по нему карточка
+    подписывает, что снятая галочка запишется как «выключено здесь»."""
     eff = sc.effective(cfg, device_types)
-    return [(key, label, hint, bool(eff.get(key)), key not in cfg and bool(eff.get(key)))
+    model_cfg = (device_types or {}).get(cfg.get("model")) or {}
+    return [(key, label, hint, bool(eff.get(key)), key not in cfg and bool(eff.get(key)),
+             bool(model_cfg.get(key)))
             for key, label, hint in _DEVICE_FLAG_FIELDS]
 
 
@@ -489,7 +778,7 @@ def device_form(request, name=None):
     data, digest = sc.load("devices")
     devices = data.get("devices") or {}
     if name is not None and name not in devices:
-        return _error_modal(request, f"Устройство «{name}» не найдено", status=404)
+        raise Http404(f"Устройство «{name}» не найдено")
 
     cfg = devices.get(name, {}) if name else {}
     # Галочки — по эффективной картине (модель + устройство), как в списке и
@@ -497,20 +786,40 @@ def device_form(request, name=None):
     # устройства, и шаг, включённый у модели, выглядел выключенным: человек
     # видел снятую галочку «MAC-таблицу» там, где MAC исправно собирался.
     flag_fields = _device_flag_fields(cfg, data.get("device_types") or {})
-    return render(request, "ip_plan/_settings_device_form.html", {
+    types = data.get("device_types") or {}
+    # Чем ходят на устройства каждой модели — по нему форма показывает либо
+    # логин/пароль SSH, либо реквизиты SNMPv3, и переключается при смене
+    # модели прямо в браузере (Alpine), без похода на сервер.
+    model_transports = {m: sc.transport((t or {}).get("interfaces_parser", "")) for m, t in types.items()}
+    ctx = _page_ctx(request, "devices")
+    model_cfg = types.get(cfg.get("model")) or {}
+    ctx.update({
         "name": name,
+        "chips": _chips(cfg, model_cfg, sc.effective(cfg, types)) if name else [],
+        "test": connection_test.state_for("device", [name]).get(name) if name else None,
+        "testable": bool(name) and bool(cfg.get("host")) and not cfg.get("cluster_peer_of"),
+        "peer_candidates": sorted(n for n in devices if n != name),
         "cfg": cfg,
         "flag_fields": flag_fields,
         "password_mask": sc.masked(cfg.get("password")),
         "enable_mask": sc.masked(cfg.get("enable_password")),
+        "snmp_auth_mask": sc.masked(cfg.get("snmp_auth_password")),
+        "snmp_priv_mask": sc.masked(cfg.get("snmp_priv_password")),
+        "snmp_auth_protos": sc.SNMP_AUTH_PROTOS,
+        "snmp_priv_protos": sc.SNMP_PRIV_PROTOS,
+        "model_transports": json.dumps(model_transports),
         "device_types": sorted(data.get("device_types") or {}),
         "statuses": sc.DEVICE_STATUSES,
+        "sites": sc.site_options(),
+        "site": cfg.get("site") or sc.DEFAULT_SITE_SLUG,
         "blocklist_objects": json.dumps(cfg.get("blocklist_objects") or {},
                                         ensure_ascii=False, indent=2),
         "snmp_communities": ", ".join(cfg.get("snmp_communities") or []),
+        "snmp_version": sc.snmp_version(cfg),
+        "snmp_versions": sc.SNMP_VERSIONS,
         "file_hash": digest,
-        "sync_running": sc.sync_running(),
     })
+    return render(request, "ip_plan/settings_device.html", ctx)
 
 
 @staff_required
@@ -533,7 +842,10 @@ def device_save(request, name=None):
             )
 
         cfg = dict(previous)
-        cfg["host"] = sc.validate_host(p.get("host"))
+        type_cfg = data["device_types"][model] or {}
+        parser = type_cfg.get("interfaces_parser", "")
+        transport = sc.transport(parser)
+
         # Адрес, по которому устройство учитывается в NetBox, когда он не
         # совпадает с адресом подключения: к криптошлюзам ходят через
         # ViPNet-туннель (7.0.0.x), а в учёте они должны стоять реальным
@@ -543,30 +855,113 @@ def device_save(request, name=None):
             cfg["mgmt_ip"] = sc.validate_host(mgmt_ip, field="Адрес управления")
         else:
             cfg.pop("mgmt_ip", None)
-        cfg["port"] = sc.validate_port(p.get("port") or 22)
-        # Community нод кластера ViPNet: по первой отвечает активная нода, по
-        # второй — пассивная (см. netbox_vipnet_snmp.py). Пусто — шаг снятия
-        # состояния кластера просто не выполняется.
-        communities = [c.strip() for c in (p.get("snmp_communities") or "").split(",") if c.strip()]
-        if communities:
-            cfg["snmp_communities"] = communities
-        else:
-            cfg.pop("snmp_communities", None)
-        cfg["username"] = (p.get("username") or "").strip()
-        if not cfg["username"]:
-            raise sc.SyncConfigError("Логин: обязательное поле")
-        cfg["password"] = sc.keep_or_new(p.get("password"), previous.get("password", ""))
-        if not cfg["password"]:
-            raise sc.SyncConfigError("Пароль: обязательное поле")
 
-        enable = sc.keep_or_new(p.get("enable_password"), previous.get("enable_password", ""))
-        if enable:
-            cfg["enable_password"] = enable
+        _SSH_KEYS = ("port", "username", "password", "enable_password")
+        _CLUSTER_KEYS = ("cluster_reserve", "cluster_peer_of", "reserve_interface")
+
+        # ── Раздел «SNMP» — у всех устройств, независимо от транспорта ─────
+        # Пустая версия чистит все snmp_*-ключи: раздел выключен целиком, а не
+        # оставлен с мёртвыми реквизитами.
+        version = (p.get("snmp_version") or "").strip()
+        if version not in sc.SNMP_VERSIONS:
+            raise sc.SyncConfigError(f"Версия SNMP «{version}» недопустима")
+        if not version:
+            for key in sc.SNMP_KEYS:
+                cfg.pop(key, None)
         else:
-            cfg.pop("enable_password", None)
+            cfg["snmp_version"] = version
+            cfg["snmp_port"] = sc.validate_port(p.get("snmp_port") or 161)
+            if version == "v2c":
+                communities = [c.strip() for c in (p.get("snmp_communities") or "").split(",") if c.strip()]
+                if not communities:
+                    raise sc.SyncConfigError("SNMP v2c: укажите community (одну или несколько через запятую)")
+                cfg["snmp_communities"] = communities
+                for key in ("snmp_user", "snmp_auth_proto", "snmp_auth_password",
+                            "snmp_priv_proto", "snmp_priv_password"):
+                    cfg.pop(key, None)
+            else:
+                cfg.pop("snmp_communities", None)
+                cfg["snmp_user"] = (p.get("snmp_user") or "").strip()
+                if not cfg["snmp_user"]:
+                    raise sc.SyncConfigError("SNMP v3: имя безопасности — обязательное поле")
+                auth_proto = (p.get("snmp_auth_proto") or "md5").strip().lower()
+                if auth_proto not in sc.SNMP_AUTH_PROTOS:
+                    raise sc.SyncConfigError(f"SNMP v3: аутентификация «{auth_proto}» недопустима")
+                cfg["snmp_auth_proto"] = auth_proto
+                cfg["snmp_auth_password"] = sc.keep_or_new(p.get("snmp_auth_password"),
+                                                           previous.get("snmp_auth_password", ""))
+                if not cfg["snmp_auth_password"]:
+                    raise sc.SyncConfigError("SNMP v3: пароль аутентификации — обязательное поле")
+                priv_proto = (p.get("snmp_priv_proto") or "des").strip().lower()
+                if priv_proto not in sc.SNMP_PRIV_PROTOS:
+                    raise sc.SyncConfigError(f"SNMP v3: шифрование «{priv_proto}» недопустимо")
+                priv = sc.keep_or_new(p.get("snmp_priv_password"), previous.get("snmp_priv_password", ""))
+                if priv:
+                    cfg["snmp_priv_proto"] = priv_proto
+                    cfg["snmp_priv_password"] = priv
+                else:
+                    cfg.pop("snmp_priv_proto", None)
+                    cfg.pop("snmp_priv_password", None)
+
+        if transport == "snmp":
+            # Континент: весь сбор идёт по SNMP (netbox_continent_snmp.py), SSH-
+            # реквизиты не нужны. Кластер учитывается одним устройством с
+            # реквизитами плюс инвентарной записью резервной платформы без
+            # подключения («Резерв для»): у пассивной ноды те же IP и MAC, и
+            # снаружи она не отвечает.
+            for key in _SSH_KEYS:
+                cfg.pop(key, None)
+            peer_of = (p.get("cluster_peer_of") or "").strip()
+            host = (p.get("host") or "").strip()
+            if host:
+                cfg["host"] = sc.validate_host(host)
+            elif peer_of:
+                cfg.pop("host", None)
+            else:
+                raise sc.SyncConfigError(
+                    "Адрес: обязательное поле. Пустым он бывает только у инвентарной записи "
+                    "резервной платформы — тогда заполните «Резерв для»."
+                )
+            if peer_of:
+                if peer_of not in devices or peer_of == new_name:
+                    raise sc.SyncConfigError(f"«Резерв для»: устройства «{peer_of}» нет в списке")
+                cfg["cluster_peer_of"] = peer_of
+                for key in sc.SNMP_KEYS + ("cluster_reserve", "reserve_interface"):
+                    cfg.pop(key, None)
+            else:
+                cfg.pop("cluster_peer_of", None)
+                if not cfg.get("snmp_version"):
+                    raise sc.SyncConfigError(
+                        f"Модель «{model}» опрашивается по SNMP — заполните раздел «SNMP» "
+                        f"(для Континента это v3)."
+                    )
+                for key, field in (("cluster_reserve", "Резервная платформа"),
+                                   ("reserve_interface", "Интерфейс резервирования")):
+                    value = (p.get(key) or "").strip()
+                    if value:
+                        cfg[key] = sc.validate_name(value, set(), field=field) if key == "cluster_reserve" else value
+                    else:
+                        cfg.pop(key, None)
+        else:
+            for key in _CLUSTER_KEYS:
+                cfg.pop(key, None)
+            cfg["host"] = sc.validate_host(p.get("host"))
+            cfg["port"] = sc.validate_port(p.get("port") or 22)
+            cfg["username"] = (p.get("username") or "").strip()
+            if not cfg["username"]:
+                raise sc.SyncConfigError("Логин: обязательное поле")
+            cfg["password"] = sc.keep_or_new(p.get("password"), previous.get("password", ""))
+            if not cfg["password"]:
+                raise sc.SyncConfigError("Пароль: обязательное поле")
+
+            enable = sc.keep_or_new(p.get("enable_password"), previous.get("enable_password", ""))
+            if enable:
+                cfg["enable_password"] = enable
+            else:
+                cfg.pop("enable_password", None)
 
         cfg["model"] = model
-        cfg["site"] = (p.get("site") or "").strip()
+        cfg["site"] = sc.validate_site(p.get("site"), sc.site_options())
         status = (p.get("status") or "active").strip()
         if status not in sc.DEVICE_STATUSES:
             raise sc.SyncConfigError(f"Статус «{status}» недопустим")
@@ -578,83 +973,50 @@ def device_save(request, name=None):
         # Именно из-за этого снятая галочка «MAC-таблицу» ничего не выключала:
         # sync_macs задан у шести моделей из семи. Снята и у модели ничего —
         # ключ убираем, чтобы не засорять конфиг мусорными false.
-        type_cfg = data["device_types"][model] or {}
+        # И ещё одно: галочка, совпадающая с моделью, у устройства без личного
+        # значения — это наследование, ключ не пишем. Иначе простое
+        # «Сохранить» без правок превращало унаследованные шаги в личные
+        # (чип из «унаследовано» становился «задано у модели и устройства»).
         for flag in sc.SYNC_FLAGS:
-            if p.get(flag):
+            checked, model_on = bool(p.get(flag)), bool(type_cfg.get(flag))
+            if flag not in previous and checked == model_on:
+                cfg.pop(flag, None)
+            elif checked:
                 cfg[flag] = True
-            elif type_cfg.get(flag):
+            elif model_on:
                 cfg[flag] = False
             else:
                 cfg.pop(flag, None)
+        # Инвентарная запись резервной платформы сама ничего не собирает: её
+        # единственный интерфейс заводит сборщик основного узла. Явный false
+        # нужен, потому что sync_macs включён на модели.
+        if cfg.get("cluster_peer_of"):
+            for flag in sc.SYNC_FLAGS:
+                if type_cfg.get(flag):
+                    cfg[flag] = False
+                else:
+                    cfg.pop(flag, None)
 
-        # Дальше проверяем эффективную картину (модель + устройство): именно её
-        # исполняет синк. По одному лишь блоку устройства проверка пропускала
-        # всё, что включено на модели.
+        # Ядро сети — единственный источник префиксов площадки (маршрутизирует
+        # только xFW; адреса на L3-коммутаторах служебные).
+        if p.get("network_core"):
+            cfg["network_core"] = True
+        else:
+            cfg.pop("network_core", None)
+
+        # Объекты блокировки разбираем здесь (это поле формы), а проверку
+        # эффективной картины делает общий sc.validate_device — им же
+        # проверяется импорт.
         eff = sc.effective(cfg, data.get("device_types") or {})
-
-        # sync_macs имеет смысл только для парсеров, у которых он вообще
-        # реализован (_mac_dispatch в netbox_devices_sync.py) — иначе шаг
-        # молча пропустится, а человек будет думать, что включил.
-        parser = type_cfg.get("interfaces_parser", "")
-        if eff.get("sync_macs") and parser not in sc.MAC_CAPABLE_PARSERS:
-            raise sc.SyncConfigError(
-                f"Сбор MAC-таблицы не поддержан для парсера «{parser}» "
-                f"(есть только для {', '.join(sorted(sc.MAC_CAPABLE_PARSERS))})."
-            )
-
-        # MAC снимается хвостом шага интерфейсов (netbox_devices_sync.py:
-        # ранний return при выключенном sync_interfaces стоит ДО блока MAC),
-        # так что одно без другого — молча несобираемая таблица.
-        if eff.get("sync_macs") and not eff.get("sync_interfaces"):
-            raise sc.SyncConfigError(
-                "Сбор MAC-таблицы включён, но выключены интерфейсы: MAC снимается "
-                "внутри шага интерфейсов и без него собран не будет."
-            )
-
-        # У xfw MAC/ARP снимается не общим диспетчером, а внутри обхода
-        # кластера ViPNet, и только при cluster=vipnet_failover. Без кластера
-        # синк напечатает «нет поддержки для парсера xfw» и ничего не соберёт.
-        if eff.get("sync_macs") and parser == "xfw" and eff.get("cluster") != "vipnet_failover":
-            raise sc.SyncConfigError(
-                "Для парсера «xfw» ARP-таблица снимается только в режиме кластера: "
-                "у модели должно быть задано cluster=vipnet_failover."
-            )
-
-        # Та же логика, что у sync_macs: LLDP есть не у всех вендоров, и без
-        # команды на модели собирать соседей нечем.
-        if eff.get("sync_lldp"):
-            if parser not in sc.LLDP_CAPABLE_PARSERS:
-                raise sc.SyncConfigError(
-                    f"Сбор LLDP-соседей не поддержан для парсера «{parser}» "
-                    f"(есть только для {', '.join(sorted(sc.LLDP_CAPABLE_PARSERS))})."
-                )
-            if not type_cfg.get("lldp_command"):
-                raise sc.SyncConfigError(
-                    f"Сбор LLDP-соседей включён, но у модели «{model}» не задана "
-                    f"команда LLDP — задайте её на вкладке «Модели»."
-                )
-
         if eff.get("sync_blocklist"):
             raw = (p.get("blocklist_objects") or "").strip()
             try:
-                objects = json.loads(raw) if raw else {}
+                cfg["blocklist_objects"] = json.loads(raw) if raw else {}
             except json.JSONDecodeError as e:
                 raise sc.SyncConfigError(f"Объекты блокировки: не разбирается как JSON ({e})")
-            if not isinstance(objects, dict) or not objects:
-                raise sc.SyncConfigError(
-                    "Объекты блокировки: при включённом sync_blocklist нужен непустой "
-                    'объект вида {"ip": "BLOCK_BY_IP_2", "fqdn": "BBDNS_1"}'
-                )
-            cfg["blocklist_objects"] = objects
         else:
             cfg.pop("blocklist_objects", None)
-
-        if eff.get("backup_config"):
-            if not type_cfg.get("config_command"):
-                raise sc.SyncConfigError(
-                    f"Резервное копирование включено, но у модели «{model}» не задан "
-                    f"config_command — задайте его на вкладке «Модели»."
-                )
+        sc.validate_device(cfg, data.get("device_types") or {})
 
         if name and new_name != name:
             devices.pop(name, None)
@@ -712,7 +1074,12 @@ def _describe_changes(before, after):
 _TYPE_TEXT_FIELDS = [
     ("manufacturer", "Производитель"),
     ("role", "Роль в NetBox"),
+    # Режим кластера (sc.CLUSTER_MODES). До 02.10.2026 поля не было вовсе:
+    # cluster=vipnet_failover жил только в JSON и переживал сохранение лишь
+    # благодаря dict(previous).
+    ("cluster", "Кластер"),
     ("no_pager", "Команда отключения постраничного вывода"),
+    ("encoding", "Кодировка вывода CLI (пусто = utf-8; ViPNet — koi8-r)"),
     ("interfaces_command", "Команда списка интерфейсов"),
     ("description_command", "Команда описаний интерфейсов"),
     ("vlan_command", "Команда VLAN-ов"),
@@ -720,6 +1087,8 @@ _TYPE_TEXT_FIELDS = [
     ("lag_command", "Команда LAG"),
     ("ip_command", "Команда IP-адресов"),
     ("lldp_command", "Команда LLDP-соседей"),
+    ("arp_command", "Команда ARP-таблицы (L3-коммутатор: IP ↔ MAC для связей)"),
+    ("serial_command", "Команда серийного номера (если по SNMP номера нет)"),
     ("config_command", "Команда выгрузки конфигурации"),
     ("vrrp_command", "Команда VRRP"),
 ]
@@ -740,24 +1109,92 @@ _TYPE_LIST_FIELDS = [
 ]
 
 
+# Шаги, которые модель задаёт своим устройствам по умолчанию, — строки
+# переключателей карточки модели. sync_interfaces и sync_blocklist — уровня
+# устройства (интерфейсы снимаются всегда, блокировки — только у xFW).
+_MODEL_FLAG_ROWS = [
+    ("import_prefixes", "Подсети", "Импортировать префиксы — только с ядра сети"),
+    ("import_vlans", "VLAN", "Импортировать VLAN-ы"),
+    ("sync_macs", "MAC-таблица", "Собирается вместе с интерфейсами"),
+    ("sync_lldp", "LLDP-соседи", "Связи между устройствами"),
+    ("backup_config", "Снимок конфигурации", "Нужен для раздела ACL"),
+]
+# Команды устройства в порядке карточки модели.
+_MODEL_COMMANDS = [
+    ("interfaces_command", "Список интерфейсов"),
+    ("description_command", "Описания интерфейсов"),
+    ("vlan_command", "VLAN"),
+    ("mac_command", "MAC-таблица"),
+    ("lag_command", "LAG"),
+    ("ip_command", "IP-адреса"),
+    ("lldp_command", "LLDP-соседи"),
+    ("arp_command", "ARP-таблица (L3)"),
+    ("vrrp_command", "VRRP"),
+    ("serial_command", "Серийный номер"),
+    ("config_command", "Выгрузка конфигурации"),
+]
+assert {k for k, _ in _MODEL_COMMANDS} | {"manufacturer", "role", "cluster", "no_pager", "encoding"} \
+    == {k for k, _ in _TYPE_TEXT_FIELDS}
+
+
+def _with_counts(names, used):
+    """[{name, count}] — справочник NetBox плюс то, что уже есть в devices.json
+    (на случай лежащего NetBox или имени, ещё не заведённого синком)."""
+    return [{"name": n, "count": used.get(n, 0)}
+            for n in sorted(set(names) | set(used), key=str.lower)]
+
+
 @staff_required
 def device_type_form(request, name=None):
     data, digest = sc.load("devices")
     types = data.get("device_types") or {}
     if name is not None and name not in types:
-        return _error_modal(request, f"Модель «{name}» не найдена", status=404)
+        raise Http404(f"Модель «{name}» не найдена")
     cfg = types.get(name, {}) if name else {}
-    return render(request, "ip_plan/_settings_device_type_form.html", {
+
+    site_names = {s["slug"]: s["name"] for s in site_options_cached()}
+    members = []
+    for dev_name, dev_cfg in sorted((data.get("devices") or {}).items()):
+        if name and dev_cfg.get("model") == name:
+            slug = dev_cfg.get("site") or sc.DEFAULT_SITE_SLUG
+            members.append({
+                "name": dev_name,
+                "site_label": site_names.get(slug, slug),
+                # Личные значения флагов: при смене флага у модели они
+                # снимаются (массовый выключатель, см. device_type_save) —
+                # карточка заранее перечисляет, у кого именно.
+                "explicit": {k: dev_cfg[k] for k in sc.SYNC_FLAGS if k in dev_cfg},
+                "testable": bool(dev_cfg.get("host")) and not dev_cfg.get("cluster_peer_of"),
+            })
+    vendors_used, roles_used = {}, {}
+    for t in types.values():
+        if t.get("manufacturer"):
+            vendors_used[t["manufacturer"]] = vendors_used.get(t["manufacturer"], 0) + 1
+        if t.get("role"):
+            roles_used[t["role"]] = roles_used.get(t["role"], 0) + 1
+
+    ctx = _page_ctx(request, "models")
+    ctx.update({
         "name": name,
         "cfg": cfg,
-        "text_fields": [(k, label, cfg.get(k, "")) for k, label in _TYPE_TEXT_FIELDS],
-        "flag_fields": [(k, label, bool(cfg.get(k))) for k, label in _TYPE_FLAG_FIELDS],
+        "manufacturers": _with_counts(sc.netbox_names("manufacturers"), vendors_used),
+        "roles": _with_counts(sc.netbox_names("roles"), roles_used),
+        "parsers": sc.parser_catalog(),
+        "cluster_modes": sc.CLUSTER_MODES,
+        "flag_rows": [{"key": k, "title": t, "note": n, "on": bool(cfg.get(k))}
+                      for k, t, n in _MODEL_FLAG_ROWS],
+        "commands": [{"key": k, "label": label, "value": cfg.get(k, "")} for k, label in _MODEL_COMMANDS],
+        "legacy_crypto": bool(cfg.get("legacy_crypto")),
+        "policy_commands": json.dumps(cfg.get("policy_commands") or {},
+                                      ensure_ascii=False, indent=2) if cfg.get("policy_commands") else "",
         "list_fields": [(k, label, ", ".join(cfg.get(k) or [])) for k, label in _TYPE_LIST_FIELDS],
-        "parsers": sc.INTERFACE_PARSERS,
-        "mac_capable": sorted(sc.MAC_CAPABLE_PARSERS),
-        "lldp_capable": sorted(sc.LLDP_CAPABLE_PARSERS),
+        "members": members,
+        "test_target": next((m["name"] for m in members if m["testable"]), ""),
+        "mac_capable": [p for p in sc.INTERFACE_PARSERS if p in sc.MAC_CAPABLE_PARSERS],
+        "lldp_capable": [p for p in sc.INTERFACE_PARSERS if p in sc.LLDP_CAPABLE_PARSERS],
         "file_hash": digest,
     })
+    return render(request, "ip_plan/settings_model.html", ctx)
 
 
 @staff_required
@@ -775,16 +1212,7 @@ def device_type_save(request, name=None):
                                     field="Название модели", allow_spaces=True)
 
         parser = (p.get("interfaces_parser") or "").strip()
-        if parser not in sc.INTERFACE_PARSERS:
-            raise sc.SyncConfigError(
-                f"Парсер интерфейсов «{parser}» не реализован в netbox_devices_sync.py. "
-                f"Допустимо: {', '.join(sc.INTERFACE_PARSERS)}"
-            )
 
-        # База — прежний конфиг модели, а не пустой словарь. Собранный с нуля,
-        # он терял всё, чего в форме нет: cluster=vipnet_failover у xFW 5000 и
-        # HW5000 (без него не опрашивается кластер криптошлюзов) и любые
-        # будущие ключи. Форма правит ровно свои поля, остальное не трогает.
         cfg = dict(previous)
         cfg["interfaces_parser"] = parser
         for key, _label in _TYPE_TEXT_FIELDS:
@@ -805,22 +1233,17 @@ def device_type_save(request, name=None):
             else:
                 cfg.pop(key, None)
 
-        if cfg.get("sync_macs") and parser not in sc.MAC_CAPABLE_PARSERS:
-            raise sc.SyncConfigError(
-                f"Сбор MAC-таблицы не реализован для парсера «{parser}» "
-                f"(есть только для {', '.join(sorted(sc.MAC_CAPABLE_PARSERS))})."
-            )
-        if cfg.get("sync_lldp") and parser not in sc.LLDP_CAPABLE_PARSERS:
-            raise sc.SyncConfigError(
-                f"Сбор LLDP-соседей не реализован для парсера «{parser}» "
-                f"(есть только для {', '.join(sorted(sc.LLDP_CAPABLE_PARSERS))})."
-            )
-        if cfg.get("sync_lldp") and not cfg.get("lldp_command"):
-            raise sc.SyncConfigError("Сбор LLDP-соседей включён, но не задана команда LLDP-соседей")
-        if cfg.get("backup_config") and not cfg.get("config_command"):
-            raise sc.SyncConfigError("Резервное копирование включено, но не задана команда выгрузки конфигурации")
-        if not cfg.get("manufacturer") or not cfg.get("role"):
-            raise sc.SyncConfigError("Производитель и роль обязательны — по ним синк заводит объекты в NetBox")
+        raw = (p.get("policy_commands") or "").strip()
+        if raw:
+            try:
+                policy = json.loads(raw)
+            except json.JSONDecodeError as e:
+                raise sc.SyncConfigError(f"Команды политики доступа: не разбирается как JSON ({e})")
+            cfg["policy_commands"] = ({k: v.strip() if isinstance(v, str) else v for k, v in policy.items()}
+                                      if isinstance(policy, dict) else policy)
+        else:
+            cfg.pop("policy_commands", None)
+        sc.validate_device_type(cfg)
 
         # Флаги модели — умолчания её устройств и заодно массовый выключатель:
         # изменённый здесь шаг применяется ко всем устройствам этой модели.
@@ -854,13 +1277,25 @@ def device_type_save(request, name=None):
     except sc.SyncConfigError as e:
         return _error_modal(request, str(e), status=409 if isinstance(e, sc.ConfigConflict) else 400)
 
+    note = ""
+    then_test = (p.get("then_test") or "").strip()
+    if then_test:
+        if (data.get("devices") or {}).get(then_test, {}).get("model") == new_name:
+            try:
+                connection_test.start("device", then_test, username=request.user.username)
+                note = f"; проверка подключения {then_test} запущена"
+            except connection_test.TestBusy as e:
+                note = f"; проверка не запущена: {e}"
+
     details = _describe_changes(previous, cfg) if name else "создана"
     if applied:
         details += f"; флаги применены к устройствам: {', '.join(applied)}"
     if renamed:
         details += f"; переименование применено к устройствам: {', '.join(renamed)}"
     _audit(request, "device_types", new_name, "update" if name else "create", details)
-    return _redirect_to("models", f"Модель «{new_name}» сохранена")
+    if then_test and note.startswith("; проверка подключения"):
+        return _redirect_to("devices", f"Модель «{new_name}» сохранена{note}")
+    return _redirect_to("models", f"Модель «{new_name}» сохранена{note}")
 
 
 @staff_required
@@ -889,7 +1324,9 @@ def device_type_delete(request, name):
 
 
 # ── Гипервизоры (sources_redvirt.json / sources_vcenter.json) ──────────────
-# Оба файла — плоские JSON-массивы объектов {name, url, user, password}.
+# Оба файла — плоские JSON-массивы объектов {name, url, user, password, site}.
+# source_save собирает объект заново из этих пяти полей: ключ, дописанный в
+# JSON руками, при сохранении из формы пропадёт.
 # Порядок элементов сохраняем: скрипты синка обходят источники по порядку.
 
 _SOURCE_KEYS = {"redvirt": "sources_redvirt", "vcenter": "sources_vcenter"}
@@ -922,6 +1359,8 @@ def source_form(request, kind, index=None):
         "kind_title": _SOURCE_TITLES[kind],
         "index": index,
         "item": item,
+        "sites": sc.site_options(),
+        "site": item.get("site") or sc.DEFAULT_SITE_SLUG,
         "password_mask": sc.masked(item.get("password")),
         "file_hash": digest,
         # У oVirt адрес — это API-эндпоинт, а не веб-морда: подсказываем,
@@ -951,7 +1390,10 @@ def source_save(request, kind, index=None):
         if not password:
             raise sc.SyncConfigError("Пароль: обязательное поле")
 
-        item = {"name": name, "url": url, "user": user, "password": password}
+        # Площадка источника — площадка всех его кластеров, хостов и ВМ в
+        # NetBox: один менеджер виртуализации обслуживает одну площадку.
+        site = sc.validate_site(p.get("site"), sc.site_options())
+        item = {"name": name, "url": url, "user": user, "password": password, "site": site}
         if index is None:
             sources.append(item)
         else:
@@ -1031,6 +1473,73 @@ def scan_save(request):
     after = {"dns_servers": servers, "dns_skip_pattern": pattern, "scan_exclude_prefixes": prefixes}
     _audit(request, "config", "scan_dns", "update", _describe_changes(before, after))
     return _redirect_to("scan", "Настройки скана и DNS сохранены")
+
+
+# ── Доступ к хостам (ssh_access.json) ──────────────────────────────────────
+# Служебная учётная запись и закрытый ключ для входа на серверы и ВМ.
+# Ключ в браузер не возвращается: пустое поле ключа = «оставить прежний».
+
+@staff_required
+def ssh_access_save(request):
+    if request.method != "POST":
+        return _error_modal(request, "Ожидался POST", status=405)
+    p = request.POST
+    try:
+        cfg, _ = ssh_access.load()
+        username = ssh_access.validate_username(p.get("username"))
+        port = sc.validate_port(p.get("port") or ssh_access.DEFAULT_PORT)
+        new_key = ssh_access.normalize_key(p.get("private_key"))
+        key = new_key or cfg.get("private_key") or ""
+        if not key:
+            raise ssh_access.SshAccessError("Вставьте закрытый ключ")
+        passphrase = sc.keep_or_new(p.get("passphrase"), cfg.get("passphrase") or "")
+        # Ключ без парольной фразы читается и так — тогда фразу не храним
+        # вовсе, даже если она осталась от прежнего ключа.
+        if ssh_access.is_encrypted(key):
+            pkey = ssh_access.parse_key(key, passphrase)
+        else:
+            pkey = ssh_access.parse_key(key)
+            passphrase = ""
+        ssh_access.save({"username": username, "port": port, "private_key": key,
+                         "passphrase": passphrase}, p.get("file_hash"))
+    except sc.SyncConfigError as e:
+        return _error_modal(request, str(e), status=409 if isinstance(e, sc.ConfigConflict) else 400)
+
+    info = ssh_access.describe_key(pkey)
+    details = f"пользователь {username}, порт {port}; ключ {info['kind']} {info['fingerprint']}"
+    if new_key:
+        details += " (ключ заменён)" if cfg.get("private_key") else " (ключ задан)"
+    _audit(request, "ssh_access", username, "update" if cfg else "create", details)
+    return _redirect_to("access", "Доступ к хостам сохранён")
+
+
+@staff_required
+def ssh_access_delete(request):
+    if request.method != "POST":
+        return _error_modal(request, "Ожидался POST", status=405)
+    try:
+        cfg, _ = ssh_access.load()
+    except sc.SyncConfigError:
+        cfg = {}
+    ssh_access.delete()
+    _audit(request, "ssh_access", cfg.get("username", ""), "delete", "ключ и пользователь удалены")
+    return _redirect_to("access", "Ключ удалён")
+
+
+@staff_required
+def ssh_access_test(request):
+    """Вход на указанный хост СОХРАНЁННЫМ ключом и чтение сведений об ОС.
+    На хосте выполняется одна команда чтения."""
+    if request.method != "POST":
+        return _error_modal(request, "Ожидался POST", status=405)
+    try:
+        host = sc.validate_host(request.POST.get("test_host"), field="Хост")
+        ok, lines, _ = ssh_access.probe(host)
+    except sc.SyncConfigError as e:
+        ok, lines = False, [str(e)]
+        host = request.POST.get("test_host") or ""
+    logger.info("Проверка SSH-ключа: %s → %s: %s", request.user.username, host, "успех" if ok else "отказ")
+    return render(request, "ip_plan/_settings_ldap_result.html", {"ok": ok, "message": "\n".join(lines)})
 
 
 @superuser_required
@@ -1189,17 +1698,49 @@ def ldap_test(request):
     username = (request.POST.get("test_username") or "").strip()
     password = request.POST.get("test_password") or ""
 
+    info = {}
     try:
         lines = ldap_check.test_bind(values["servers"], values["bind_dn"], values["bind_password"])
         if username:
             if not password:
                 raise ldap_check.LdapCheckError("Для проверки входа нужен пароль пользователя")
-            lines = lines + ["—"] + ldap_check.test_user(values, username, password)
+            lines = lines + ["—"] + ldap_check.test_user(values, username, password, info=info)
         ok, message = True, "\n".join(lines)
     except ldap_check.LdapCheckError as e:
         ok, message = False, str(e)
 
-    return render(request, "ip_plan/_settings_ldap_result.html", {"ok": ok, "message": message})
+    # Разобранный итог для карточки «Проверить вход»: войдёт ли, в каких
+    # группах из настроек состоит, какие права получит. Есть только у
+    # успешной проверки пользователя; у проверки одного подключения — None.
+    verdict = None
+    if ok and username:
+        rights = ("суперпользователь" if info.get("superuser")
+                  else "настройки" if info.get("staff") else "только просмотр")
+        verdict = {"username": username, "dn": info.get("dn", ""),
+                   "groups": info.get("groups", []), "rights": rights}
+    return render(request, "ip_plan/_settings_ldap_result.html",
+                  {"ok": ok, "message": message, "verdict": verdict})
+
+
+@superuser_required
+def ldap_status(request):
+    """Плашка «Каталог доступен…» над формой LDAP. Грузится отдельным
+    запросом после страницы: опрос каталога может занять до 10 с на сервер,
+    и вкладка не должна ждать его."""
+    cfg = LdapConfig.load()
+    if not cfg.enabled or not cfg.servers:
+        return render(request, "ip_plan/_settings_ldap_status.html", {"status": None})
+    values = {
+        "servers": [x.strip() for x in cfg.servers.splitlines() if x.strip()],
+        "bind_dn": cfg.bind_dn, "bind_password": cfg.bind_password,
+        "require_group": cfg.require_group,
+    }
+    status = ldap_check.directory_status(values)
+    status["checked"] = sync_overview.human_when(sync_overview.now())
+    status["group"] = values.get("require_group", "")
+    if status["members"] is not None:
+        status["members_label"] = _plural(status["members"], "пользователь", "пользователя", "пользователей")
+    return render(request, "ip_plan/_settings_ldap_status.html", {"status": status})
 
 
 # ── Пользователи ───────────────────────────────────────────────────────────

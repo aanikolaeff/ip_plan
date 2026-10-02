@@ -8,15 +8,63 @@
       <a class="btn-back" href="{% url 'ip_plan:acl_lookup' %}?device={{ device }}" title="Назад к ACL">← ACL</a>
     </div>
     <p class="subtitle">
-      {{ device }} · адресов/подсетей: {{ networks|length }} ·
+      {{ device }} · адресов/подсетей: {{ networks|length }}{% if members %} · элементов: {{ members|length }}{% endif %} ·
       {% if used_by %}
         используется в:
         {% for acl_name in used_by %}<a href="{% url 'ip_plan:acl_detail' device=device acl_name=acl_name %}">{{ acl_name }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
       {% else %}
-        не используется ни в одном ACL этого устройства
+        не используется напрямую ни в одном ACL этого устройства
+      {% endif %}
+      {% if included_in %}
+        · входит в объекты: {% for parent in included_in %}<a href="{% url 'ip_plan:acl_object_group_detail' device=device name=parent %}">{{ parent }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
+      {% endif %}
+      {% if includes %}
+        · включает объекты: {% for child in includes %}<a href="{% url 'ip_plan:acl_object_group_detail' device=device name=child %}">{{ child }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
       {% endif %}
     </p>
   </section>
+
+  {% if members %}
+    <section class="hero" style="margin-top: 1rem;">
+      <div class="hero-title-row"><h2 class="title" style="font-size: 1.1rem;">Узлы ViPNet в объекте</h2></div>
+      <p class="subtitle">Из <code>iplir show config</code>: идентификатор, имя, сеть ViPNet, адреса (реальный → виртуальный). Сети узлов ниже собраны из этих адресов.</p>
+    </section>
+    <div class="table-wrapper">
+      <table class="table acl-table">
+        <thead><tr><th>#</th><th>Узел</th></tr></thead>
+        <tbody>
+          {% for member in members %}
+            <tr><td>{{ forloop.counter }}</td><td class="set-mono">{{ member }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <section class="hero" style="margin-top: 1rem;">
+      <div class="hero-title-row"><h2 class="title" style="font-size: 1.1rem;">Адреса и подсети</h2></div>
+    </section>
+  {% endif %}
+
+  {% if fqdns %}
+    <section class="hero" style="margin-top: 1rem;">
+      <div class="hero-title-row"><h2 class="title" style="font-size: 1.1rem;">Доменные имена в объекте · {{ fqdns|length }}</h2></div>
+      <p class="subtitle">FQDN из <code>firewall object show</code>: межсетевой экран разрешает их сам, в поиск по IP они не входят.</p>
+    </section>
+    <div class="table-wrapper">
+      <table class="table acl-table">
+        <thead><tr><th>#</th><th>Имя</th></tr></thead>
+        <tbody>
+          {% for fqdn in fqdns %}
+            <tr><td>{{ forloop.counter }}</td><td class="set-mono">{{ fqdn }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if networks %}
+    <section class="hero" style="margin-top: 1rem;">
+      <div class="hero-title-row"><h2 class="title" style="font-size: 1.1rem;">Адреса и подсети</h2></div>
+    </section>
+    {% endif %}
+  {% endif %}
 
   <div class="table-loading-overlay" id="acl-detail-loading-overlay">
     <div class="spinner-ring"></div>
@@ -38,6 +86,13 @@
             <td>{{ net }}</td>
           </tr>
         {% endfor %}
+        {% for net in exclusions %}
+          <tr>
+            <td>−</td>
+            <td><span class="badge-status" data-status="deny">исключение</span> {{ net }}</td>
+          </tr>
+        {% endfor %}
+
       </tbody>
     </table>
   </div>

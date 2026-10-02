@@ -1,51 +1,44 @@
 {% comment %}
-  Шаг 1 импорта: выбор файлов. Ничего не применяет — отправляет на
-  предпросмотр, который показывает, что именно изменится.
+  Импорт настроек, шаг 1: выбор файлов (поле files, multipart). Ничего не
+  применяет — отправляет на предпросмотр (settings_import_preview).
 {% endcomment %}
-<div class="modal-title-bar">
-  <h5>Импорт настроек</h5>
-  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
-</div>
+<div class="st st-modal">
+  <div class="modal-title-bar">
+    <div>
+      <h5>Импорт настроек</h5>
+      <div class="st-modal-sub">шаг 1 из 2 — файлы</div>
+    </div>
+    <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>
 
-<form hx-post="{% url 'ip_plan:settings_import_preview' %}"
-      hx-target="#modal-content" hx-indicator="#modal-spinner"
-      hx-encoding="multipart/form-data">
-  {% csrf_token %}
-
-  <div class="modal-body-pad">
-    {% if sync_running %}
-      <div class="set-note set-note-error">
-        <strong>Идёт синхронизация.</strong>
-        Импорт меняет несколько файлов сразу, а шаги прогона читают конфигурацию
-        каждый в момент своего старта — правка сейчас дала бы прогон на смеси
-        старых и новых настроек. Дождитесь окончания и повторите.
-      </div>
-    {% else %}
-      <div class="field-group">
-        <label class="field-label" for="f-import-files">Файлы настроек</label>
-        <input class="field-control" id="f-import-files" type="file" name="files"
-               accept=".json,.zip,application/json,application/zip" multiple required>
-        <div class="set-hint">
-          Архив, собранный кнопкой «Экспорт», или отдельные JSON-файлы
-          (<code class="set-mono">devices.json</code>,
-          <code class="set-mono">sources_redvirt.json</code>,
-          <code class="set-mono">sources_vcenter.json</code>).
-          Тип определяется по содержимому, имя файла значения не имеет.
+  <form hx-post="{% url 'ip_plan:settings_import_preview' %}"
+        hx-target="#modal-content" hx-indicator="#modal-spinner"
+        hx-encoding="multipart/form-data">
+    {% csrf_token %}
+    <div class="modal-body-pad">
+      {% if sync_running %}
+        <div class="st-banner is-danger" role="alert">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+          <span class="st-banner-text"><b>Идёт синхронизация.</b> Импорт меняет несколько файлов сразу, а шаги прогона читают конфигурацию каждый в момент своего старта — правка сейчас дала бы прогон на смеси старых и новых настроек. Дождитесь окончания и повторите.</span>
         </div>
-      </div>
+      {% else %}
+        <label class="st-field">
+          <span class="st-label">Файлы настроек</span>
+          <input class="st-input" type="file" name="files" accept=".json,.zip,application/json,application/zip" multiple required>
+          <span class="st-hint">Архив, собранный кнопкой «Экспорт», или отдельные JSON-файлы (<code>devices.json</code>, <code>sources_redvirt.json</code>, <code>sources_vcenter.json</code>). Тип определяется по содержимому, имя файла значения не имеет.</span>
+        </label>
+        <div class="st-banner is-info">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+          <span class="st-banner-text">Импорт <b>дополняет</b> конфигурацию. Существующие записи и пароли не перезаписываются: на следующем шаге будет видно, что добавится, что уже совпадает и где расхождения.</span>
+        </div>
+      {% endif %}
+    </div>
 
-      <div class="set-note">
-        Импорт <strong>дополняет</strong> конфигурацию. Существующие записи и
-        пароли не перезаписываются: на следующем шаге будет видно, что
-        добавится, что уже совпадает и где расхождения.
-      </div>
-    {% endif %}
-  </div>
-
-  <div class="modal-footer-bar">
-    <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Отмена</button>
-    {% if not sync_running %}
-      <button type="submit" class="btn-modal-primary">Посмотреть, что изменится</button>
-    {% endif %}
-  </div>
-</form>
+    <div class="modal-footer-bar">
+      <button type="button" class="st-btn st-btn-ghost" @click="$store.modal.requestClose()">Отмена</button>
+      {% if not sync_running %}
+        <button type="submit" class="st-btn st-btn-primary is-md">Посмотреть, что изменится</button>
+      {% endif %}
+    </div>
+  </form>
+</div>

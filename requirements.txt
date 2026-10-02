@@ -21,3 +21,8 @@ python-docx==1.1.2
 pytesseract==0.3.13
 # SSH-проверка доступности сетевых устройств (services/connection_test.py)
 paramiko==3.5.0
+# SNMPv3-проверка доступности АПКШ «Континент» (services/connection_test.py,
+# ветка для парсеров sc.SNMP_PARSERS). Те же пакеты, что в netbox-sync:
+# чистый Python, без net-snmp в образе; шифрование DES/AES — в -crypto.
+puresnmp==2.0.1
+puresnmp-crypto==1.0.1.post1

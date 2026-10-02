@@ -1,86 +1,80 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { patchIp } from '../api.js';
+import { STATUS_COLOR_VAR, STATUS_FALLBACK_LABELS, STATUS_ORDER, statusLabel } from '../constants.js';
+import { IconCheck, IconCopy } from './icons.jsx';
+import { Popover } from './popover.jsx';
 
 export function showToast(message, kind) {
   window.dispatchEvent(new CustomEvent('show-toast', { detail: { message, kind } }));
 }
 
-export function CopyButton({ value }) {
+export function copyText(value, label) {
+  if (!value) return;
+  navigator.clipboard?.writeText(value);
+  showToast(`Скопировано: ${label || value}`, 'success');
+}
+
+/** Кнопка «копировать» — видна при наведении на строку (.ipt-reveal). */
+export function CopyButton({ value, label }) {
   if (!value) return null;
   return (
     <button
       type="button"
-      className="copy-btn"
+      className="ipt-ibtn ipt-reveal"
       title="Копировать"
-      onClick={(e) => {
-        e.stopPropagation();
-        navigator.clipboard.writeText(value);
-        showToast('Скопировано: ' + value, 'success');
-      }}
+      aria-label={`Копировать ${label || value}`}
+      onClick={(e) => { e.stopPropagation(); copyText(value); }}
     >
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="9" y="9" width="13" height="13" rx="2" />
-        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-      </svg>
+      <IconCopy size={13} />
     </button>
   );
 }
 
-export function StatusBadge({ status }) {
-  return (
-    <span className="status-chip" data-status={status?.value}>
-      <span className="status-dot" aria-hidden="true" />
-      {status?.label || status?.value}
-    </span>
-  );
+/** Точка статуса с «гало». */
+export function StatusDot({ value, className = '' }) {
+  const color = STATUS_COLOR_VAR[value] || 'var(--off)';
+  return <span className={`ipt-dot ${className}`} style={{ '--dot': color }} aria-hidden="true" />;
 }
 
-export function RoleBadge({ role }) {
-  if (!role) return <span className="cell-muted">—</span>;
-  return <span className="badge-role" data-role={role.slug}>{role.name}</span>;
+/** Пустое значение — «—» бледным. */
+export function Empty() {
+  return <span className="ipt-faint">—</span>;
 }
 
-export const IP_STATUS_OPTIONS = [
-  { value: 'active', label: 'Active' },
-  { value: 'reserved', label: 'Reserved' },
-  { value: 'deprecated', label: 'Deprecated' },
-  { value: 'dhcp', label: 'DHCP' },
-  { value: 'slaac', label: 'SLAAC' },
-];
-
-/** Двойной клик по ячейке — инлайн-редактирование (текст или select),
- * PATCH на сервер, оптимистичное обновление строки через meta.updateRow —
- * тот же паттерн, что startInlineEdit()/saveInlineEdit() в app.js, но как
- * управляемый React-компонент вместо ручного DOM. */
-export function EditableCell({ id, field, value, display, editable, type = 'text', maxLen, table }) {
+/** Текстовая ячейка с инлайн-редактированием по двойному клику:
+ * Enter — сохранить, Escape — отмена, потеря фокуса — сохранить, если
+ * значение изменилось. PATCH одного поля → onSaved(id, patch). */
+export function EditableText({ id, field, value, display, editable = true, mono = false, muted = false, title, onSaved }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? '');
   const [saving, setSaving] = useState(false);
+  const inputRef = useRef(null);
 
-  if (!editable) {
-    return <span className="cell-value">{display ?? value ?? '—'}</span>;
-  }
+  useEffect(() => { if (editing) inputRef.current?.select(); }, [editing]);
+
+  const shown = display ?? value;
+  const cls = ['ipt-txt', mono ? 'ipt-mono' : '', muted ? 'ipt-muted' : ''].filter(Boolean).join(' ');
 
   if (!editing) {
     return (
       <span
-        className="cell-display"
-        onDoubleClick={() => { setDraft(value ?? ''); setEditing(true); }}
-        title="Двойной клик — редактировать"
+        className={cls}
+        title={title ?? (shown ? String(shown) : undefined)}
+        onDoubleClick={editable ? (e) => { e.preventDefault(); setDraft(value ?? ''); setEditing(true); } : undefined}
+        data-editable={editable ? '' : undefined}
       >
-        <span className="cell-value">
-          {maxLen && (display ?? value) ? String(display ?? value).slice(0, maxLen) : ((display ?? value) || '—')}
-        </span>
+        {shown ? shown : <Empty />}
       </span>
     );
   }
 
-  async function save(newValue) {
+  async function save() {
+    if (draft === (value ?? '')) { setEditing(false); return; }
     setSaving(true);
     try {
-      const response = await patchIp(id, field, newValue);
+      const response = await patchIp(id, field, draft);
       if (response.ok) {
-        table.options.meta?.updateRow(id, { [field]: newValue });
+        onSaved?.(id, { [field]: draft });
         showToast('Сохранено', 'success');
         setEditing(false);
       } else {
@@ -93,34 +87,99 @@ export function EditableCell({ id, field, value, display, editable, type = 'text
     }
   }
 
-  if (type === 'select') {
-    return (
-      <select
-        autoFocus
-        disabled={saving}
-        defaultValue={value}
-        onBlur={() => setEditing(false)}
-        onChange={(e) => save(e.target.value)}
-      >
-        {IP_STATUS_OPTIONS.map((opt) => (
-          <option key={opt.value} value={opt.value}>{opt.label}</option>
-        ))}
-      </select>
-    );
-  }
-
   return (
     <input
+      ref={inputRef}
       autoFocus
       type="text"
+      className={`ipt-inline-input${mono ? ' ipt-mono' : ''}`}
       disabled={saving}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => { if (draft !== value) save(draft); else setEditing(false); }}
+      onBlur={save}
+      onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') save(draft);
+        e.stopPropagation();
+        if (e.key === 'Enter') save();
         if (e.key === 'Escape') setEditing(false);
       }}
     />
+  );
+}
+
+/** Список статусов для выбора: из choices сервера, в нашем порядке;
+ * чего нет в choices — добираем из запасной карты. */
+export function statusOptions(choices) {
+  const map = new Map();
+  (choices || []).forEach(([v, l]) => map.set(v, l));
+  STATUS_ORDER.forEach((v) => { if (!map.has(v)) map.set(v, STATUS_FALLBACK_LABELS[v]); });
+  return STATUS_ORDER.filter((v) => map.has(v)).map((v) => ({ value: v, label: map.get(v) }))
+    .concat([...map.keys()].filter((v) => !STATUS_ORDER.includes(v)).map((v) => ({ value: v, label: map.get(v) })));
+}
+
+/** Маленький поповер выбора статуса (5 вариантов). */
+export function StatusPicker({ anchorRef, open, onClose, current, choices, onPick }) {
+  return (
+    <Popover anchorRef={anchorRef} open={open} onClose={onClose} className="ipt-pop-status" ariaLabel="Выбрать статус">
+      {statusOptions(choices).map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          role="menuitemradio"
+          aria-checked={opt.value === current}
+          className="ipt-mi"
+          onClick={() => { onPick(opt.value, opt.label); onClose(); }}
+        >
+          <StatusDot value={opt.value} />
+          <span className="ipt-mi-label">{opt.label}</span>
+          {opt.value === current && <IconCheck size={13} className="ipt-mi-check" />}
+        </button>
+      ))}
+    </Popover>
+  );
+}
+
+/** Ячейка статуса: точка + слово; клик — поповер выбора, PATCH. */
+export function StatusCell({ id, status, choices, onSaved }) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const ref = useRef(null);
+  const value = status?.value;
+
+  async function pick(newValue, label) {
+    if (newValue === value) return;
+    setSaving(true);
+    try {
+      const response = await patchIp(id, 'status', newValue);
+      if (response.ok) {
+        onSaved?.(id, { status: { value: newValue, label } });
+        showToast('Сохранено', 'success');
+      } else {
+        showToast(response.status === 403 ? 'Сессия истекла — обновите страницу (F5)' : 'Не удалось сохранить изменение', 'error');
+      }
+    } catch (e) {
+      showToast('NetBox недоступен', 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        className={`ipt-status${open ? ' is-open' : ''}`}
+        title="Изменить статус"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={saving}
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+      >
+        <StatusDot value={value} />
+        <span className="ipt-ellipsis">{statusLabel(status, choices)}</span>
+      </button>
+      <StatusPicker anchorRef={ref} open={open} onClose={() => setOpen(false)} current={value} choices={choices} onPick={pick} />
+    </>
   );
 }

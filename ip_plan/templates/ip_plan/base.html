@@ -4,16 +4,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>IP Plan — Список сетевых активов СИЦ</title>
+  <title>IP План — {{ shell_section_title|default:"Список сетевых активов СИЦ" }}</title>
 
   <!-- Тема (светлая/тёмная) — САМЫЙ первый скрипт в <head>, ещё до
        стилей: ставит data-theme на <html> синхронно, до первой отрисовки,
        иначе страница на долю секунды мелькала бы светлой и тут же
        перекрашивалась (FOUC). Хранится в localStorage — per-browser, не
-       per-пользователь (тот же компромисс, что и localStorage для
-       ширин/видимости колонок таблицы, см. design doc React-таблицы).
-       Дефолт — светлая, если ничего не сохранено (текущее поведение без
-       переключателя). -->
+       per-пользователь (решение 01.10.2026: настройки вида живут в браузере).
+       Там же — состояние бокового меню: свёрнуто/развёрнуто, тоже до
+       отрисовки, чтобы меню не «прыгало» после загрузки Alpine. -->
   <script>
     (function () {
       var KEY = 'ip_plan_theme';
@@ -24,12 +23,18 @@
         if (mode === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
         else document.documentElement.removeAttribute('data-theme');
       };
+      if (localStorage.getItem('ip_plan_sidebar') === 'collapsed') {
+        document.documentElement.setAttribute('data-sidebar', 'collapsed');
+      }
     })();
   </script>
 
   <!-- Шрифты/Bootstrap/DataTables — завендорены в static/ip_plan/vendor/:
        приложение работает на внутренней сети, где внешний интернет/CDN
-       могут быть недоступны без VPN. -->
+       могут быть недоступны без VPN. fonts-shell.css — Manrope и Geist Mono
+       из макета (test_des/), fonts.css — прежние Inter/JetBrains Mono для
+       тех мест, что ещё на них ссылаются. -->
+  <link rel="stylesheet" href="{% static 'ip_plan/vendor/fonts/fonts-shell.css' %}">
   <link rel="stylesheet" href="{% static 'ip_plan/vendor/fonts/fonts.css' %}">
 
   <!-- Bootstrap 5 — только утилиты (flex/grid/spacing), компоненты (modal/badge/btn) свои -->
@@ -40,200 +45,183 @@
 
   <link rel="stylesheet" href="{% static 'ip_plan/css/style.css' %}">
   <link rel="stylesheet" href="{% static 'ip_plan/css/nav.css' %}">
+  <link rel="stylesheet" href="{% static 'ip_plan/css/shell.css' %}">
   {% block extra_head %}{% endblock %}
 </head>
-<!-- x-data — без хотя бы одного предка с x-data Alpine не навешивает
-     директивы (@click и т.п.) на элементы внутри. На <body>, а не только
-     на .container-fluid ниже — постоянная шапка .app-nav тоже использует
-     @click (ОС-справочник/Справка), а она специально ВНЕ .container-fluid
-     (свой full-bleed фон на всю ширину, без горизонтальных отступов
-     контейнера). -->
+<!-- x-data="shell" — корневой Alpine-компонент оболочки (app.js:
+     свёрнутое меню, меню площадок, тема). Без хотя бы одного предка с
+     x-data Alpine не навешивает директивы на элементы внутри — поэтому на
+     <body>, а не на отдельных блоках. -->
 <!-- hx-headers на <body> — htmx кладёт CSRF-токен в тело запроса только
      когда элемент сидит внутри <form> с {% csrf_token %}. Одиночные
      hx-post-кнопки (например ▶ в «Настройках») формы не имеют, и без этого
      заголовка Django отвечает им 403, что снаружи выглядит как «кнопка не
-     нажимается». Атрибут наследуется всеми потомками, добавлять его к
-     каждой такой кнопке не нужно. -->
-<body x-data hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+     нажимается». Атрибут наследуется всеми потомками. -->
+<body class="shell{% if not user.is_authenticated %} shell-plain{% endif %}" x-data="shell" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
   {% if user.is_authenticated %}
     {% with url_name=request.resolver_match.url_name %}
-      <header class="app-nav">
-        <div class="nav-left">
-          <div class="brand">
-            <span class="brand-mark">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
-                <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
-                <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
-                <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
-              </svg>
-            </span>
-            <span class="brand-name">IP План</span>
-          </div>
-          <nav class="nav-tabs">
-            <a class="nav-tab{% if url_name == 'ip_list' %} active{% endif %}" href="{% url 'ip_plan:ip_list' %}">IP План</a>
-            <a class="nav-tab{% if url_name == 'acl_lookup' or url_name == 'acl_detail' or url_name == 'acl_object_group_detail' %} active{% endif %}" href="{% url 'ip_plan:acl_lookup' %}">ACL</a>
-            <a class="nav-tab{% if url_name == 'regulator_list' %} active{% endif %}" href="{% url 'ip_plan:regulator_list' %}">Блокировки</a>
-          </nav>
+      {% comment %}
+        Боковое меню по макету test_des/ (Elegant.html): логотип, переключатель
+        площадки, поле поиска (⌘K — пока без действий, решение 01.10.2026),
+        разделы, внизу — справка, настройки, тема и пользователь. Сворачивается
+        до иконок кнопкой в шапке или клавишей «[»; на экранах уже 1280px —
+        само, стилем (shell.css).
+      {% endcomment %}
+      <aside class="sb" :class="{ collapsed: collapsed }" x-init="$el.classList.add('alpine-ready')" aria-label="Боковое меню">
+        <a class="sb-brand" href="{% url 'ip_plan:ip_list' %}" title="IP План">
+          <span class="sb-logo" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"></rect><rect x="2" y="16" width="6" height="6" rx="1"></rect><rect x="9" y="2" width="6" height="6" rx="1"></rect><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"></path><path d="M12 12V8"></path></svg>
+          </span>
+          <span class="sb-label sb-brand-name">IP План</span>
+        </a>
 
-          <!-- Когда была последняя синхронизация netbox-sync и в каком она
-               статусе — постоянно видно, без клика (данные из того же
-               $store.sync, что и развёрнутый дропдаун в шапке справа, см.
-               app.js: Alpine.store('sync', ...)). Здесь, а не в nav-right —
-               ближе к вкладке "Блокировки"/остальной навигации, не среди
-               иконок аккаунта/настроек. -->
-          <div class="nav-sync-status" title="netbox-sync — последний прогон">
-            <span class="nav-sync-time">Синк: <span x-text="$store.sync.timeLabel()"></span></span>
-            <template x-if="$store.sync.statusText()">
-              <span class="nav-sync-pill" :class="'nav-sync-pill-' + $store.sync.statusClass()" x-text="$store.sync.statusText()"></span>
-            </template>
-          </div>
-        </div>
-        <div class="nav-right">
-          <button type="button" class="nav-ghost"
-                  hx-get="{% url 'ip_plan:os_catalog_manage' %}"
-                  hx-target="#modal-content"
-                  hx-indicator="#modal-spinner"
-                  @click="$store.modal.dirty = false; $dispatch('open-modal')">
-            <span class="nav-ghost-mark">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <ellipse cx="12" cy="5" rx="8" ry="3"></ellipse>
-                <path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"></path>
-                <path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"></path>
-              </svg>
+        {% comment %}
+          Площадка — глобальный контекст: действует на «Адреса» и «ACL»;
+          «Блокировки» общие для всех площадок (письма регулятора применимы на
+          всех firewall). Выбор хранится в cookie ip_plan_site и ставится
+          view set_site, список площадок — из NetBox (context processor shell).
+        {% endcomment %}
+        <div class="sb-site-wrap" @keydown.escape="siteMenu = false" @click.outside="siteMenu = false">
+          <button type="button" class="sb-site" :class="{ open: siteMenu }" @click="siteMenu = !siteMenu"
+                  aria-haspopup="listbox" :aria-expanded="siteMenu ? 'true' : 'false'"
+                  title="Площадка: {{ shell_site_label }}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"></path><circle cx="12" cy="10" r="3"></circle></svg>
+            <span class="sb-label sb-site-text">
+              <span class="sb-site-kicker">Площадка</span>
+              <span class="sb-site-name">{{ shell_site_label }}</span>
             </span>
-            ОС-справочник
+            <svg class="sb-label sb-site-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>
           </button>
-          <button type="button" class="nav-ghost"
-                  hx-get="{% url 'ip_plan:help_modal' %}"
-                  hx-target="#modal-content"
-                  hx-indicator="#modal-spinner"
-                  @click="$store.modal.dirty = false; $dispatch('open-modal')">
-            <span class="nav-ghost-mark">?</span>
-            Справка
-          </button>
-          <!-- Настройки — тема + сводка netbox-sync. Отдельная кнопка (не
-               сразу toggle по клику), чтобы было куда добавить остальные
-               клиентские настройки позже, не меняя место в шапке. Логика —
-               в Alpine.data('navSettings', ...), см. app.js (там же
-               объяснение, почему не инлайн x-data). -->
-          <div class="nav-settings-wrap"
-               x-data="navSettings()"
-               @click.outside="open = false" @keydown.escape.window="open = false">
-            <button type="button" class="nav-icon" title="Настройки" @click="toggle()">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-              </svg>
-            </button>
-            <div class="nav-settings-dropdown" x-show="open" x-cloak x-transition.duration.120ms>
-              {% comment %}
-                Раздел настроек синхронизации живёт под этой же шестерёнкой:
-                отдельная вкладка в основной навигации ставила бы его в один
-                ряд с рабочими экранами (IP-план, ACL, Блокировки), хотя
-                открывают его редко и не для работы, а для настройки. Виден
-                только is_staff — там пароли от firewall, коммутаторов и
-                гипервизоров.
-              {% endcomment %}
-              {% if user.is_staff %}
-                <a class="nav-settings-link" href="{% url 'ip_plan:settings' %}">
-                  <span>Настройки синхронизации</span>
-                  <span class="nav-settings-link-sub">оборудование, гипервизоры, скан, доступ</span>
+          <div class="sb-site-menu" role="listbox" aria-label="Площадка" :class="{ 'is-open': siteMenu }">
+            <label class="sb-site-search">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+              <input type="text" placeholder="Найти площадку" x-model="siteQuery" aria-label="Найти площадку">
+            </label>
+            <div class="sb-site-list">
+              {% for opt in shell_sites %}
+                {% if opt.sep %}<div class="sb-site-sep"></div>{% endif %}
+                <a class="sb-site-item" role="option"
+                   href="{% url 'ip_plan:set_site' %}?site={{ opt.slug|urlencode }}&amp;next={{ request.get_full_path|urlencode }}"
+                   aria-selected="{% if opt.slug == shell_site %}true{% else %}false{% endif %}"
+                   :class="{ 'd-none': !(siteQuery === '' || '{{ opt.name|lower|escapejs }} {{ opt.sub|lower|escapejs }}'.includes(siteQuery.toLowerCase())) }">
+                  <span class="sb-site-check">{% if opt.slug == shell_site %}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>{% endif %}</span>
+                  <span class="sb-site-item-text">
+                    <span class="sb-site-item-name{% if opt.slug == shell_site %} is-selected{% endif %}">{{ opt.name }}</span>
+                    {% if opt.sub %}<span class="sb-site-item-sub">{{ opt.sub }}</span>{% endif %}
+                  </span>
                 </a>
-                <div class="nav-settings-sep"></div>
-              {% endif %}
-
-              <div class="nav-settings-title">Тема</div>
-              <div class="nav-theme-toggle">
-                <button type="button" :class="{ active: theme === 'light' }"
-                        @click="theme = 'light'; setIpPlanTheme('light')">Светлая</button>
-                <button type="button" :class="{ active: theme === 'dark' }"
-                        @click="theme = 'dark'; setIpPlanTheme('dark')">Тёмная</button>
-              </div>
-
-              <div class="nav-settings-sep"></div>
-
-              <div class="nav-settings-title">netbox-sync</div>
-
-              <template x-if="$store.sync.loading && !$store.sync.log">
-                <div class="sync-log-note">Загрузка…</div>
-              </template>
-              <template x-if="$store.sync.error">
-                <div class="sync-log-note sync-log-note-error" x-text="$store.sync.error"></div>
-              </template>
-              <template x-if="$store.sync.log && !$store.sync.log.available">
-                <div class="sync-log-note">Логи не найдены — netbox-sync ещё ни разу не запускался на этом хосте.</div>
-              </template>
-              <template x-if="$store.sync.log && $store.sync.log.available">
-                <div>
-                  <div class="sync-log-meta">
-                    <span x-text="$store.sync.log.started_at"></span>
-                    <template x-if="$store.sync.log.env"><span> · env=<span x-text="$store.sync.log.env"></span></span></template>
-                    {% comment %}
-                      Версия netbox-sync, на которой шёл прогон: по ней видно,
-                      доехал ли его деплой. У логов, снятых до появления этой
-                      строки, поля нет — тогда просто не показываем.
-                    {% endcomment %}
-                    <template x-if="$store.sync.log.sync_version"><span> · sync <span x-text="'v' + $store.sync.log.sync_version"></span></span></template>
-                    <span class="sync-log-badge" :class="'sync-log-badge-' + $store.sync.log.overall.toLowerCase()" x-text="$store.sync.log.overall"></span>
-                  </div>
-                  <div class="sync-log-steps">
-                    <template x-for="step in $store.sync.log.steps" :key="step.name">
-                      <div class="sync-log-step">
-                        <span class="sync-log-step-name" x-text="step.name"></span>
-                        <span class="sync-log-step-status"
-                              :class="{
-                                'sync-log-step-ok': step.status === 'OK',
-                                'sync-log-step-failed': step.status === 'FAILED' || step.status === 'TIMEOUT',
-                                'sync-log-step-running': !step.status && $store.sync.log.running_step === step.name,
-                              }"
-                              x-text="step.status ? (step.status + ' (' + step.elapsed + 'с)') : ($store.sync.log.running_step === step.name ? 'выполняется…' : '—')"></span>
-                      </div>
-                    </template>
-                  </div>
-                </div>
-              </template>
-
-              <div class="sync-log-actions">
-                <button type="button" class="btn-modal-secondary" @click="$store.sync.refresh()" :disabled="$store.sync.loading">Обновить</button>
-                <button type="button" class="btn-modal-secondary"
-                        hx-get="{% url 'ip_plan:sync_log_modal' %}"
-                        hx-target="#modal-content"
-                        hx-indicator="#modal-spinner"
-                        @click="$store.modal.dirty = false; open = false; $dispatch('open-modal')">Развернуть лог</button>
-              </div>
+              {% endfor %}
             </div>
           </div>
+        </div>
 
-          <div class="nav-sep"></div>
-          {% comment %}
-            Ссылка на смену пароля — только локальным учёткам: у пришедших
-            из FreeIPA пароль хранится в каталоге, здесь менять нечего.
-            {% comment %}, а не {# #}: однострочный комментарий Django не
-            умеет переноситься на несколько строк (в регулярке лексера нет
-            re.DOTALL), и такой текст молча уезжает в HTML как есть.
-          {% endcomment %}
+        <button type="button" class="sb-search" title="Поиск и команды — ⌘K (пока не подключён)" aria-label="Поиск и команды">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+          <span class="sb-label sb-search-text">Поиск</span>
+          <span class="sb-label sb-kbd">⌘K</span>
+        </button>
+
+        <nav class="sb-nav" aria-label="Разделы">
+          <a class="sb-item{% if url_name == 'ip_list' %} active{% endif %}" href="{% url 'ip_plan:ip_list' %}" title="Адреса"{% if url_name == 'ip_list' %} aria-current="page"{% endif %}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="8" x="2" y="2" rx="2"></rect><rect width="20" height="8" x="2" y="14" rx="2"></rect><path d="M6 6h.01"></path><path d="M6 18h.01"></path></svg>
+            <span class="sb-label">Адреса</span>
+          </a>
+          <a class="sb-item{% if url_name|slice:':4' == 'acl_' %} active{% endif %}" href="{% url 'ip_plan:acl_lookup' %}" title="ACL"{% if url_name|slice:':4' == 'acl_' %} aria-current="page"{% endif %}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path></svg>
+            <span class="sb-label">ACL</span>
+          </a>
+          <a class="sb-item{% if url_name|slice:':10' == 'regulator_' %} active{% endif %}" href="{% url 'ip_plan:regulator_list' %}" title="Блокировки"{% if url_name|slice:':10' == 'regulator_' %} aria-current="page"{% endif %}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="m4.9 4.9 14.2 14.2"></path></svg>
+            <span class="sb-label">Блокировки</span>
+          </a>
+          <a class="sb-item{% if url_name|slice:':4' == 'map_' %} active{% endif %}" href="{% url 'ip_plan:map_view' %}" title="Карта сети"{% if url_name|slice:':4' == 'map_' %} aria-current="page"{% endif %}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="16" y="16" width="6" height="6" rx="1"></rect><rect x="2" y="16" width="6" height="6" rx="1"></rect><rect x="9" y="2" width="6" height="6" rx="1"></rect><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"></path><path d="M12 12V8"></path></svg>
+            <span class="sb-label">Карта сети</span>
+          </a>
+
+          <div class="sb-group sb-label">Справочники</div>
+          <div class="sb-rule sb-collapsed-only"></div>
+          <button type="button" class="sb-item" title="Операционные системы"
+                  hx-get="{% url 'ip_plan:os_catalog_manage' %}" hx-target="#modal-content" hx-indicator="#modal-spinner"
+                  @click="$store.modal.dirty = false; $dispatch('open-modal')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5V19A9 3 0 0 0 21 19V5"></path><path d="M3 12A9 3 0 0 0 21 12"></path></svg>
+            <span class="sb-label">Операционные системы</span>
+          </button>
+        </nav>
+
+        <div class="sb-spacer"></div>
+
+        <button type="button" class="sb-item" title="Справка"
+                hx-get="{% url 'ip_plan:help_modal' %}" hx-target="#modal-content" hx-indicator="#modal-spinner"
+                @click="$store.modal.dirty = false; $dispatch('open-modal')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><path d="M12 17h.01"></path></svg>
+          <span class="sb-label">Справка</span>
+        </button>
+        {% if user.is_staff %}
+          <a class="sb-item{% if url_name|slice:':8' == 'settings' %} active{% endif %}" href="{% url 'ip_plan:settings' %}" title="Настройки"{% if url_name|slice:':8' == 'settings' %} aria-current="page"{% endif %}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            <span class="sb-label">Настройки</span>
+          </a>
+        {% endif %}
+        <button type="button" class="sb-item" @click="toggleTheme()" :title="theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'">
+          <svg :class="{ 'd-none': theme === 'dark' }" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>
+          <svg :class="{ 'd-none': theme !== 'dark' }" class="d-none" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>
+          <span class="sb-label" x-text="theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'">Тёмная тема</span>
+        </button>
+
+        <div class="sb-rule"></div>
+        <div class="sb-user">
+          <span class="sb-avatar" title="{{ user.get_full_name|default:user.username }}">{{ user.get_full_name|default:user.username|slice:":2"|upper }}</span>
           {% if user.local_account %}
-            <a class="nav-user nav-user-link" href="{% url 'ip_plan:password_change' %}"
-               title="Сменить пароль">{{ user.get_full_name|default:user.username }}</a>
+            <a class="sb-label sb-user-name" href="{% url 'ip_plan:password_change' %}" title="Сменить пароль">{{ user.get_full_name|default:user.username }}</a>
           {% else %}
-            <span class="nav-user">{{ user.get_full_name|default:user.username }}</span>
+            <span class="sb-label sb-user-name">{{ user.get_full_name|default:user.username }}</span>
           {% endif %}
-          <form method="post" action="{% url 'ip_plan:logout' %}">
+          <form method="post" action="{% url 'ip_plan:logout' %}" class="sb-label sb-logout-form">
             {% csrf_token %}
-            <button type="submit" class="nav-logout">Выйти</button>
+            <button type="submit" class="sb-logout" title="Выйти" aria-label="Выйти">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" x2="9" y1="12" y2="12"></line></svg>
+            </button>
           </form>
         </div>
-      </header>
-    {% endwith %}
-  {% endif %}
+      </aside>
 
-  <!-- В обычном потоке документа (НЕ position:fixed) — чтобы при скролле
-       страницы вниз уезжало вместе с контентом, а не оставалось прибитым
-       к вьюпорту и наезжало на липкую шапку таблицы. -->
-  <div class="container-fluid py-4">
-    {% block content %}{% endblock %}
-  </div>
+      <div class="shell-main">
+        <header class="shell-head">
+          <div class="shell-head-left">
+            <button type="button" class="shell-toggle" @click="toggleSidebar()" :title="(collapsed ? 'Показать меню' : 'Скрыть меню') + ' — ['" aria-label="Показать или скрыть меню">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M9 3v18"></path></svg>
+            </button>
+            <span class="shell-head-sep"></span>
+            <h1 class="shell-title">{{ shell_section_title }}</h1>
+            {% block head_extra %}{% endblock %}
+          </div>
+          <div class="shell-head-right">
+            {% block head_actions %}{% endblock %}
+            {% comment %}
+              Индикатор последнего прогона netbox-sync: данные из $store.sync
+              (app.js, /sync-log/summary.json). Клик — полный лог в модалке.
+            {% endcomment %}
+            <button type="button" class="shell-sync" :class="'is-' + $store.sync.statusClass()"
+                    hx-get="{% url 'ip_plan:sync_log_modal' %}" hx-target="#modal-content" hx-indicator="#modal-spinner"
+                    @click="$store.modal.dirty = false; $dispatch('open-modal')"
+                    title="Последний прогон синхронизации — открыть лог">
+              <span class="shell-sync-dot"></span>
+              <span>Синк <span x-text="$store.sync.timeLabel()"></span></span>
+              <template x-if="$store.sync.statusText()"><span class="shell-sync-state" x-text="$store.sync.statusText()"></span></template>
+            </button>
+          </div>
+        </header>
+        <div class="shell-body{% block body_class %}{% endblock %}" id="shell-body">
+          {% block content %}{% endblock %}
+        </div>
+      </div>
+    {% endwith %}
+  {% else %}
+    <div class="shell-body shell-body-plain">
+      {% block content_anonymous %}{% endblock %}
+    </div>
+  {% endif %}
 
   <!-- Модальное окно: оболочка постоянна, контент подгружается через HTMX -->
   <div class="modal-overlay"
@@ -257,6 +245,23 @@
       </div>
       <div id="modal-content"><!-- содержимое подставляется через HTMX --></div>
     </div>
+  </div>
+
+  <!-- Правая панель (drawer): карточка адреса и другие «боковые» формы.
+       Оболочка постоянна, содержимое грузится HTMX-ом в #drawer-content;
+       открывается событием open-drawer, закрывается close-drawer (его шлёт
+       и сервер через HX-Trigger после сохранения). -->
+  <div class="drawer-overlay"
+       x-show="$store.drawer.open"
+       x-cloak
+       @open-drawer.window="$store.drawer.open = true; $store.drawer.dirty = false"
+       @close-drawer.window="$store.drawer.open = false; $store.drawer.dirty = false"
+       @keydown.escape.window="if ($store.drawer.open) $store.drawer.requestClose()"
+       @mousedown.self="$store.drawer.requestClose()">
+    <aside class="drawer" role="dialog" aria-label="Карточка" @input="$store.drawer.dirty = true" @change="$store.drawer.dirty = true">
+      <div id="drawer-spinner" class="htmx-indicator"><div class="spinner-ring"></div></div>
+      <div id="drawer-content"><!-- содержимое подставляется через HTMX --></div>
+    </aside>
   </div>
 
   <!-- Подсказки для поля "Операционная система" в полной форме (модалки
@@ -289,6 +294,13 @@
     window.CSRF_COOKIE_NAME = "{% csrf_cookie_name %}";
     window.OS_CATALOG_OPTIONS = {{ os_catalog_json|default:"{}" }};
     window.COLUMN_INFO = {{ column_info_json|default:"{}"|safe }};
+    /* Площадка из бокового меню — стартовый фильтр React-таблицы адресов
+       ('all' — без фильтра, '__none__' — адреса без площадки). */
+    window.IP_PLAN_SITE = "{{ shell_site|default:'all'|escapejs }}";
+    /* Шлюз удалённого доступа настроен и доступен пользователю — в меню
+       строки адресов появляется раздел «В браузере». */
+    window.IP_PLAN_GATEWAY = {{ shell_gateway|yesno:"true,false" }};
+    window.IP_PLAN_GATEWAY_KEY = {{ shell_gateway_key|yesno:"true,false" }};
   </script>
   <script src="{% static 'ip_plan/js/app.js' %}"></script>
   {% block extra_scripts %}{% endblock %}

@@ -56,17 +56,68 @@ _SECRET_PARTS = ("password", "token", "secret")
 # Парсеры интерфейсов, реально реализованные в netbox_devices_sync.py
 # (жёсткий if/elif в sync_device). Любое другое значение = шаг "Interfaces"
 # молча пропускается, поэтому в UI это строго выпадающий список.
-INTERFACE_PARSERS = ["xfw", "eltex_status", "cisco_ios", "maipu", "huawei_vrp"]
+INTERFACE_PARSERS = ["xfw", "eltex_status", "eltex_mes24", "cisco_ios", "maipu", "huawei_vrp", "continent_snmp"]
+# Парсеры, которые ходят на устройство не по SSH, а по SNMPv3: у АПКШ
+# «Континент» CLI — меню локального администратора, разбирать его нечем, и
+# netbox_continent_snmp.py снимает интерфейсы, адреса, ARP и состояние
+# кластера с агента. У таких устройств вместо логина/пароля — имя
+# безопасности и пароли аутентификации/шифрования, а проверка подключения
+# делает SNMP GET вместо TCP+SSH.
+SNMP_PARSERS = {"continent_snmp"}
+SNMP_AUTH_PROTOS = ["md5", "sha1"]
+SNMP_PRIV_PROTOS = ["des", "aes"]
+# Раздел «SNMP» есть у каждого устройства, независимо от транспорта: пустая
+# версия — SNMP не настроен; v2c — community (список: у кластеров ViPNet первая
+# адресует активную ноду, вторая пассивную); v3 — пользователь и пароли.
+# У парсеров из SNMP_PARSERS раздел обязателен — по нему идёт весь сбор; у
+# остальных он нужен проверке подключения (шаг SNMP) и будущим SNMP-парсерам.
+SNMP_VERSIONS = ["", "v2c", "v3"]
+SNMP_KEYS = ("snmp_version", "snmp_port", "snmp_communities", "snmp_user",
+             "snmp_auth_proto", "snmp_auth_password", "snmp_priv_proto", "snmp_priv_password")
+
+
+def snmp_version(cfg):
+    """Версия SNMP устройства с учётом записей, сделанных до появления поля."""
+    version = (cfg.get("snmp_version") or "").strip()
+    if version:
+        return version
+    if cfg.get("snmp_user"):
+        return "v3"
+    if cfg.get("snmp_communities"):
+        return "v2c"
+    return ""
+
+
+def transport(parser):
+    """«snmp» или «ssh» — чем синк ходит на устройства с этим парсером."""
+    return "snmp" if parser in SNMP_PARSERS else "ssh"
 # Снятие MAC-таблицы поддержано для этих парсеров. У Eltex, Maipu и Huawei
 # это таблица коммутации (кто за каким портом), у ViPNet — ARP-таблица:
 # команда там называется «inet show mac-address-table», но отдаёт вывод
 # arp -n, поэтому в NetBox такие записи помечаются отдельным маркером
 # (см. _ARP_DESCRIPTION в netbox_devices_sync.py). ViPNet снимается не
 # отдельным проходом, а вместе с интерфейсами кластера, одним логином.
-MAC_CAPABLE_PARSERS = {"eltex_status", "maipu", "huawei_vrp", "xfw"}
+# У Континента, как и у ViPNet, это ARP (ipNetToMediaTable по SNMP), снимается
+# тем же опросом, что и интерфейсы.
+MAC_CAPABLE_PARSERS = {"eltex_status", "eltex_mes24", "maipu", "huawei_vrp", "xfw", "continent_snmp"}
 # LLDP умеют Cisco, Eltex, Maipu и Huawei — у xFW 5000 протокола нет вовсе,
 # так что включённый на нём флаг означал бы шаг, который нечем выполнить.
-LLDP_CAPABLE_PARSERS = {"eltex_status", "cisco_ios", "maipu", "huawei_vrp"}
+LLDP_CAPABLE_PARSERS = {"eltex_status", "eltex_mes24", "cisco_ios", "maipu", "huawei_vrp"}
+
+# Справочник парсеров для карточки модели: транспорт и что каждый умеет
+# снять. Возможности выводятся из MAC/LLDP-множеств выше, а не пишутся
+# второй раз — иначе карточки разъедутся с валидацией.
+def parser_catalog():
+    return [{"key": p, "transport": transport(p),
+             "caps": ["интерфейсы"]
+                     + (["MAC"] if p in MAC_CAPABLE_PARSERS else [])
+                     + (["LLDP"] if p in LLDP_CAPABLE_PARSERS else [])}
+            for p in INTERFACE_PARSERS]
+
+
+# Режимы кластера модели. Синк знает один — vipnet_failover
+# (netbox_devices_sync.py: опрос обеих нод ViPNet xFW/HW по очереди).
+CLUSTER_MODES = ["", "vipnet_failover"]
 
 # Флаги «что снимать с устройства», в порядке шагов синка. Живут и на
 # устройстве, и на его модели; смысл один и тот же, см. effective() ниже.
@@ -93,6 +144,51 @@ def effective(device_cfg, device_types):
 
 
 DEVICE_STATUSES = ["active", "planned", "staged", "failed", "inventory", "offline"]
+
+# Площадка по умолчанию — та же, что в скриптах синка (DEFAULT_SITE_SLUG).
+# Ключ site у устройства/источника отсутствовал в старых конфигах, и синк
+# кладёт такие объекты на MDC; форма показывает это явно, а не пустым полем.
+DEFAULT_SITE_SLUG = "mdc"
+
+
+def site_options():
+    """Площадки из NetBox для <select> в формах устройств и источников.
+
+    Справочник живёт в NetBox (у площадки регион, адрес, часовой пояс), и
+    синк площадок не создаёт — опечатка в slug сделала бы объект
+    невидимым для синка. Если NetBox недоступен, возвращаем пустой список:
+    форма тогда показывает текстовое поле, а validate_site пропускает любой
+    непустой slug — редактировать конфиг при лежащем NetBox всё равно нужно."""
+    from .netbox_client import NetBoxAPIError, NetBoxClient
+    try:
+        return NetBoxClient().list_sites()
+    except NetBoxAPIError as exc:
+        logger.warning("Не удалось получить площадки из NetBox: %s", exc)
+        return []
+
+
+def netbox_names(kind):
+    """Производители или роли NetBox (kind = manufacturers | roles) для
+    подсказок в карточке модели. NetBox недоступен — пустой список, поле
+    остаётся свободным вводом."""
+    from .netbox_client import NetBoxAPIError, NetBoxClient
+    try:
+        client = NetBoxClient()
+        return client.list_manufacturers() if kind == "manufacturers" else client.list_device_roles()
+    except NetBoxAPIError as exc:
+        logger.warning("Не удалось получить справочник %s из NetBox: %s", kind, exc)
+        return []
+
+
+def validate_site(value, sites, field="Площадка"):
+    slug = (value or "").strip().lower()
+    if not slug:
+        raise SyncConfigError(f"{field}: обязательное поле")
+    if sites and slug not in {s["slug"] for s in sites}:
+        raise SyncConfigError(f"{field} «{slug}» не найдена в NetBox")
+    if not re.fullmatch(r"[a-z0-9_-]+", slug):
+        raise SyncConfigError(f"{field}: slug может содержать только a-z, 0-9, «-» и «_»")
+    return slug
 
 _HOSTNAME_RE = re.compile(r"^[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?$")
 
@@ -193,9 +289,15 @@ def history(key):
     items = []
     for f in sorted(hist.glob(f"{FILES[key]}.*"), reverse=True):
         stamp = f.name.rsplit(".", 1)[-1]
-        try:
-            when = datetime.strptime(stamp, "%Y%m%d-%H%M%S")
-        except ValueError:
+        # С 2026 года в метке есть миллисекунды (см. _backup), у старых
+        # копий — нет; без второго формата все новые версии пропадали.
+        for fmt in ("%Y%m%d-%H%M%S-%f", "%Y%m%d-%H%M%S"):
+            try:
+                when = datetime.strptime(stamp, fmt)
+                break
+            except ValueError:
+                continue
+        else:
             continue
         items.append({"name": f.name, "when": when, "size": f.stat().st_size})
     return items
@@ -298,3 +400,109 @@ def validate_name(value, existing, original=None, field="Имя", allow_spaces=F
     if value != original and value in existing:
         raise SyncConfigError(f"{field}: «{value}» уже есть в этом файле")
     return value
+
+
+# ── Проверки устройства и модели ───────────────────────────────────────────
+# Общие для формы и для импорта: архив настроек с чужой установки должен
+# проходить те же правила, что и ручная правка, иначе импорт кладёт в
+# devices.json то, что форма сохранить не дала бы.
+
+def validate_device(cfg, device_types):
+    """Проверка эффективной картины устройства (модель + устройство) — именно
+    её исполняет синк. По одному блоку устройства проверка пропускала бы всё,
+    что включено на модели."""
+    model = cfg.get("model")
+    type_cfg = (device_types or {}).get(model)
+    if type_cfg is None:
+        raise SyncConfigError(f"Модель «{model}» отсутствует в device_types. Заведите её в разделе «Модели».")
+    parser = type_cfg.get("interfaces_parser", "")
+    eff = effective(cfg, device_types)
+
+    # Ядро сети — единственный источник префиксов площадки (маршрутизирует
+    # только xFW; адреса на L3-коммутаторах служебные).
+    if eff.get("import_prefixes") and not cfg.get("network_core"):
+        raise SyncConfigError(
+            "Префиксы сетей импортируются только с ядра сети: отметьте «Ядро сети» "
+            "или снимите шаг «Префиксы сетей» (адреса на L3-коммутаторах служебные).")
+    # sync_macs имеет смысл только для парсеров, у которых он вообще
+    # реализован (_mac_dispatch в netbox_devices_sync.py) — иначе шаг
+    # молча пропустится, а человек будет думать, что включил.
+    if eff.get("sync_macs") and parser not in MAC_CAPABLE_PARSERS:
+        raise SyncConfigError(
+            f"Сбор MAC-таблицы не поддержан для парсера «{parser}» "
+            f"(есть только для {', '.join(sorted(MAC_CAPABLE_PARSERS))}).")
+    # MAC снимается хвостом шага интерфейсов (ранний return при выключенном
+    # sync_interfaces стоит ДО блока MAC), так что одно без другого — молча
+    # несобираемая таблица.
+    if eff.get("sync_macs") and not eff.get("sync_interfaces"):
+        raise SyncConfigError(
+            "Сбор MAC-таблицы включён, но выключены интерфейсы: MAC снимается "
+            "внутри шага интерфейсов и без него собран не будет.")
+    # У xfw MAC/ARP снимается не общим диспетчером, а внутри обхода кластера
+    # ViPNet, и только при cluster=vipnet_failover.
+    if eff.get("sync_macs") and parser == "xfw" and eff.get("cluster") != "vipnet_failover":
+        raise SyncConfigError(
+            "Для парсера «xfw» ARP-таблица снимается только в режиме кластера: "
+            "у модели должно быть задано cluster=vipnet_failover.")
+    if eff.get("sync_lldp"):
+        if parser not in LLDP_CAPABLE_PARSERS:
+            raise SyncConfigError(
+                f"Сбор LLDP-соседей не поддержан для парсера «{parser}» "
+                f"(есть только для {', '.join(sorted(LLDP_CAPABLE_PARSERS))}).")
+        if not type_cfg.get("lldp_command"):
+            raise SyncConfigError(
+                f"Сбор LLDP-соседей включён, но у модели «{model}» не задана "
+                f"команда LLDP — задайте её в разделе «Модели».")
+    if eff.get("sync_blocklist"):
+        objects = cfg.get("blocklist_objects")
+        if not isinstance(objects, dict) or not objects:
+            raise SyncConfigError(
+                "Объекты блокировки: при включённом sync_blocklist нужен непустой "
+                'объект вида {"ip": "BLOCK_BY_IP_2", "fqdn": "BBDNS_1"}')
+    if eff.get("backup_config"):
+        if not type_cfg.get("config_command") and not type_cfg.get("policy_commands"):
+            raise SyncConfigError(
+                f"Резервное копирование включено, но у модели «{model}» не заданы ни "
+                f"команда выгрузки конфигурации, ни команды политики доступа — "
+                f"задайте их в разделе «Модели».")
+
+
+_POLICY_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def validate_device_type(cfg):
+    """Проверка конфига модели — общая для карточки модели и импорта."""
+    parser = cfg.get("interfaces_parser", "")
+    if parser not in INTERFACE_PARSERS:
+        raise SyncConfigError(
+            f"Парсер интерфейсов «{parser}» не реализован в netbox_devices_sync.py. "
+            f"Допустимо: {', '.join(INTERFACE_PARSERS)}")
+    if cfg.get("sync_macs") and parser not in MAC_CAPABLE_PARSERS:
+        raise SyncConfigError(
+            f"Сбор MAC-таблицы не реализован для парсера «{parser}» "
+            f"(есть только для {', '.join(sorted(MAC_CAPABLE_PARSERS))}).")
+    if cfg.get("sync_lldp") and parser not in LLDP_CAPABLE_PARSERS:
+        raise SyncConfigError(
+            f"Сбор LLDP-соседей не реализован для парсера «{parser}» "
+            f"(есть только для {', '.join(sorted(LLDP_CAPABLE_PARSERS))}).")
+    if cfg.get("sync_lldp") and not cfg.get("lldp_command"):
+        raise SyncConfigError("Сбор LLDP-соседей включён, но не задана команда LLDP-соседей")
+    policy = cfg.get("policy_commands")
+    if policy is not None and (
+            not isinstance(policy, dict) or not policy
+            or not all(isinstance(k, str) and _POLICY_NAME_RE.match(k)
+                       and isinstance(v, str) and v.strip() for k, v in policy.items())):
+        raise SyncConfigError(
+            "Команды политики доступа: нужен объект вида "
+            '{"firewall_rules": "firewall rules show"}; имя — латиница, цифры, «_» и «-» '
+            "(из него получается имя файла снимка).")
+    if cfg.get("backup_config") and not cfg.get("config_command") and not cfg.get("policy_commands"):
+        raise SyncConfigError(
+            "Резервное копирование включено, но не заданы ни команда выгрузки конфигурации, "
+            "ни команды политики доступа")
+    if (cfg.get("cluster") or "") not in CLUSTER_MODES:
+        raise SyncConfigError(
+            f"Кластер «{cfg.get('cluster')}» синку неизвестен. Допустимо: "
+            f"{', '.join(m for m in CLUSTER_MODES if m)} или пусто.")
+    if not cfg.get("manufacturer") or not cfg.get("role"):
+        raise SyncConfigError("Производитель и роль обязательны — по ним синк заводит объекты в NetBox")

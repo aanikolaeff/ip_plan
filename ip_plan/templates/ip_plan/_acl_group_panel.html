@@ -1,0 +1,83 @@
+{% comment %}
+  Правая панель «Группа адресов» (SPEC-acl.md, раздел 4.1) — HTMX-фрагмент,
+  который грузится в #drawer-content оболочки (base.html) по panel_url и
+  открывается событием open-drawer (см. aclOpenPanel в acl.js). Контекст —
+  словарь `panel` (CONTRACT-acl.md).
+
+  Поиск по членам — на клиенте (Alpine aclGroupPanel, по подстроке). Поле
+  намеренно пустое, хотя в макете оно предзаполнено искомым адресом: члены
+  группы — сети («10.20.30.0/26»), и буквальный фильтр по «10.20.30.25» спрятал
+  бы в том числе ту сеть, что содержит адрес. Содержащие адрес уже идут первыми
+  и подписаны «содержит адрес». Закрытие — крестик, Esc и клик по затемнению
+  делает сама оболочка ($store.drawer.requestClose()).
+{% endcomment %}
+{% load ip_plan_extras %}
+{# .stop на input/change: оболочка (.drawer в base.html) по этим событиям ставит $store.drawer.dirty и при закрытии спрашивает «Закрыть без сохранения?» — панель только читает, поиск по членам не «изменение» #}
+<div class="acl-panel{% if panel.wide %} is-wide{% endif %}" x-data="aclGroupPanel()" role="dialog" aria-label="Группа {{ panel.name }}" @input.stop @change.stop>
+  <div class="acl-panel-head">
+    <div class="acl-panel-titles">
+      <span class="acl-panel-kicker">{{ panel.kicker|default:"Группа адресов" }} · <span class="mono">{{ panel.device }}</span></span>
+      <h2 class="mono acl-panel-name{% if panel.long_name %} is-long{% endif %}" title="{{ panel.name }}">{{ panel.name }}</h2>
+      <span class="acl-panel-meta"><span class="mono">{{ panel.member_count_text }}</span>{% if panel.missing_count %} · <span class="acl-missing-text">{{ panel.missing_count }} нет в iplir</span>{% endif %} · {{ panel.used_text }}</span>
+    </div>
+    <button type="button" class="ghost acl-panel-close" @click="$store.drawer.requestClose()" aria-label="Закрыть">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+    </button>
+  </div>
+
+  <div class="acl-panel-search">
+    <label class="acl-search">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      <input type="search" class="acl-input mono acl-panel-input" placeholder="Найти в группе" aria-label="Найти в группе" x-model="q" autocomplete="off" spellcheck="false">
+    </label>
+    {% if panel.missing_count %}
+    {# Узлы, которых нет в iplir show config: правило на них есть, а координатор их не знает #}
+    <button type="button" class="acl-gchip acl-panel-filter" :class="{ 'is-on': missingOnly }" :aria-pressed="missingOnly" @click="missingOnly = !missingOnly" title="Показать только узлы, которых нет в iplir show config">
+      нет в iplir <span class="mono acl-gchip-n">{{ panel.missing_count }}</span>
+    </button>
+    {% endif %}
+  </div>
+
+  {% if panel.wide %}
+  <div class="acl-panel-legend">
+    <span class="mono acl-ip-real">реальный</span><span class="acl-arrow" aria-hidden="true">→</span><span class="mono acl-ip-virt">виртуальный</span>
+    <span>— адреса узла из iplir; виртуальные 11.x / 7.x / 12.x выдаёт ViPNet. «за NAT» — координатор видит узел только по виртуальному; несколько пар — несколько интерфейсов узла.</span>
+  </div>
+  {% endif %}
+  <div class="acl-panel-list">
+    {% for m in panel.members %}
+      {% if m.kind == 'node' %}
+      <div class="acl-member acl-member-nodew{% if m.contains %} is-hit{% endif %}{% if m.missing %} is-missing{% endif %}" data-search="{{ m.search }}" data-missing="{{ m.missing|yesno:'1,0' }}" :class="{ 'is-hidden': !show('{{ m.search|escapejs }}', {{ m.missing|yesno:'true,false' }}) }" title="{{ m.tag }}{% if m.network %} · {{ m.network }}{% endif %}">
+        <span class="acl-member-name">{{ m.text }}</span>
+        <span class="acl-member-ips">
+          {% if m.missing %}<span class="acl-ip-nat acl-ip-missing" title="узла нет в iplir show config координатора: правило ссылается на идентификатор, адреса неизвестны">нет в iplir</span>{% endif %}
+          {% for p in m.pairs %}<span class="mono acl-pair">{% if p.real %}<span class="acl-ip-real" title="реальный адрес узла">{{ p.real }}</span>{% else %}<span class="acl-ip-nat" title="реальный адрес координатору не виден — узел за NAT, известен только виртуальный">за NAT</span>{% endif %}{% if p.virt and p.virt != p.real %}<span class="acl-arrow" aria-hidden="true">→</span><span class="acl-ip-virt" title="виртуальный адрес ViPNet">{{ p.virt }}</span>{% endif %}</span>{% endfor %}
+          {% if m.tunnel_hit %}<span class="mono acl-pair acl-tunnel is-hit" title="туннелируемый за координатором диапазон, содержит адрес">туннель {{ m.tunnel_hit }}</span>{% endif %}
+          {% if m.tunnels_count %}<span class="acl-member-note" title="туннелируемые за координатором диапазоны (tunnel= в iplir)">туннели: {{ m.tunnels_count }}</span>{% endif %}
+        </span>
+        <span class="mono acl-member-tag">{{ m.tag }}</span>
+        {% if m.note %}<span class="acl-member-note">{{ m.note }}</span>{% endif %}
+      </div>
+      {% else %}
+      <div class="acl-member mono" data-search="{{ m.search|default:m.text }}" data-missing="0" :class="{ 'is-hidden': !show('{{ m.search|default:m.text|escapejs }}', false) }">
+        <span class="acl-member-text is-{{ m.kind }}{% if m.contains %} is-hit{% endif %}">{% if m.kind == 'exclusion' %}<span class="acl-member-kw">кроме</span> {% endif %}{% if m.kind == 'group' and m.panel_url %}<button type="button" class="acl-member-link" title="Вложенная группа · открыть" onclick="window.aclOpenPanel('{{ m.panel_url|escapejs }}')">{{ m.text }}</button>{% else %}{{ m.text }}{% endif %}</span>
+        <span class="acl-member-note">{{ m.note }}</span>
+      </div>
+      {% endif %}
+    {% empty %}
+      <div class="acl-empty">В снимке у группы нет членов</div>
+    {% endfor %}
+    <div class="acl-member-empty acl-empty" :class="{ 'is-hidden': !q || visibleCount() > 0 }">Ничего не найдено среди показанных {{ panel.shown }}</div>
+    {% if panel.more %}
+      <div class="acl-member-rest">Остальные {{ panel.more|ru_number }} — <a href="{{ panel.detail_url }}">в полной карточке группы →</a></div>
+    {% endif %}
+  </div>
+
+  <div class="acl-panel-foot">
+    {% if panel.includes %}
+      <span class="acl-panel-foot-note">Вложенные группы: {% for inc in panel.includes %}<span class="mono">{{ inc }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}</span>
+    {% endif %}
+    <span class="acl-grow"></span>
+    <a href="{{ panel.detail_url }}" class="acl-panel-detail">{{ panel.detail_text|default:"Карточка группы →" }}</a>
+  </div>
+</div>

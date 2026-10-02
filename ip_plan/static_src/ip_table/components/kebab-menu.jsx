@@ -1,166 +1,85 @@
-import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { deleteIp, patchIp, runNetworkAction } from '../api.js';
-import { showToast } from './cells.jsx';
-import { positionNear } from './position.js';
+import { useRef } from 'react';
+import {
+  IconActivity, IconConsole, IconCopy, IconGlobe, IconMonitor, IconMore, IconPencil, IconScan, IconTerminal, IconTrash, IconWindow,
+} from './icons.jsx';
+import { Popover } from './popover.jsx';
 
-const START_MESSAGES = {
-  check: (addr) => `Проверка доступности ${addr}…`,
-  'scan-ports': (addr) => `Сканирование портов ${addr} (1–1000)…`,
-  'resolve-dns': (addr) => `Резолв DNS для ${addr}…`,
-};
+// Шлюз удалённого доступа (Guacamole) настроен и доступен пользователю —
+// выставляет base.html.
+const GATEWAY = !!window.IP_PLAN_GATEWAY;
+// В «Настройках» задан служебный ключ — вход без запроса логина и пароля.
+const GATEWAY_KEY = !!window.IP_PLAN_GATEWAY_KEY;
 
-/** Три сетевых действия кебаб-меню — перенесено дословно из
- * runIpNetworkAction() в app.js (старая DataTables-версия), включая обе
- * ветки "сервер предлагает изменить поле, спросить подтверждение". */
-async function runAction(action, id, address, updateRow) {
-  showToast(START_MESSAGES[action](address), 'info');
-
-  let response;
-  try {
-    response = await runNetworkAction(action, id);
-  } catch (e) {
-    showToast('NetBox недоступен', 'error');
-    return;
-  }
-  let data = {};
-  try {
-    data = await response.json();
-  } catch (e) { /* ответ без тела */ }
-  if (!response.ok) {
-    showToast(data.error || 'Ошибка операции', 'error');
-    return;
-  }
-
-  if (action === 'check') {
-    if (data.status_changed) updateRow(id, { status: { value: 'active', label: 'Active' } });
-    const latency = data.latency_ms != null ? ` (${data.latency_ms} мс)` : '';
-    const suffix = data.status_changed ? ' — статус → Active' : '';
-    showToast(`${address}: ${data.alive ? 'доступен' + latency : 'не отвечает'}${suffix}`, data.alive ? 'success' : 'error');
-    if (data.suggest_status) {
-      const ok = window.confirm(`${address} не отвечает на пинг, хотя статус сейчас Active. Изменить статус на Reserved?`);
-      if (!ok) return;
-      const patchResponse = await patchIp(id, 'status', data.suggest_status);
-      if (patchResponse.ok) {
-        updateRow(id, { status: { value: data.suggest_status, label: 'Reserved' } });
-        showToast(`${address}: статус изменён на Reserved`, 'success');
-      } else {
-        showToast('Не удалось изменить статус', 'error');
-      }
-    }
-    return;
-  }
-
-  if (action === 'scan-ports') {
-    updateRow(id, { open_ports: data.ports || '' });
-    showToast(data.ports ? `${address}: открытые порты — ${data.ports}` : `${address}: открытых портов не найдено`, 'success');
-    return;
-  }
-
-  if (action === 'resolve-dns') {
-    if (data.action === 'none') {
-      showToast(
-        data.resolved ? `${address}: имя уже совпадает с PTR (${data.resolved})` : `${address}: PTR-запись не найдена`,
-        data.resolved ? 'success' : 'error',
-      );
-      return;
-    }
-    if (data.action === 'saved') {
-      updateRow(id, { dns_name: data.resolved });
-      showToast(`${address}: DNS-имя сохранено — ${data.resolved}`, 'success');
-      return;
-    }
-    if (data.action === 'confirm') {
-      const ok = window.confirm(`Текущее DNS-имя «${data.current}» отличается от PTR «${data.resolved}». Заменить на значение из PTR?`);
-      if (!ok) return;
-      const patchResponse = await patchIp(id, 'dns_name', data.resolved);
-      if (patchResponse.ok) {
-        updateRow(id, { dns_name: data.resolved });
-        showToast(`${address}: DNS-имя обновлено — ${data.resolved}`, 'success');
-      } else {
-        showToast('Не удалось сохранить DNS-имя', 'error');
-      }
-    }
-  }
+/** Пункты меню строки. Подзаголовок «Подключиться» — локальные клиенты
+ * (см. connect.js); у этих пунктов в колонке клавиши — порт по умолчанию
+ * или тип файла, горячих клавиш у них нет. «Консоль ВМ» — только у адресов,
+ * назначенных виртуальной машине (роль vm): файл .vv / ссылка vmrc://.
+ * При включённом шлюзе выше стоит раздел «В браузере» (действия web-*:
+ * сессия в новой вкладке), а локальные клиенты подписаны как таковые. */
+export function rowMenuItems({ isVm }) {
+  return [
+    { action: 'edit', label: 'Изменить', key: 'E', Icon: IconPencil },
+    { action: 'copy', label: 'Копировать адрес', key: '⌘C', Icon: IconCopy },
+    { divider: true },
+    ...(GATEWAY ? [
+      { head: 'В браузере' },
+      { action: 'web-ssh', label: 'SSH', key: '22', Icon: IconTerminal },
+      ...(GATEWAY_KEY ? [{ action: 'web-ssh-key', label: 'SSH по ключу', key: '22', Icon: IconTerminal }] : []),
+      { action: 'web-vnc', label: 'VNC', key: '5900', Icon: IconMonitor },
+      { action: 'web-rdp', label: 'RDP', key: '3389', Icon: IconWindow },
+      ...(isVm ? [{ action: 'web-console', label: 'Консоль ВМ', key: 'VNC', Icon: IconConsole }] : []),
+    ] : []),
+    { head: GATEWAY ? 'Локальный клиент' : 'Подключиться' },
+    { action: 'ssh', label: 'SSH', key: '22', Icon: IconTerminal },
+    { action: 'vnc', label: 'VNC', key: '5900', Icon: IconMonitor },
+    { action: 'rdp', label: 'RDP', key: '3389', Icon: IconWindow },
+    ...(isVm ? [{ action: 'console', label: 'Консоль ВМ', key: 'SPICE', Icon: IconConsole }] : []),
+    { divider: true },
+    { action: 'check', label: 'Проверить доступность', key: 'P', Icon: IconActivity },
+    { action: 'scan-ports', label: 'Сканировать порты', key: 'S', Icon: IconScan },
+    { action: 'resolve-dns', label: 'Резолв DNS', key: 'D', Icon: IconGlobe },
+    { divider: true },
+    { action: 'delete', label: 'Удалить', key: '⌫', Icon: IconTrash, danger: true },
+  ];
 }
 
-async function deleteRow(id, address, onDeleted) {
-  if (!window.confirm(`Удалить IP-адрес ${address}? Это действие нельзя отменить.`)) return;
-  try {
-    const response = await deleteIp(id);
-    if (response.ok) {
-      onDeleted(id);
-      showToast(`IP-адрес ${address} удалён`, 'success');
-    } else {
-      let message = 'Не удалось удалить IP-адрес';
-      try {
-        message = (await response.json()).error || message;
-      } catch (e) { /* ответ без тела */ }
-      showToast(message, 'error');
-    }
-  } catch (e) {
-    showToast('NetBox недоступен', 'error');
-  }
-}
-
-/** Кебаб-меню у адреса (⋯): проверить доступность / сканировать порты /
- * резолв DNS / удалить — перенесено из app.js (setupRowDelegation:
- * .btn-kebab/.kebab-menu/.kebab-action/.kebab-delete-ip). Портал в
- * document.body + positionNear() вместо оригинальных .kebab-menu-up/
- * .kebab-menu-fixed эвристик (там их было три — вниз по умолчанию,
- * перевернуть вверх, эвакуировать в fixed, если не помещается ни там, ни
- * там) — фиксированное позиционирование от viewport делает две первые
- * ветки не нужны, экран есть экран независимо от того, где внутри
- * прокручиваемой таблицы сидит сама кнопка. */
-export function KebabMenu({ id, address, table }) {
-  const [open, setOpen] = useState(false);
-  const [anchorRect, setAnchorRect] = useState(null);
+/** Кебаб строки (⋯): кнопка видна при наведении, открытая — с фоном.
+ * Какая строка держит открытое меню — знает TableRoot (нужно для горячих
+ * клавиш), поэтому open/onToggle приходят снаружи. */
+export function RowMenu({ address, isVm = false, open, onToggle, onAction }) {
   const btnRef = useRef(null);
-  const menuRef = useRef(null);
-
-  useEffect(() => {
-    if (open && menuRef.current) positionNear(anchorRect, menuRef.current);
-  }, [open, anchorRect]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    function onOutsideMouseDown(e) {
-      if (menuRef.current && !menuRef.current.contains(e.target) && !btnRef.current?.contains(e.target)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', onOutsideMouseDown, true);
-    return () => document.removeEventListener('mousedown', onOutsideMouseDown, true);
-  }, [open]);
-
-  function toggle() {
-    setAnchorRect(btnRef.current.getBoundingClientRect());
-    setOpen((v) => !v);
-  }
-
-  function runAndClose(action) {
-    setOpen(false);
-    runAction(action, id, address, (rowId, patch) => table.options.meta?.updateRow(rowId, patch));
-  }
-
-  function deleteAndClose() {
-    setOpen(false);
-    deleteRow(id, address, (deletedId) => table.options.meta?.removeRow(deletedId));
-  }
-
   return (
-    <span className="kebab-wrap">
-      <button ref={btnRef} type="button" className="btn-kebab" onClick={toggle}>⋯</button>
-      {open && createPortal(
-        <div ref={menuRef} className="kebab-menu show kebab-menu-fixed">
-          <button type="button" className="kebab-action" onClick={() => runAndClose('check')}>Проверить доступность</button>
-          <button type="button" className="kebab-action" onClick={() => runAndClose('scan-ports')}>Сканировать порты</button>
-          <button type="button" className="kebab-action" onClick={() => runAndClose('resolve-dns')}>Резолв DNS</button>
-          <div className="kebab-divider" />
-          <button type="button" className="kebab-delete-ip" onClick={deleteAndClose}>Удалить</button>
-        </div>,
-        document.body,
-      )}
-    </span>
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        className={`ipt-kebab ipt-reveal${open ? ' is-on' : ''}`}
+        aria-label={`Действия для ${address}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={(e) => { e.stopPropagation(); onToggle(!open); }}
+      >
+        <IconMore size={16} />
+      </button>
+      <Popover anchorRef={btnRef} open={open} onClose={() => onToggle(false)} align="end" className="ipt-pop-menu" ariaLabel={`Действия для ${address}`}>
+        {rowMenuItems({ isVm }).map((item, i) => {
+          if (item.divider) return <div key={`d${i}`} className="ipt-sep" />;
+          if (item.head) return <div key={`h${i}`} className="ipt-mi-head">{item.head}</div>;
+          return (
+            <button
+              key={item.action}
+              type="button"
+              role="menuitem"
+              className={`ipt-mi${item.danger ? ' is-danger' : ''}`}
+              onClick={() => { onToggle(false); onAction(item.action); }}
+            >
+              <item.Icon size={15} className="ipt-mi-icon" />
+              <span className="ipt-mi-label">{item.label}</span>
+              <span className="ipt-mi-key ipt-mono">{item.key}</span>
+            </button>
+          );
+        })}
+      </Popover>
+    </>
   );
 }

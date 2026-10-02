@@ -1,89 +1,39 @@
-{% extends "ip_plan/base.html" %}
+{% extends "ip_plan/settings_base.html" %}
 
-{% block content %}
-<div class="set-page">
-  <div class="set-head">
-    <div class="set-head-text">
-      <h1>Настройки синхронизации</h1>
-      <p>
-        Отсюда правятся конфигурационные файлы netbox-sync и доступ к самому приложению.
-        Обходить их через SSH на хосте больше не нужно.
-      </p>
+{% comment %}
+  Вкладки раздела «Настройки» (settings_page): содержимое — include по
+  active_tab. Если каталог conf/ netbox-sync не смонтирован, разделы на нём
+  показывают плашку; «Запуск и расписание», «Вход и LDAP», «Пользователи» и
+  «Журнал» работают и без него. load_error — файл не читается/не парсится.
+{% endcomment %}
+
+{% block settings_main %}
+  {% if load_error %}
+    <div class="st-screen">
+      <div class="st-banner is-danger" role="alert">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+        <span class="st-banner-text">{{ load_error }}</span>
+      </div>
     </div>
-    {% comment %}
-      Экспорт переносит подключения на чистую установку, импорт дополняет
-      текущую конфигурацию. Обе кнопки открывают модалку.
-    {% endcomment %}
-    <div class="set-head-actions">
-    <button type="button" class="btn-modal-secondary set-head-action"
-            hx-get="{% url 'ip_plan:settings_export_confirm' %}"
-            hx-target="#modal-content" hx-indicator="#modal-spinner"
-            @click="$store.modal.dirty = false; $dispatch('open-modal')"
-            title="Скачать архив с настройками подключения">Экспорт</button>
-    <button type="button" class="btn-modal-secondary set-head-action"
-            hx-get="{% url 'ip_plan:settings_import_form' %}"
-            hx-target="#modal-content" hx-indicator="#modal-spinner"
-            @click="$store.modal.dirty = false; $dispatch('open-modal')"
-            title="Загрузить настройки из архива или JSON-файлов">Импорт</button>
-    </div>
-  </div>
-
-  {% comment %}
-    Полоса применения. Отвечает на вопрос, который иначе задаёт каждый, кто
-    впервые здесь что-то сохранил: «почему в NetBox ничего не изменилось».
-  {% endcomment %}
-  <div class="set-apply{% if sync_running %} set-apply-running{% endif %}">
-    <span class="set-apply-dot"></span>
-    {% if sync_running %}
-      <span><strong>Синхронизация идёт прямо сейчас.</strong>
-        Сохранять можно — запись атомарна, — но шаги, которые уже отработали, останутся
-        на прежних настройках.</span>
-    {% else %}
-      <span>Правки записываются на диск сразу, а на оборудование и в NetBox попадают
-        <strong>на следующем прогоне синхронизации</strong> — по расписанию в 03:00 или при
-        ручном запуске <code class="set-mono">full_sync.sh</code>.</span>
-    {% endif %}
-  </div>
-
-  {% if not conf_available %}
-    <div class="set-panel">
-      <div class="set-panel-body">
-        <div class="set-note set-note-error">
+  {% elif not conf_available and active_tab != "sync" and active_tab != "ldap" and active_tab != "users" and active_tab != "audit" %}
+    <div class="st-screen">
+      <div class="st-banner is-danger" role="alert">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+        <span class="st-banner-text">
           Каталог конфигурации netbox-sync недоступен: <code>{{ conf_dir }}</code>.
-          Проверьте, что в <code>docker-compose.yml</code> смонтирован
-          <code>${NETBOX_SYNC_DIR}/conf</code> и что этот каталог существует на хосте.
-        </div>
+          Проверьте, что в <code>docker-compose.yml</code> смонтирован <code>${NETBOX_SYNC_DIR}/conf</code>
+          и что этот каталог существует на хосте.
+        </span>
       </div>
     </div>
-  {% else %}
-    <div class="set-layout">
-      <nav class="set-rail">
-        {% for t in tabs %}
-          <a class="set-rail-item{% if t.key == active_tab %} active{% endif %}"
-             href="{% url 'ip_plan:settings_tab' t.key %}">
-            <span class="set-rail-title">{{ t.title }}</span>
-            <span class="set-rail-file">{{ t.file }}</span>
-          </a>
-        {% endfor %}
-      </nav>
-
-      <div>
-        {% if load_error %}
-          <div class="set-panel"><div class="set-panel-body">
-            <div class="set-note set-note-error">{{ load_error }}</div>
-          </div></div>
-        {% else %}
-          {% if active_tab == 'devices' %}{% include "ip_plan/_settings_devices.html" %}
-          {% elif active_tab == 'models' %}{% include "ip_plan/_settings_models.html" %}
-          {% elif active_tab == 'hypervisors' %}{% include "ip_plan/_settings_hypervisors.html" %}
-          {% elif active_tab == 'scan' %}{% include "ip_plan/_settings_scan.html" %}
-          {% elif active_tab == 'ldap' %}{% include "ip_plan/_settings_ldap.html" %}
-          {% elif active_tab == 'users' %}{% include "ip_plan/_settings_users.html" %}
-          {% elif active_tab == 'audit' %}{% include "ip_plan/_settings_audit.html" %}
-          {% endif %}
-        {% endif %}
-      </div>
-    </div>
+  {% elif active_tab == "sync" %}{% include "ip_plan/_settings_sync.html" %}
+  {% elif active_tab == "devices" %}{% include "ip_plan/_settings_devices.html" %}
+  {% elif active_tab == "models" %}{% include "ip_plan/_settings_models.html" %}
+  {% elif active_tab == "hypervisors" %}{% include "ip_plan/_settings_hypervisors.html" %}
+  {% elif active_tab == "scan" %}{% include "ip_plan/_settings_scan.html" %}
+  {% elif active_tab == "ldap" %}{% include "ip_plan/_settings_ldap.html" %}
+  {% elif active_tab == "users" %}{% include "ip_plan/_settings_users.html" %}
+  {% elif active_tab == "access" %}{% include "ip_plan/_settings_access.html" %}
+  {% elif active_tab == "audit" %}{% include "ip_plan/_settings_audit.html" %}
   {% endif %}
-</div>
 {% endblock %}

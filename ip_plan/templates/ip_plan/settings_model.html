@@ -1,0 +1,285 @@
+{% extends "ip_plan/settings_base.html" %}
+{% load ip_plan_extras %}
+
+{% comment %}
+  Карточка модели (SPEC §4a; CONTRACT-settings §3а). Страница:
+  device_type_form. Поля POST — ровно те, что читает device_type_save:
+  name, manufacturer, role, interfaces_parser, encoding, no_pager, cluster,
+  11 команд (*_command), флаги import_prefixes / import_vlans / sync_macs /
+  sync_lldp / backup_config / legacy_crypto (checkbox value=1),
+  policy_commands, kex_algs / encryption_algs / mac_algs /
+  server_host_key_algs, file_hash и необязательный then_test.
+
+  Живое (Alpine stModel, settings.js): парсер сразу делает недоступными
+  MAC/LLDP (недоступный флаг — disabled, с формой не уходит), у SNMP-парсера
+  прячутся кодировка, пейджер и команды (в DOM остаются); производитель и
+  роль — список из NetBox с вводом нового значения; справа — кого заденет
+  смена флага (личные значения устройств снимаются, device_type_save) и
+  живой список изменений по всем полям с data-label.
+{% endcomment %}
+
+{% block settings_main %}
+{% firstof cfg.interfaces_parser parsers.0.key as cur_parser %}
+{{ flag_rows|json_script:"st-model-flags" }}
+{{ members|json_script:"st-model-members" }}
+{{ parsers|json_script:"st-model-parsers" }}
+{{ mac_capable|json_script:"st-model-mac" }}
+{{ lldp_capable|json_script:"st-model-lldp" }}
+
+<div class="st-form-page"
+     x-data="stModel({ parser: '{{ cur_parser|escapejs }}', vendor: '{{ cfg.manufacturer|default:''|escapejs }}', vendorCustom: {{ manufacturers|yesno:'false,true' }}, role: '{{ cfg.role|default:''|escapejs }}', roleCustom: {{ roles|yesno:'false,true' }} })">
+<form id="st-model-form" class="st-form-page" data-diff
+      hx-post="{% if name %}{% url 'ip_plan:settings_type_save' name %}{% else %}{% url 'ip_plan:settings_type_add_save' %}{% endif %}"
+      hx-target="#modal-content" hx-indicator="#modal-spinner"
+      hx-on::after-request="if (event.detail.xhr.status >= 400) { Alpine.store('modal').dirty = false; window.dispatchEvent(new CustomEvent('open-modal')); }"
+      @input="later()" @change="later()">
+  {% csrf_token %}
+  <input type="hidden" name="file_hash" value="{{ file_hash }}">
+
+  <div class="st-card">
+    <div class="st-card-left">
+      <div>
+        <nav class="st-crumbs" aria-label="Путь">
+          <a href="{% url 'ip_plan:settings_tab' 'models' %}">Модели</a>
+          <span class="st-crumbs-sep">/</span>
+          <span>{% if name %}изменение{% else %}новая модель{% endif %}</span>
+        </nav>
+        <h2 class="st-h2-lg">{% if name %}{{ name }}{% else %}Новая модель{% endif %}</h2>
+      </div>
+
+      {# ── Основное (4a.2) ── #}
+      <section class="st-sec">
+        <span class="st-sec-title">Основное</span>
+        <div class="st-grid3">
+          <label class="st-field">
+            <span class="st-label">Название</span>
+            <input class="st-input" name="name" value="{{ name|default:'' }}" required autocomplete="off" data-label="Название"{% if not name %} autofocus{% endif %}>
+            <span class="st-hint">Так модель называется в NetBox</span>
+          </label>
+
+          <div class="st-field" @click.outside="vendorOpen = false" @keydown.escape="vendorOpen = false">
+            <span class="st-label">Производитель</span>
+            <button type="button" class="st-pseudo{% if not manufacturers %} is-hidden{% endif %}" :class="{ 'is-open': vendorOpen, 'is-hidden': vendorCustom }"
+                    @click="vendorOpen = !vendorOpen" aria-haspopup="listbox" :aria-expanded="vendorOpen ? 'true' : 'false'">
+              <span class="st-pseudo-val" :class="{ 'is-empty': !vendor }" x-text="vendor || 'выберите'">{{ cfg.manufacturer|default:"выберите" }}</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>
+            </button>
+            <input class="st-input" name="manufacturer" x-ref="vendorInput" x-model="vendor" :type="vendorCustom ? 'text' : 'hidden'"
+                   type="{% if manufacturers %}hidden{% else %}text{% endif %}" value="{{ cfg.manufacturer|default:'' }}"
+                   placeholder="Имя производителя" autocomplete="off" required data-label="Производитель">
+            <span class="st-hint">
+              <span :class="{ 'is-hidden': vendorCustom }"{% if not manufacturers %} class="is-hidden"{% endif %}>Из справочника производителей NetBox</span>
+              <span class="is-hidden" :class="{ 'is-hidden': !vendorCustom }">{% if manufacturers %}Новый производитель · <button type="button" class="st-btn st-btn-link" style="font-weight:500" @click="vendorCustom = false; vendor = '{{ cfg.manufacturer|default:''|escapejs }}'; later()">выбрать из списка</button>{% else %}NetBox недоступен — введите имя вручную{% endif %}</span>
+            </span>
+            <div class="st-pop" role="listbox" aria-label="Производитель" :class="{ 'is-open': vendorOpen }">
+              {% for m in manufacturers %}
+                <button type="button" class="st-opt" role="option" :aria-selected="vendor === '{{ m.name|escapejs }}' ? 'true' : 'false'" @click="pickVendor('{{ m.name|escapejs }}')">
+                  <span class="st-opt-check"><svg :class="{ 'is-hidden': vendor !== '{{ m.name|escapejs }}' }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg></span>
+                  <span class="st-opt-name">{{ m.name }}</span><span class="st-opt-n">{{ m.count }} мод.</span>
+                </button>
+              {% endfor %}
+              <div class="st-pop-sep"></div>
+              <button type="button" class="st-opt is-new" @click="newVendor()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+                Новый производитель
+              </button>
+            </div>
+          </div>
+
+          <div class="st-field" @click.outside="roleOpen = false" @keydown.escape="roleOpen = false">
+            <span class="st-label">Роль в NetBox</span>
+            <button type="button" class="st-pseudo{% if not roles %} is-hidden{% endif %}" :class="{ 'is-open': roleOpen, 'is-hidden': roleCustom }"
+                    @click="roleOpen = !roleOpen" aria-haspopup="listbox" :aria-expanded="roleOpen ? 'true' : 'false'">
+              <span class="st-pseudo-val" :class="{ 'is-empty': !role }" x-text="role || 'выберите'">{{ cfg.role|default:"выберите" }}</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>
+            </button>
+            <input class="st-input" name="role" x-ref="roleInput" x-model="role" :type="roleCustom ? 'text' : 'hidden'"
+                   type="{% if roles %}hidden{% else %}text{% endif %}" value="{{ cfg.role|default:'' }}"
+                   placeholder="slug роли" autocomplete="off" required data-label="Роль в NetBox">
+            <span class="st-hint">
+              <span :class="{ 'is-hidden': roleCustom }"{% if not roles %} class="is-hidden"{% endif %}>Роль устройств этой модели</span>
+              <span class="is-hidden" :class="{ 'is-hidden': !roleCustom }">{% if roles %}Новая роль · <button type="button" class="st-btn st-btn-link" style="font-weight:500" @click="roleCustom = false; role = '{{ cfg.role|default:''|escapejs }}'; later()">выбрать из списка</button>{% else %}NetBox недоступен — введите роль вручную{% endif %}</span>
+            </span>
+            <div class="st-pop" role="listbox" aria-label="Роль в NetBox" :class="{ 'is-open': roleOpen }">
+              {% for r in roles %}
+                <button type="button" class="st-opt" role="option" :aria-selected="role === '{{ r.name|escapejs }}' ? 'true' : 'false'" @click="pickRole('{{ r.name|escapejs }}')">
+                  <span class="st-opt-check"><svg :class="{ 'is-hidden': role !== '{{ r.name|escapejs }}' }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg></span>
+                  <span class="st-opt-name">{{ r.name }}</span><span class="st-opt-n">{{ r.count }} мод.</span>
+                </button>
+              {% endfor %}
+              <div class="st-pop-sep"></div>
+              <button type="button" class="st-opt is-new" @click="newRole()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+                Новая роль
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {# ── Разбор вывода (4a.3) ── #}
+      <section class="st-sec is-gap12">
+        <div>
+          <span class="st-sec-title">Разбор вывода</span>
+          <div class="st-sec-desc">Список закрыт — это разборы, реализованные в синхронизации. От него зависит, что вообще можно собирать.</div>
+        </div>
+        <div class="st-radios" role="radiogroup" aria-label="Парсер">
+          {% for p in parsers %}
+            <label class="st-radio{% if p.key == cur_parser %} is-on{% endif %}" :class="{ 'is-on': parser === '{{ p.key|escapejs }}' }">
+              <input type="radio" name="interfaces_parser" value="{{ p.key }}" x-model="parser" required data-label="Разбор вывода"{% if p.key == cur_parser %} checked{% endif %}>
+              <span class="st-radio-top"><span class="st-radio-name">{{ p.key }}</span><span class="st-via">{{ p.transport }}</span></span>
+              <span class="st-radio-caps">{{ p.caps|join:" · " }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        <div class="st-grid2" style="margin-top:4px" :class="{ 'is-hidden': isSnmp() }">
+          <label class="st-field">
+            <span class="st-label">Кодировка вывода</span>
+            <input class="st-input is-mono is-36" name="encoding" value="{{ cfg.encoding|default:'' }}" placeholder="utf-8" autocomplete="off" data-label="Кодировка вывода">
+            <span class="st-hint">Пусто — utf-8. У ViPNet — koi8-r</span>
+          </label>
+          <label class="st-field">
+            <span class="st-label">Отключение постраничного вывода</span>
+            <input class="st-input is-mono is-36" name="no_pager" value="{{ cfg.no_pager|default:'' }}" autocomplete="off" data-label="Отключение постраничного вывода">
+          </label>
+        </div>
+        <div class="st-snmp-note is-hidden" :class="{ 'is-hidden': !isSnmp() }">Опрашивается по SNMP — кодировка, пейджер и команды не нужны. Реквизиты SNMP задаются у каждого устройства.</div>
+      </section>
+
+      {# ── Что собирать по умолчанию (4a.4) ── #}
+      <section class="st-sec is-flags">
+        <span class="st-sec-title">Что собирать по умолчанию</span>
+        <span class="st-sec-desc is-mb">Изменение применится ко всем устройствам модели. Отдельному устройству шаг можно включить или выключить в его карточке.</span>
+        {% for f in flag_rows %}
+          <div class="st-switch-row">
+            <span class="st-switch-text">
+              <span class="st-switch-title" :class="{ 'is-off': !capable('{{ f.key }}') }">{{ f.title }} <span class="st-switch-key">{{ f.key }}</span></span>
+              <span class="st-switch-note" :class="{ 'is-hidden': !capable('{{ f.key }}') }">{{ f.note }}</span>
+              <span class="st-switch-note is-warn is-hidden" :class="{ 'is-hidden': capable('{{ f.key }}') }">Парсер <span class="mono" x-text="parser"></span> этого не умеет</span>
+            </span>
+            <label class="st-switch" title="{{ f.title }}">
+              <input type="checkbox" role="switch" name="{{ f.key }}" value="1" x-model="flags['{{ f.key }}']" :disabled="!capable('{{ f.key }}')"{% if f.on %} checked{% endif %} aria-label="{{ f.title }}" data-label="{{ f.title }}">
+              <span class="st-switch-track" aria-hidden="true"></span>
+            </label>
+          </div>
+        {% endfor %}
+      </section>
+
+      {# ── Команды устройства (4a.5) ── #}
+      <section class="st-sec is-gap12">
+        <div>
+          <span class="st-sec-title">Команды устройства</span>
+          <div class="st-sec-desc">Выполняются по SSH на боевом оборудовании. Пустое поле — шаг для этой модели не выполняется.</div>
+        </div>
+        <div class="st-grid2 is-cmds" :class="{ 'is-hidden': isSnmp() }">
+          {% for c in commands %}
+            <label class="st-field">
+              <span class="st-label">{{ c.label }}</span>
+              <input class="st-input is-mono is-36" name="{{ c.key }}" value="{{ c.value }}" placeholder="не используется" autocomplete="off" spellcheck="false" data-label="{{ c.label }}">
+            </label>
+          {% endfor %}
+        </div>
+        <div class="st-snmp-note is-hidden" :class="{ 'is-hidden': !isSnmp() }">Опрашивается по SNMP — команды не нужны.</div>
+      </section>
+
+      {# ── Дополнительно (4a.6) ── #}
+      <section class="st-sec is-flush">
+        <button type="button" class="st-adv-head" @click="adv = !adv" :aria-expanded="adv ? 'true' : 'false'" aria-expanded="false">
+          <span><span class="st-adv-title">Дополнительно</span><span class="st-adv-sub">кластер, команды политики доступа, алгоритмы SSH</span></span>
+          <svg class="st-adv-chev" :class="{ 'is-open': adv }" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="st-adv-body is-hidden" :class="{ 'is-hidden': !adv }">
+          <div class="st-grid2">
+            <label class="st-field">
+              <span class="st-label">Кластер</span>
+              <span class="st-select">
+                <select class="st-input is-36" name="cluster" data-label="Кластер">
+                  {% for mode in cluster_modes %}
+                    <option value="{{ mode }}"{% if mode == cfg.cluster|default:'' %} selected{% endif %}>{% if mode %}{{ mode }}{% else %}нет{% endif %}</option>
+                  {% endfor %}
+                </select>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>
+              </span>
+              <span class="st-hint">vipnet_failover — для кластеров ViPNet xFW/HW</span>
+            </label>
+            <div class="st-switch-tile" style="align-self:start; margin-top:22px">
+              <span class="st-switch-text">
+                <span class="st-switch-title">Устаревшие алгоритмы SSH</span>
+                <span class="st-switch-note">для старых прошивок</span>
+              </span>
+              <label class="st-switch" title="Устаревшие алгоритмы SSH">
+                <input type="checkbox" role="switch" name="legacy_crypto" value="1"{% if legacy_crypto %} checked{% endif %} aria-label="Устаревшие алгоритмы SSH" data-label="Устаревшие алгоритмы SSH">
+                <span class="st-switch-track" aria-hidden="true"></span>
+              </label>
+            </div>
+          </div>
+          <label class="st-field">
+            <span class="st-label">Команды политики доступа (JSON)</span>
+            <textarea class="st-input" name="policy_commands" rows="3" spellcheck="false" placeholder='{"firewall_rules": "firewall rules show"}' data-label="Команды политики доступа">{{ policy_commands }}</textarea>
+            <span class="st-hint">Для ViPNet xFW/HW, у которых правила не входят в конфигурацию. Результат увидит раздел ACL</span>
+          </label>
+          <div class="st-grid2 is-cmds">
+            {% for key, label, value in list_fields %}
+              <label class="st-field">
+                <span class="st-label">{{ label }}</span>
+                <input class="st-input is-mono is-36" name="{{ key }}" value="{{ value }}" placeholder="по умолчанию клиента" autocomplete="off" spellcheck="false" data-label="{{ label }}">
+              </label>
+            {% endfor %}
+          </div>
+          <span class="st-hint">Алгоритмы — через запятую; заполняют для старых прошивок.</span>
+        </div>
+      </section>
+    </div>
+
+    {# ── Правая липкая колонка (4a.7) ── #}
+    <aside class="st-card-aside">
+      <section class="st-side-card is-apply">
+        {% if members %}
+          <span class="st-side-title is-13">Применится к {{ members|length }} {{ members|length|plural:"устройству,устройствам,устройствам" }}</span>
+          <div class="st-side-list">
+            {% for m in members %}
+              <span class="st-side-li"><a class="mono" href="{% url 'ip_plan:settings_device_edit' m.name %}" style="color:var(--text)">{{ m.name }}</a><span>{{ m.site_label }}</span></span>
+            {% endfor %}
+          </div>
+          <template x-for="note in notes" :key="note"><span class="st-side-note" x-text="note"></span></template>
+          <span class="st-side-note" :class="{ 'is-hidden': notes.length > 0 }">Флаг, изменённый здесь, применится ко всем устройствам модели: личные значения будут сняты.</span>
+        {% else %}
+          <span class="st-side-title is-13">Применится к устройствам</span>
+          <span class="st-side-note">Модель пока не используется.</span>
+        {% endif %}
+      </section>
+      <section class="st-side-card is-changes">
+        <span class="st-side-title is-13">Изменения</span>
+        <template x-for="c in changes" :key="c"><span class="st-side-text" x-text="'• ' + c"></span></template>
+        <span class="st-side-text is-faint" :class="{ 'is-hidden': changes.length > 0 }">Пока ничего не изменено</span>
+      </section>
+    </aside>
+  </div>
+
+  {# ── Нижняя панель (4a.8) ── #}
+  <div class="st-bar">
+    {% if name and not members %}
+      <button type="submit" form="st-model-delete" class="st-btn st-btn-ghost is-danger">Удалить модель</button>
+    {% endif %}
+    <div class="st-bar-right">
+      <a class="st-btn st-btn-ghost" href="{% url 'ip_plan:settings_tab' 'models' %}">Отмена</a>
+      {% if test_target %}
+        <button type="submit" class="st-btn st-btn-outline is-36" name="then_test" value="{{ test_target }}"
+                title="Сохранить и сразу запустить проверку подключения на {{ test_target }}">Сохранить и проверить на {{ test_target }}</button>
+      {% endif %}
+      <button type="submit" class="st-btn st-btn-primary is-md">Сохранить</button>
+    </div>
+  </div>
+</form>
+</div>
+
+{% if name and not members %}
+  <form id="st-model-delete" hidden
+        hx-post="{% url 'ip_plan:settings_type_delete' name %}" hx-target="#modal-content"
+        hx-confirm="Удалить модель «{{ name }}»?"
+        hx-on::after-request="if (event.detail.xhr.status >= 400) { Alpine.store('modal').dirty = false; window.dispatchEvent(new CustomEvent('open-modal')); }">
+    {% csrf_token %}
+    <input type="hidden" name="file_hash" value="{{ file_hash }}">
+  </form>
+{% endif %}
+{% endblock %}

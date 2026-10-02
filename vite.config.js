@@ -24,6 +24,7 @@ export default defineConfig(({ command }) => ({
       input: {
         ip_table: 'ip_plan/static_src/ip_table/main.jsx',
         regulator_table: 'ip_plan/static_src/regulator_table/main.jsx',
+        topo_map: 'ip_plan/static_src/topo_map/main.jsx',
       },
     },
   },

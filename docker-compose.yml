@@ -51,6 +51,8 @@ services:
       - ${NETBOX_SYNC_DIR:-../netbox-sync}/config_backups:/app/config_backups:ro
       - ${NETBOX_SYNC_DIR:-../netbox-sync}/sync_logs:/app/sync_logs:ro
       - ${NETBOX_SYNC_DIR:-../netbox-sync}/firewall_blocklists:/app/firewall_blocklists:ro
+      # Карта сети: сводка прогона топологии (topology.json, unconfirmed_cables.json).
+      - ${NETBOX_SYNC_DIR:-../netbox-sync}/lldp_snapshots:/app/lldp_snapshots:ro
       # Единственный mount из netbox-sync, открытый НА ЗАПИСЬ: раздел
       # "Настройки" правит conf/devices.json, conf/config.json и оба
       # conf/sources_*.json (см. ip_plan/services/sync_config.py). Именно
@@ -59,6 +61,37 @@ services:
       # деплоит GitLab CI. Отдельные файлы монтировать нельзя: запись идёт
       # через tmp+rename, а на bind-mount'е файла rename ломается.
       - ${NETBOX_SYNC_DIR:-../netbox-sync}/conf:/app/netbox_sync_conf
+
+  # --- Шлюз удалённого доступа (Apache Guacamole): SSH / RDP / VNC в браузере ---
+  # Оба сервиса — в профиле "gateway": обычный `docker compose up -d` (в том
+  # числе деплой из .gitlab-ci.yml) их НЕ поднимает. Включить —
+  # COMPOSE_PROFILES=gateway в .env либо `docker compose --profile gateway up -d`.
+  # Без ключа GUACAMOLE_JSON_SECRET_KEY пунктов «в браузере» в меню строки нет,
+  # приложение работает как раньше (см. ip_plan/services/remote_gateway.py).
+  #
+  # guacd сам говорит с хостами по SSH/RDP/VNC — наружу не публикуется.
+  guacd:
+    image: guacamole/guacd:1.6.0
+    profiles: ["gateway"]
+    restart: unless-stopped
+
+  # Веб-клиент с расширением auth-json, БЕЗ базы данных: пользователей и
+  # соединений в Guacamole нет, каждое соединение приходит в подписанном
+  # токене от ip_plan. Порт слушает только loopback: локально вкладка
+  # открывается на http://localhost:8091/guacamole, на проде сюда проксирует
+  # nginx хоста (location /guac/, нужен WebSocket upgrade).
+  guacamole:
+    image: guacamole/guacamole:1.6.0
+    profiles: ["gateway"]
+    depends_on:
+      - guacd
+    environment:
+      GUACD_HOSTNAME: guacd
+      JSON_ENABLED: "true"
+      JSON_SECRET_KEY: ${GUACAMOLE_JSON_SECRET_KEY:-}
+    ports:
+      - "127.0.0.1:8091:8080"
+    restart: unless-stopped
 
 volumes:
   sqlite_data:

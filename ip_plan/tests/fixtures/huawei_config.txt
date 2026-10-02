@@ -1,0 +1,87 @@
+screen-length 0 temporary
+Info: The configuration takes effect on the current user terminal interface only.
+<lab-hw-sw01>display current-configuration
+!Software Version V100R005C50
+!Last configuration was updated at 2026-01-01 10:00:00+03:00 by lab
+#
+sysname lab-hw-sw01
+#
+vlan 100
+ name servers
+#
+acl number 2001
+ description NMS hosts
+ rule 5 permit source 10.200.1.10 0
+ rule 10 permit source 10.200.1.0 0.0.0.255
+ rule 15 deny
+#
+acl number 2500
+ rule 5 permit source 192.0.2.0 0.0.0.255
+#
+acl number 2600
+ rule 5 permit source 10.200.6.0 0.0.0.255
+#
+acl number 3001
+ step 5
+ rule 5 permit tcp source 10.200.2.0 0.0.0.255 destination 192.0.2.10 0 destination-port eq 22
+ rule 10 permit udp source any destination 192.0.2.53 0 destination-port range 53 54
+ rule 15 deny ip source 10.200.3.0 0.0.0.255 destination any logging
+ rule 20 permit icmp source any destination any icmp-type echo
+#
+acl name MGMT-IN basic
+ rule 5 permit source 10.200.9.1 0 time-range WORK
+ rule 10 deny
+#
+acl name VTY-ACL 2998
+ rule 5 permit source 10.200.9.0 0.0.0.255
+ rule 10 name lab-host permit source 10.200.9.77 0
+#
+acl number 4001
+ rule 5 permit l2-protocol arp
+#
+acl ipv6 number 2001
+ rule 5 permit source 2001:DB8::/64
+#
+traffic classifier C-BLOCK operator or
+ if-match acl 3001
+#
+traffic behavior B-DENY
+ deny
+#
+traffic policy P-EDGE
+ classifier C-BLOCK behavior B-DENY
+#
+interface Vlanif100
+ ip address 10.200.100.1 255.255.255.0
+ traffic-filter inbound acl name MGMT-IN
+#
+interface 10GE1/0/1
+ description uplink
+ traffic-policy P-EDGE inbound
+ traffic-filter outbound ipv6 acl 2001
+#
+interface GigabitEthernet0/0/1
+ nat outbound 2600
+#
+interface NULL0
+#
+snmp-agent
+snmp-agent local-engineid 800007DB03000000000001
+snmp-agent community read cipher %^%#LOOKS-LIKE-A-SECRET-STRING-DO-NOT-SHOW%^%# mib-view iso-view acl 2001
+snmp-agent community write cipher %^%#ANOTHER-SECRET-STRING%^%# acl name MGMT-IN
+snmp-agent group v3 admins privacy acl 2001
+snmp-agent usm-user v3 nmsuser group admins acl 2001
+#
+ssh server acl 2001
+#
+user-interface con 0
+ authentication-mode password
+#
+user-interface vty 0 4
+ authentication-mode aaa
+ user privilege level 15
+ acl name VTY-ACL inbound
+ protocol inbound ssh
+#
+return
+<lab-hw-sw01>

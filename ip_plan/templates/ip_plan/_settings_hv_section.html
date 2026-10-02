@@ -1,0 +1,74 @@
+{% comment %}
+  Секция одного типа источников гипервизоров. Параметры include: kind,
+  rows [(index, source, test)], hash, last, title, file, desc.
+  Индекс — из кортежа, а не forloop: по нему адресуют источник формы
+  правки и удаления. «Последний сбор» — строкой под описанием, а не
+  колонкой: синк пишет итог на шаг (RedVirt / vCenter), не на источник.
+{% endcomment %}
+<section style="display:flex; flex-direction:column; gap:10px">
+  <div class="st-sec-head" style="align-items:center">
+    <div>
+      <span class="st-sub-title">{{ title }}</span><span class="st-sub-file">{{ file }}</span>
+      <div class="st-sub-desc">{{ desc }}</div>
+      <div class="st-sub-desc" style="margin-top:2px">
+        {% if last %}
+          Последний сбор:
+          {% if last.when %}{{ last.when }} · {% endif %}<span{% if last.status == "fail" or last.status == "timeout" %} style="color:var(--danger-t)"{% elif last.status == "ok" %} style="color:var(--ok-t)"{% endif %}>{{ last.status_label|lower }}</span>{% if last.duration %} · {{ last.duration }}{% endif %}
+        {% else %}
+          <span style="color:var(--faint)">Последний сбор: в логе прогона данных нет</span>
+        {% endif %}
+      </div>
+    </div>
+    <button type="button" class="st-btn st-btn-outline is-32"
+            hx-get="{% url 'ip_plan:settings_source_add' kind %}"
+            hx-target="#modal-content" hx-indicator="#modal-spinner"
+            @click="$store.modal.dirty = false; $dispatch('open-modal')">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+      Добавить источник
+    </button>
+  </div>
+  <div class="st-tbl">
+    <div class="st-tbl-in st-cols-hv-in">
+      <div class="st-thead st-cols-hv">
+        <span class="st-cell is-first">Источник</span><span class="st-cell" style="padding-left:0">Адрес API</span><span class="st-cell">Проверка</span><span></span>
+      </div>
+      {% for i, s, test in rows %}
+        <div class="st-tr st-cols-hv is-hover{% if forloop.counter|divisibleby:2 %} is-even{% endif %}">
+          <span class="st-cell is-first is-flex">
+            <span style="font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis">{{ s.name|default:"без имени" }}</span>
+            <span class="st-site" title="{{ s.site|default:'mdc' }}">{{ s.site_label }}</span>
+          </span>
+          <span style="min-width:0; display:flex; flex-direction:column; padding-right:12px">
+            <span class="mono" style="font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" title="{{ s.url }}">{{ s.url }}</span>
+            <span style="font-size:12px; color:var(--faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap">пользователь {{ s.user|default:"—" }}</span>
+          </span>
+          <span class="st-cell">
+            {% include "ip_plan/_settings_test_button.html" with kind=kind key=s.name|default:s.url test=test %}
+          </span>
+          <span class="st-rowmenu" x-data="stMenu()" @click.outside="close()" @keydown.escape.window="close()">
+            <button type="button" class="st-more" :class="{ 'is-open': open }" @click="toggle($el)"
+                    aria-haspopup="menu" :aria-expanded="open ? 'true' : 'false'" aria-label="Действия">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+            </button>
+            <div class="st-menu" role="menu" x-ref="menu" :class="{ 'is-open': open }" :style="pos">
+              <button type="button" class="st-menu-item" role="menuitem"
+                      hx-get="{% url 'ip_plan:settings_source_edit' kind i %}"
+                      hx-target="#modal-content" hx-indicator="#modal-spinner"
+                      @click="close(); $store.modal.dirty = false; $dispatch('open-modal')">Изменить</button>
+              <div class="st-menu-sep"></div>
+              <form hx-post="{% url 'ip_plan:settings_source_delete' kind i %}" hx-target="#modal-content"
+                    hx-confirm="Убрать источник «{{ s.name }}»? Машины этого кластера останутся в NetBox — они просто перестанут обновляться."
+                    hx-on::after-request="if (event.detail.xhr.status >= 400) { Alpine.store('modal').dirty = false; window.dispatchEvent(new CustomEvent('open-modal')); }">
+                {% csrf_token %}
+                <input type="hidden" name="file_hash" value="{{ hash }}">
+                <button type="submit" class="st-menu-item is-danger" role="menuitem" @click="close()">Удалить</button>
+              </form>
+            </div>
+          </span>
+        </div>
+      {% empty %}
+        <div class="st-empty">Источников пока нет</div>
+      {% endfor %}
+    </div>
+  </div>
+</section>

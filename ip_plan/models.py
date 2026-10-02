@@ -345,3 +345,29 @@ class ConnectionTest(models.Model):
         if not self.finished_at:
             return None
         return (self.finished_at - self.started_at).total_seconds()
+
+
+class MapLayout(models.Model):
+    """Раскладка карты сети одного пользователя: свободно перетащенные
+    позиции узлов на площадке и слое. У каждого своя — общая раскладка
+    мешала бы двоим, разбирающим разные участки сети."""
+
+    user = models.ForeignKey("auth.User", on_delete=models.CASCADE, related_name="map_layouts")
+    site = models.CharField("Площадка", max_length=100)          # slug или "*" (все площадки)
+    layer = models.CharField("Слой", max_length=20, default="l2")
+    # {"<node_id>": [x, y], ...}; node_id — "d<device id>" или "g<группа>"
+    positions = models.JSONField("Позиции", default=dict, blank=True)
+    # группы, развёрнутые пользователем: ["g…", …]
+    expanded = models.JSONField("Развёрнутые группы", default=list, blank=True)
+    locked = models.BooleanField("Закреплено", default=False)
+    updated_at = models.DateTimeField("Изменено", auto_now=True)
+
+    class Meta:
+        verbose_name = "Раскладка карты"
+        verbose_name_plural = "Раскладки карты"
+        constraints = [
+            models.UniqueConstraint(fields=["user", "site", "layer"], name="uniq_map_layout"),
+        ]
+
+    def __str__(self):
+        return f"{self.user} · {self.site} · {self.layer}"

@@ -1,0 +1,128 @@
+{% extends "ip_plan/base.html" %}
+{% load static ip_plan_extras %}
+
+{% comment %}
+  Список правил одного ACL с подсветкой совпадений (SPEC-acl.md, раздел 4).
+  Контекст — listing, snapshot_summary (CONTRACT-acl.md).
+
+  Заголовок «ACL» рисует оболочка; крошка «/ SERVERS-IN» дописывается рядом с
+  ним через block head_extra, под шапкой — подпись устройства и применения.
+  Поиск в списке — GET-форма с q (считает сервер), а навигация по совпадениям
+  («1 из N», ↑↓, прокрутка и подсветка текущего), «Только совпадения» и
+  разворот свёрток «N правил без совпадений» — на клиенте (aclList в acl.js).
+  Прокручивается только тело списка (body_class shell-body-fixed).
+{% endcomment %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'ip_plan/css/acl.css' %}">
+{% endblock %}
+{% block extra_scripts %}
+  <script src="{% static 'ip_plan/js/acl.js' %}"></script>
+{% endblock %}
+
+{% block head_extra %}
+  {# ACL / устройство / раздел: устройство ведёт на главную с этим устройством в выборе #}
+  <span class="acl-crumb-slash" aria-hidden="true">/</span>
+  <a class="mono acl-crumb-dev" href="{{ listing.back_url }}" title="Все списки {{ listing.device }}{% if listing.model %} · {{ listing.model }}{% endif %}">{{ listing.device }}</a>
+  <span class="acl-crumb-slash" aria-hidden="true">/</span>
+  <span class="mono acl-crumb-name" title="{{ listing.acl_name }}{% if listing.purpose %} · {{ listing.purpose }}{% endif %}">{{ listing.acl_name }}</span>
+{% endblock %}
+
+{% block head_actions %}
+  <a class="shell-btn" href="{{ listing.back_url }}" title="Вернуться к выбору списков {{ listing.device }}">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg>
+    К выбору
+  </a>
+  <span class="acl-snapshot" title="Когда снята конфигурация устройства">{{ snapshot_summary.text }}</span>
+  {% if listing.history_url %}
+    <a class="shell-btn" href="{{ listing.history_url }}" title="Снимки конфигурации {{ listing.device }} и их сравнение">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></svg>
+      История
+    </a>
+  {% endif %}
+{% endblock %}
+
+{% block body_class %} shell-body-fixed{% endblock %}
+
+{% block content %}
+<div class="acl acl-list shell-island" x-data="aclList({{ listing.match_count|default:0 }})" :class="{ 'is-only': only, 'is-filtering': act !== 'all' || st !== 'all' }">
+
+  {% if listing.siblings %}
+    {# Секции ViPNet (Local / Forward / Tunnel / Vpn / NAT) — вкладками, как на старой карточке (siblings в acl_detail) #}
+    <div class="acl-q-tabs acl-list-tabs" role="tablist" aria-label="Секции списка">
+      {% for s in listing.siblings %}
+        <a class="acl-q-tab{% if s.active %} is-active{% endif %}" role="tab" aria-selected="{% if s.active %}true{% else %}false{% endif %}" href="{{ s.url }}">{{ s.type_label|default:s.acl_name }} <span class="mono acl-cat-count">{{ s.rule_count|ru_number }}</span></a>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="acl-ltool">
+    <form class="acl-ltool-form" method="get" action="">
+      <span class="acl-q-label">Поиск в списке</span>
+      <label class="acl-search acl-ltool-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+        <input type="search" name="q" class="acl-input mono acl-ltool-input" value="{{ listing.query }}" aria-label="Найти в списке"
+               @search="if (!$el.value.trim() && {{ listing.query|yesno:'true,false' }}) $el.form.requestSubmit()"
+               placeholder="Найти в списке: адрес, подсеть, порт" autocomplete="off" spellcheck="false">
+        <span class="acl-ltool-nav"{% if not listing.query %} hidden{% endif %}>
+          <span class="acl-ltool-counter"><span class="mono acl-ltool-cur" x-text="pos()">{% if listing.match_count %}1{% else %}0{% endif %}</span> из <span class="mono" x-text="visibleTotal()">{{ listing.match_count|ru_number }}</span></span>
+          <button type="button" class="ghost acl-ltool-arrow" aria-label="Предыдущее" @click="go(-1)" :disabled="total === 0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"></path></svg></button>
+          <button type="button" class="ghost acl-ltool-arrow" aria-label="Следующее" @click="go(1)" :disabled="total === 0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+        </span>
+      </label>
+    </form>
+    {% if listing.query %}
+      <label class="acl-check">
+        <input type="checkbox" x-model="only" @change="$nextTick(() => zebra())">
+        Только совпадения
+      </label>
+    {% endif %}
+  </div>
+  {% if listing.is_firewall %}
+  {# Фильтры по действию и состоянию (только ViPNet xFW/HW): чипы как на главной, считаются на клиенте #}
+  <div class="acl-lfilters" role="group" aria-label="Фильтры правил">
+    <span class="acl-lf-label">Действие</span>
+    <button type="button" class="acl-gchip" :class="{ 'is-on': act === 'all' }" :aria-pressed="act === 'all'" @click="setAct('all')">Все <span class="mono acl-gchip-n">{{ listing.rule_count|ru_number }}</span></button>
+    <button type="button" class="acl-gchip" :class="{ 'is-on': act === 'pass' }" :aria-pressed="act === 'pass'" @click="setAct('pass')"><span class="acl-lrow-dot is-permit" aria-hidden="true"></span>pass <span class="mono acl-gchip-n">{{ listing.action_counts.pass|ru_number }}</span></button>
+    <button type="button" class="acl-gchip" :class="{ 'is-on': act === 'drop' }" :aria-pressed="act === 'drop'" @click="setAct('drop')"><span class="acl-lrow-dot is-deny" aria-hidden="true"></span>drop <span class="mono acl-gchip-n">{{ listing.action_counts.drop|ru_number }}</span></button>
+    {% if listing.action_counts.nat %}<button type="button" class="acl-gchip" :class="{ 'is-on': act === 'nat' }" :aria-pressed="act === 'nat'" @click="setAct('nat')">NAT <span class="mono acl-gchip-n">{{ listing.action_counts.nat|ru_number }}</span></button>{% endif %}
+    <span class="acl-lf-sep" aria-hidden="true"></span>
+    <span class="acl-lf-label">Состояние</span>
+    <button type="button" class="acl-gchip" :class="{ 'is-on': st === 'all' }" :aria-pressed="st === 'all'" @click="setSt('all')">Все</button>
+    <button type="button" class="acl-gchip" :class="{ 'is-on': st === 'on' }" :aria-pressed="st === 'on'" @click="setSt('on')">включено <span class="mono acl-gchip-n">{{ listing.state_counts.on|ru_number }}</span></button>
+    <button type="button" class="acl-gchip" :class="{ 'is-on': st === 'off' }" :aria-pressed="st === 'off'" @click="setSt('off')">выключено <span class="mono acl-gchip-n">{{ listing.state_counts.off|ru_number }}</span></button>
+    <span class="acl-lf-shown" :class="{ 'is-hidden': act === 'all' && st === 'all' }">показано <span class="mono" x-text="shownCount()"></span> из {{ listing.rule_count|ru_number }}</span>
+  </div>
+  {% endif %}
+
+  <div class="acl-list-head" role="row">
+    <span class="acl-right">№</span><span>Действие</span><span>Правило</span><span>Совпадение</span>
+  </div>
+  <div class="acl-list-body" x-ref="body">
+    {% for row in listing.rows %}
+      {% if row.type == 'collapsed' %}
+        <div class="acl-gap" x-data="{ gapOpen: false }">
+          <button type="button" class="acl-gap-head" @click="gapOpen = !gapOpen; $nextTick(() => zebra())" :aria-expanded="gapOpen ? 'true' : 'false'">
+            <span class="acl-gap-text">{{ row.count_text|default:row.count }}</span>
+            <span class="acl-gap-hint" x-text="gapOpen ? 'свернуть' : 'показать'">показать</span>
+          </button>
+          <div class="acl-gap-rows" :class="{ 'is-open': gapOpen }">
+            {% for sub in row.rows %}
+              {% include "ip_plan/_acl_list_row.html" with row=sub %}
+            {% endfor %}
+          </div>
+        </div>
+      {% else %}
+        {% include "ip_plan/_acl_list_row.html" with row=row %}
+      {% endif %}
+    {% empty %}
+      <div class="acl-empty">В снимке нет правил этого списка</div>
+    {% endfor %}
+  </div>
+
+  <div class="acl-list-foot">
+    <span :class="{ 'is-hidden': only }">Все {{ listing.rule_count|ru_number }} {{ listing.rule_count|plural:"правило,правила,правил" }} в порядке конфига{% if listing.query %} · совпадения подсвечены{% endif %}</span>
+    <span class="is-hidden" :class="{ 'is-hidden': !only }">{{ listing.match_count|ru_number }} {{ listing.match_count|plural:"совпадение,совпадения,совпадений" }} из {{ listing.rule_count|ru_number }} {{ listing.rule_count|plural:"правила,правил,правил" }}</span>
+  </div>
+</div>
+{% endblock %}

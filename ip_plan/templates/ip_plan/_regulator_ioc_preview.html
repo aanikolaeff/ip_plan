@@ -1,93 +1,128 @@
+{% load ip_plan_extras %}
+{% comment %}
+  Экран «Проверьте, что распознано» (SPEC-reg.md, раздел 3; макет
+  RegDocPreview) — ответ regulator_document_ioc_parse. Контекст —
+  CONTRACT-reg.md: document, error?, errors? (построчные ошибки сохранения),
+  warnings, stamp_values, kind_choices, summary {found, dups, elsewhere,
+  selected, files}, rows [{entry_kind, value, value_defanged, occurrences,
+  source_files, needs_review, note, dup_here, other_letters, selected}], oob.
+
+  Что держать неизменным (на этом построен бэкенд):
+  - корень — #ioc-preview-panel; с oob=True — hx-swap-oob (так
+    regulator_document_ioc_save после сохранения присылает rows=[] и чистит
+    экран, а при ошибках — возвращает те же строки с errors);
+  - форма #ioc-save-form, поля ioc_kind / ioc_value — параллельные массивы
+    в порядке DOM (в каждой строке сначала select, потом input), stamp_value —
+    номер письма из штампа, уходит в примечание.
+  Строка без галочки получает disabled на своих полях — в POST не попадает
+  (regPreview в reg.js); дубли в этом письме сняты по умолчанию, совпадения
+  с другими письмами подсвечены и взяты. Ответ на ошибку построчной проверки
+  приходит без summary/dup_here — тогда все строки считаются выбранными.
+{% endcomment %}
 <div id="ioc-preview-panel"{% if oob %} hx-swap-oob="true"{% endif %}>
-  {% if error %}
-    <p class="quick-add-error">{{ error }}</p>
-  {% endif %}
-  {% if warnings %}
-    <ul class="csv-error-list ioc-warning-list">
-      {% for w in warnings %}<li>⚠ {{ w }}</li>{% endfor %}
-    </ul>
-  {% endif %}
-  {% if errors %}
-    <ul class="csv-error-list">
-      {% for err in errors %}<li>{{ err }}</li>{% endfor %}
-    </ul>
-  {% endif %}
-
   {% if rows or stamp_values %}
-    <!-- id нужен кнопке "Сохранить в письмо" в regulator_document_detail.html
-         (form="ioc-save-form") — она физически не внутри этого <form>,
-         привязана к нему только через form-атрибут (валидно по
-         HTML-спеке), а видима только пока эта форма есть в DOM (см.
-         #ioc-save-button в style.css, :has()). -->
-    <form id="ioc-save-form"
-          hx-post="{% url 'ip_plan:regulator_document_ioc_save' document.id %}"
-          hx-target="#ioc-preview-panel" hx-swap="none" hx-indicator="#regulator-busy-overlay"
-          class="ioc-preview-form">
-      {% csrf_token %}
+    <div class="reg-pv" x-data="regPreview({{ rows|length|default:0 }})">
+      <form id="ioc-save-form" class="reg-pv-form"
+            hx-post="{% url 'ip_plan:regulator_document_ioc_save' document.id %}" hx-swap="none"
+            @change="onChange($event)">
+        {% csrf_token %}
 
-      {% if stamp_values %}
-        <!-- Дата/номер, распознанные OCR'ом в шапке PDF (см.
-             ioc_parser.extract_letter_header_stamp) — ПОЛЯ, не статичный
-             текст: сам оператор видит их до сохранения и может поправить
-             или стереть (пустое поле = не попадёт в примечание), т.к. OCR
-             по стилизованному шрифту бланка не эталонный. При сохранении
-             (regulator_document_ioc_save) непустые значения уходят в
-             document.note через запятую. -->
-        <div class="ioc-stamp-block">
-          <div class="ioc-stamp-title">Обнаруженные номера писем — записываем в примечание к письму</div>
-          {% for v in stamp_values %}
-            <input type="text" name="stamp_value" class="field-control ip-mono ioc-stamp-input" value="{{ v }}">
-          {% endfor %}
-        </div>
-      {% endif %}
-
-      {% if rows %}
-        <div class="table-wrapper ioc-preview-table-wrap">
-          <!-- .ip-table-scroll — тот же скролл-контейнер (max-height +
-               overflow-y:auto), что у таблицы записей письма после
-               сохранения (static_src/regulator_table) — то же поведение
-               прокрутки до и после сохранения, не два разных. -->
-          <div class="ip-table-scroll">
-            <table class="table acl-table">
-              <thead>
-                <tr>
-                  <th>Тип</th>
-                  <th>Значение</th>
-                  <th>Как в тексте / где встречалось</th>
-                  <th></th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in rows %}
-                  <tr class="ioc-preview-row">
-                    <td>
-                      <select name="ioc_kind" class="field-control">
-                        {% for value, label in kind_choices %}
-                          <option value="{{ value }}" {% if value == row.entry_kind %}selected{% endif %}>{{ label }}</option>
-                        {% endfor %}
-                      </select>
-                    </td>
-                    <td><input type="text" name="ioc_value" class="field-control ip-mono" value="{{ row.value }}"></td>
-                    <td class="cell-muted">
-                      {% if row.value_defanged %}<div class="ip-mono">{{ row.value_defanged }}</div>{% endif %}
-                      {% if row.occurrences %}<div>{{ row.occurrences }}× · {{ row.source_files|join:", " }}</div>{% endif %}
-                    </td>
-                    <td>
-                      {% if row.needs_review %}
-                        <span class="badge-status" data-status="reserved" title="{{ row.note }}">проверить</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      <button type="button" class="btn-danger btn-sm" onclick="this.closest('tr').remove()">Убрать</button>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+        <div class="reg-pv-head">
+          <div class="reg-pv-titles">
+            <span class="reg-pv-title">Проверьте, что распознано</span>
+            <span class="reg-pv-meta">
+              {% if summary %}
+                {% with nf=summary.files|length %}
+                  {{ nf }} {{ nf|plural:"файл,файла,файлов" }}: {% for f in summary.files|slice:":4" %}<span class="mono">{{ f }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}{% if nf > 4 %} и ещё {{ nf|add:"-4" }}{% endif %}
+                {% endwith %}
+                · найдено <span class="mono">{{ summary.found|ru_number }}</span> {{ summary.found|plural:"значение,значения,значений" }}{% if summary.elsewhere %}, <span class="mono">{{ summary.elsewhere|ru_number }}</span> уже есть в других письмах{% endif %}{% if summary.dups %}, <span class="mono">{{ summary.dups|ru_number }}</span> уже есть в этом письме{% endif %}
+              {% else %}
+                Исправьте отмеченные строки и сохраните снова
+              {% endif %}
+            </span>
           </div>
+          <button type="button" class="ghost reg-pv-cancel" @click="cancel()">Отменить</button>
         </div>
-      {% endif %}
-    </form>
+
+        {% if errors or warnings %}
+          <div class="reg-pv-notes">
+            {% if errors %}
+              <div class="reg-alert is-danger" role="alert">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v4"></path><path d="M12 16h.01"></path></svg>
+                <span><b>Ничего не сохранено</b> — есть строки с ошибками:<ul>{% for err in errors %}<li>{{ err }}</li>{% endfor %}</ul></span>
+              </div>
+            {% endif %}
+            {% if warnings %}
+              <div class="reg-alert" role="status">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+                <span><ul>{% for w in warnings %}<li>{{ w }}</li>{% endfor %}</ul></span>
+              </div>
+            {% endif %}
+          </div>
+        {% endif %}
+
+        <div class="reg-pv-stamp">
+          <span class="reg-pv-stamp-label">Номер письма в тексте</span>
+          {% for v in stamp_values %}
+            <input type="text" name="stamp_value" class="reg-pv-stamp-input" value="{{ v }}" aria-label="Номер письма из штампа" @input="tick++">
+          {% empty %}
+            <input type="text" name="stamp_value" class="reg-pv-stamp-input" value="" placeholder="например 09.04.2026 № 240/92/2320" aria-label="Номер письма" @input="tick++">
+          {% endfor %}
+          <span class="reg-pv-stamp-hint">{% if stamp_values %}распознано по штампу — попадёт в примечание, можно поправить или стереть{% else %}штамп не найден — можно вписать вручную, попадёт в примечание{% endif %}</span>
+        </div>
+
+        {% if rows %}
+          <div class="reg-pv-thead" role="row">
+            <span class="reg-pv-check"><input type="checkbox" data-pick-all aria-label="Выбрать все" @change.stop="toggleAll($event)"></span>
+            <span class="cell">Тип</span><span class="cell">Значение</span><span class="cell">Как в тексте</span><span class="cell">Где встречается</span>
+          </div>
+          <div class="reg-pv-body">
+            {% for row in rows %}
+              <div class="reg-pv-row{% if row.dup_here %} is-dup{% elif row.other_letters %} is-elsewhere{% endif %}{% if forloop.counter0|divisibleby:2 %}{% else %}{% if not row.other_letters %} is-even{% endif %}{% endif %}">
+                <span class="reg-pv-check"><input type="checkbox" data-pick{% if not row.dup_here %} checked{% endif %} aria-label="Взять {{ row.value }}"></span>
+                <span class="cell">
+                  <select name="ioc_kind" class="reg-pv-kind" aria-label="Тип {{ row.value }}"{% if row.dup_here %} disabled{% endif %}>
+                    {% for value, label in kind_choices %}
+                      <option value="{{ value }}"{% if value == row.entry_kind %} selected{% endif %}>{% if value == 'fqdn' %}Домен{% elif value == 'hash' %}Хэш{% else %}{{ label }}{% endif %}</option>
+                    {% endfor %}
+                  </select>
+                </span>
+                <span class="cell"><input type="text" name="ioc_value" class="reg-pv-value" value="{{ row.value }}" aria-label="Значение" spellcheck="false" autocomplete="off" title="{{ row.value }}"{% if row.dup_here %} disabled{% endif %}></span>
+                <span class="cell mono reg-pv-raw" title="{{ row.value_defanged|default:'' }}">{{ row.value_defanged|default:"—" }}</span>
+                <span class="cell reg-pv-where{% if row.dup_here %} is-faint{% elif row.other_letters %} is-warn{% endif %}"
+                      title="{% if row.occurrences %}{{ row.occurrences }}× · {{ row.source_files|join:', ' }}{% endif %}{% if row.needs_review and row.note %} · {{ row.note }}{% endif %}">
+                  {% if row.needs_review %}<span class="reg-pv-flag" title="{{ row.note|default:'Проверьте значение — парсер не уверен' }}">проверить</span>{% endif %}
+                  {% if row.dup_here %}
+                    уже есть в этом письме
+                  {% elif row.other_letters %}
+                    уже есть в {{ row.other_letters|length|plural:"письме,письмах,письмах" }}
+                    {% for oid, oref in row.other_letters %}<a class="mono" href="{% url 'ip_plan:regulator_document_detail' oid %}" target="_blank" rel="noopener">{{ oref }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
+                  {% elif row.occurrences %}
+                    {{ row.occurrences }}× · {{ row.source_files|join:", " }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </span>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="reg-empty">Значений для блокировки в файлах не нашлось — можно сохранить только номер письма</div>
+        {% endif %}
+
+        <div class="reg-pv-foot">
+          <span class="reg-pv-count">
+            {% if rows %}Выбрано <b class="mono" x-text="num(selected)">{% if summary %}{{ summary.selected|ru_number }}{% else %}{{ rows|length|ru_number }}{% endif %}</b> из <span class="mono">{{ rows|length|ru_number }}</span>{% if summary.dups %} · дубликаты сняты автоматически{% endif %}{% else %}Только номер письма{% endif %}
+          </span>
+          <button type="submit" class="reg-btn-primary" :disabled="selected === 0 && !hasStamp()" x-text="saveLabel()">Сохранить в письмо</button>
+        </div>
+      </form>
+    </div>
+  {% elif error %}
+    <div class="reg-alert is-danger reg-pv-err" role="alert">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v4"></path><path d="M12 16h.01"></path></svg>
+      <span style="flex-grow: 1">{{ error }}</span>
+      <button type="button" class="reg-link-btn" onclick="this.closest('#ioc-preview-panel').innerHTML = ''">Закрыть</button>
+    </div>
   {% endif %}
 </div>

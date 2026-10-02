@@ -1,90 +1,103 @@
-<div class="set-panel">
-  <div class="set-panel-head">
+{% comment %}
+  «Оборудование» (SPEC §3). Контекст — CONTRACT-settings §2: devices,
+  device_count(_label), site_filter(_label), changed_devices,
+  changed_label, chip_legend, file_hash.
+
+  Список — эффективная картина (настройки модели + правки устройства), как
+  её читает синк; происхождение шага — цветом чипа (легенда под таблицей).
+  Площадка — из переключателя оболочки (cookie), поиск — клиентский по
+  d.search (имя, адрес, модель). Имя ведёт на карточку устройства
+  (settings_device.html), «⋯» — изменить / проверить / удалить.
+{% endcomment %}
+<div class="st-screen" x-data="stFilter({{ device_count }})">
+  <div class="st-screen-head">
     <div>
-      <h2 class="set-panel-title">Сетевое оборудование</h2>
-      <p class="set-panel-desc">
-        Адреса и учётные данные, по которым синхронизация ходит на устройства по SSH:
-        снимает интерфейсы и VLAN-ы, сохраняет конфигурации, читает списки блокировок.
-      </p>
+      <h2 class="st-h2">Оборудование</h2>
+      <p class="st-lead">Коммутаторы, маршрутизаторы и firewall, с которых синхронизация собирает данные. Хранится в <span class="mono">conf/devices.json</span>.</p>
     </div>
-    <div class="set-panel-actions">
-      <button type="button" class="btn-modal-primary"
-              hx-get="{% url 'ip_plan:settings_device_add' %}"
-              hx-target="#modal-content" hx-indicator="#modal-spinner"
-              @click="$store.modal.dirty = false; $dispatch('open-modal')">Добавить устройство</button>
+    <a class="st-btn st-btn-primary" href="{% url 'ip_plan:settings_device_add' %}">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+      Добавить устройство
+    </a>
+  </div>
+
+  {% if changed_devices %}
+    <div class="st-banner is-warn is-between">
+      <span title="{{ changed_devices|join:', ' }}">{{ changed_label }} — правки сохранены и попадут в NetBox при следующем прогоне</span>
+      <a class="st-btn st-btn-link" href="{% url 'ip_plan:settings_tab' 'sync' %}">Запуск и расписание →</a>
+    </div>
+  {% endif %}
+
+  <div class="st-toolbar">
+    <label class="st-search">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      <input type="search" aria-label="Найти устройство" placeholder="Имя, адрес или модель" x-model="q" @input="apply()" autocomplete="off">
+    </label>
+    <span class="st-count"><span class="mono" x-text="count">{{ device_count }}</span> <span x-text="plural(count, ['устройство', 'устройства', 'устройств'])">{{ device_count_label }}</span> · {% if site_filter %}площадка {{ site_filter_label }}{% else %}все площадки{% endif %}</span>
+  </div>
+
+  <div class="st-tbl">
+    <div class="st-tbl-in st-cols-dev-in">
+      <div class="st-thead st-cols-dev">
+        <span class="st-cell is-first">Устройство</span><span class="st-cell">Подключение</span><span class="st-cell">Модель</span><span class="st-cell" style="padding-left:0">Что собираем</span><span class="st-cell">Проверка</span><span></span>
+      </div>
+      {% for d in devices %}
+        <div class="st-tr st-cols-dev is-hover{% if forloop.counter|divisibleby:2 %} is-even{% endif %}" data-search="{{ d.search }}">
+          <span class="st-namecell">
+            <a class="st-namecell-name mono" href="{% url 'ip_plan:settings_device_edit' d.name %}" title="Изменить {{ d.name }}">{{ d.name }}</a>
+            <span class="st-namecell-sub" title="{{ d.subtitle }}">{{ d.subtitle }}</span>
+          </span>
+          <span class="st-cell mono" style="font-size:12.5px; color:var(--muted)" title="{{ d.connection }}{% if d.cfg.mgmt_ip %} · в NetBox {{ d.cfg.mgmt_ip }}{% endif %}">{{ d.connection }}</span>
+          <span class="st-cell" style="font-size:12.5px" title="{{ d.model }}">{{ d.model }}</span>
+          <span class="st-flags">
+            {% for chip in d.chips %}
+              <span class="st-flag is-{{ chip.kind }}" title="{{ chip.title }}">{{ chip.label }}</span>
+            {% empty %}
+              <span class="st-flags-none">ничего</span>
+            {% endfor %}
+          </span>
+          <span class="st-cell" id="st-test-{{ forloop.counter }}">
+            {% if d.testable %}
+              {% include "ip_plan/_settings_test_button.html" with kind="device" key=d.name test=d.test %}
+            {% else %}
+              <span class="st-test"><span class="st-check is-none" title="{% if d.cfg.cluster_peer_of %}Инвентарная запись резервной платформы — подключения нет{% else %}Адрес не задан — проверять нечего{% endif %}">–</span></span>
+            {% endif %}
+          </span>
+          <span class="st-rowmenu" x-data="stMenu()" @click.outside="close()" @keydown.escape.window="close()">
+            <button type="button" class="st-more" :class="{ 'is-open': open }" @click="toggle($el)"
+                    aria-haspopup="menu" :aria-expanded="open ? 'true' : 'false'" aria-label="Изменить {{ d.name }}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+            </button>
+            <div class="st-menu" role="menu" x-ref="menu" :class="{ 'is-open': open }" :style="pos">
+              <a class="st-menu-item" role="menuitem" href="{% url 'ip_plan:settings_device_edit' d.name %}">Изменить</a>
+              {% if d.testable %}
+                <button type="button" class="st-menu-item" role="menuitem" @click="close()"
+                        hx-post="{% url 'ip_plan:settings_test_start' 'device' d.name %}"
+                        hx-target="#st-test-{{ forloop.counter }} > .test-cell" hx-swap="outerHTML">Проверить подключение</button>
+              {% endif %}
+              <div class="st-menu-sep"></div>
+              <form hx-post="{% url 'ip_plan:settings_device_delete' d.name %}" hx-target="#modal-content"
+                    hx-confirm="Убрать «{{ d.name }}» из синхронизации? Объекты, уже заведённые в NetBox, останутся — они просто перестанут обновляться."
+                    hx-on::after-request="if (event.detail.xhr.status >= 400) { Alpine.store('modal').dirty = false; window.dispatchEvent(new CustomEvent('open-modal')); }">
+                {% csrf_token %}
+                <input type="hidden" name="file_hash" value="{{ file_hash }}">
+                <button type="submit" class="st-menu-item is-danger" role="menuitem" @click="close()">Удалить</button>
+              </form>
+            </div>
+          </span>
+        </div>
+      {% empty %}
+        <div class="st-empty">
+          {% if site_filter %}На площадке {{ site_filter_label }} устройств нет — выберите другую площадку в меню слева.{% else %}Устройств нет. Добавьте первое — синхронизация начнёт ходить на него со следующего прогона.{% endif %}
+        </div>
+      {% endfor %}
     </div>
   </div>
 
-  <div class="set-panel-body set-panel-body-flush">
-    <table class="set-table">
-      <thead>
-        <tr>
-          <th>Устройство</th><th>Подключение</th><th>Модель</th>
-          <th>Синхронизируется</th><th>Проверка</th><th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for d in devices %}
-          <tr>
-            <td>
-              <span class="set-name">{{ d.name }}</span>
-              <span class="set-sub">{{ d.cfg.site|default:"без площадки" }} · {{ d.cfg.status|default:"active" }}</span>
-            </td>
-            <td class="set-mono">
-              {{ d.cfg.host }}{% if d.cfg.port and d.cfg.port != 22 %}:{{ d.cfg.port }}{% endif %}
-              {% if d.cfg.mgmt_ip %}<span class="set-sub">в NetBox: {{ d.cfg.mgmt_ip }}</span>{% endif %}
-              <span class="set-sub">логин: {{ d.cfg.username|default:"—" }}</span>
-            </td>
-            <td>{{ d.cfg.model }}</td>
-            <td>
-              {% comment %}
-                Шаги показываем эффективные (настройки модели + правки
-                устройства) — синк читает их так же. Откуда шаг включён,
-                сказано цветом чипа и подсказкой на наведении: серый — задан и
-                у модели, и здесь; голубой — унаследован от модели; оранжевый —
-                включён здесь вопреки выключенному у модели.
-              {% endcomment %}
-              <div class="set-chips">
-                {% for chip in d.chips %}
-                  <span class="set-chip set-chip-flag set-chip-{{ chip.kind }}" title="{{ chip.title }}">{{ chip.label }}</span>
-                {% empty %}
-                  <span class="set-muted">ничего</span>
-                {% endfor %}
-              </div>
-              {% comment %}
-                Шаг, включённый у модели, но снятый на этом устройстве: без
-                этой строки чипа просто нет, и непонятно, выключено оно здесь
-                или не включено нигде.
-              {% endcomment %}
-              {% if d.off_here %}
-                <span class="set-sub">выключено здесь: {{ d.off_here|join:", " }}</span>
-              {% endif %}
-            </td>
-            <td>
-              {% include "ip_plan/_settings_test_button.html" with kind="device" key=d.name test=d.test %}
-            </td>
-            <td>
-              <div class="set-row-actions">
-                <button type="button" class="btn-modal-secondary btn-pill-sm"
-                        hx-get="{% url 'ip_plan:settings_device_edit' d.name %}"
-                        hx-target="#modal-content" hx-indicator="#modal-spinner"
-                        @click="$store.modal.dirty = false; $dispatch('open-modal')">Изменить</button>
-                <form hx-post="{% url 'ip_plan:settings_device_delete' d.name %}"
-                      hx-target="#modal-content"
-                      hx-confirm="Убрать «{{ d.name }}» из синхронизации? Объекты, уже заведённые в NetBox, останутся — они просто перестанут обновляться.">
-                  {% csrf_token %}
-                  <input type="hidden" name="file_hash" value="{{ file_hash }}">
-                  <button type="submit" class="btn-danger-quiet">Убрать</button>
-                </form>
-              </div>
-            </td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="6" class="set-empty">
-            Устройств нет. Добавьте первое — синхронизация начнёт ходить на него со следующего прогона.
-          </td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="st-legend">
+    <span><span class="st-legend-sq is-both"></span>задано у модели и устройства</span>
+    <span><span class="st-legend-sq is-model"></span>унаследовано от модели</span>
+    <span><span class="st-legend-sq is-dev"></span>включено только на устройстве</span>
+    <span><span class="st-legend-off">macs</span>выключено здесь</span>
   </div>
 </div>

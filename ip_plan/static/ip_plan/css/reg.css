@@ -1,0 +1,472 @@
+/* ══ Раздел «Блокировки» — новый дизайн по макету test_des (SPEC-reg.md) ══
+   Подключается только на страницах раздела (block extra_head) ВМЕСТЕ с
+   acl.css: корень у разметки общий с ACL (.acl — алиасы --text/--muted/
+   --faint/--surface, .cell, .mono, .is-hidden), оттуда же берутся вкладки
+   .acl-q-tab, чипы .acl-gchip и токены --warn-soft/--ok-t/--warn-t/--danger-t
+   для обеих тем. Здесь — только то, чего в ACL нет: шапка раздела, сводные
+   карточки, проверка значения, таблицы писем/записей/сверки, карточка
+   письма, экран «Проверьте, что распознано» и мастер команд.
+
+   Показ/скрытие — классами is-hidden / is-open (не x-show, см. CLAUDE.md,
+   «Оболочка»). Класс строки — свой (.reg-row), не .row из макета: .row занят
+   Bootstrap и ломает grid-раскладку. */
+
+/* ── Токены, которых нет в style.css / acl.css ───────────────────────────
+   Консольный блок команд (--console-*) — в style.css: те же токены у
+   журнала прогона в «Настройках». Плашки diff и проверки — с запасным
+   rgba перед color-mix. */
+:root {
+  --reg-ok-soft: rgba(16, 185, 129, .10);
+  --reg-ok-chip: rgba(16, 185, 129, .12);
+  --reg-danger-soft: rgba(229, 72, 77, .10);
+  --reg-info-soft: rgba(14, 165, 233, .10);
+  --reg-info-t: #0369a1;
+  --reg-track: rgba(0, 0, 0, .06);
+}
+:root[data-theme="dark"] {
+  --reg-ok-soft: rgba(52, 211, 153, .12);
+  --reg-ok-chip: rgba(52, 211, 153, .14);
+  --reg-danger-soft: rgba(255, 99, 105, .12);
+  --reg-info-soft: rgba(56, 189, 248, .12);
+  --reg-info-t: #7dd3fc;
+  --reg-track: rgba(255, 255, 255, .10);
+}
+
+/* ── Шапка оболочки (head_extra / head_actions) — вне .acl, поэтому на
+   именах токенов приложения (--text-main, --text-muted) ──────────────── */
+.reg-fw-badge {
+  height: 28px; display: inline-flex; align-items: center; gap: 7px; padding: 0 10px;
+  border-radius: 8px; background: var(--soft); font-size: 12.5px; color: var(--text-muted);
+  white-space: nowrap;
+}
+.reg-fw-badge .mono { font-family: var(--font-mono); font-variant-ligatures: none; color: var(--text-main); font-weight: 500; }
+.reg-fw-badge.is-warn { background: var(--warn-soft); color: var(--warn-t); }
+.reg-head-btn {
+  height: 36px; display: inline-flex; align-items: center; gap: 8px; padding: 0 14px;
+  border: 0; border-radius: 10px; background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--text-main); font: inherit; font-size: 13px; font-weight: 500;
+  text-decoration: none; white-space: nowrap; cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.reg-head-btn:hover { background: var(--hover); color: var(--text-main); text-decoration: none; }
+.reg-head-btn.is-quiet { box-shadow: none; color: var(--text-muted); height: 34px; padding: 0 12px; border-radius: 9px; }
+.reg-head-btn.is-quiet:hover { color: var(--text-main); }
+.reg-head-btn.is-icon { width: 34px; padding: 0; justify-content: center; }
+.reg-head-btn-primary {
+  height: 36px; display: inline-flex; align-items: center; gap: 8px; padding: 0 16px 0 12px;
+  border: 0; border-radius: 10px; background: var(--primary); color: var(--primary-text);
+  font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.reg-head-btn-primary:hover { filter: brightness(1.12); }
+.reg-head-btn-primary:disabled { opacity: .6; cursor: progress; }
+.reg-crumb-slash { color: var(--line-strong); font-size: 15px; margin-left: 2px; }
+.reg-crumb-title { font-size: 19px; line-height: 28px; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 36vw; }
+.reg-crumb-title.mono { font-family: var(--font-mono); font-variant-ligatures: none; }
+.reg-crumb-date { font-size: 14px; color: var(--text-muted); white-space: nowrap; }
+
+/* Меню «⋯» в шапке письма */
+.reg-menu-wrap { position: relative; }
+.reg-menu {
+  display: none; position: absolute; right: 0; top: 40px; z-index: 60; min-width: 240px;
+  flex-direction: column; padding: 6px; border-radius: 12px; background: var(--bg-surface);
+  box-shadow: var(--pop-shadow); font-size: 13px; color: var(--text-main);
+}
+.reg-menu.is-open { display: flex; }
+.reg-menu-item {
+  height: 34px; display: flex; align-items: center; gap: 9px; padding: 0 10px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--text-main);
+  font: inherit; font-size: 13px; text-align: left; cursor: pointer; white-space: nowrap;
+}
+.reg-menu-item:hover { background: var(--hover); text-decoration: none; color: var(--text-main); }
+.reg-menu .is-hidden, .reg-head-actions .is-hidden { display: none !important; }
+.reg-menu-item.is-danger { color: var(--danger-t); }
+.reg-menu-item:disabled { color: var(--text-faint); cursor: not-allowed; background: transparent; }
+.reg-menu-sep { height: 1px; margin: 4px 6px; background: var(--line); }
+.reg-menu-confirm { display: flex; flex-direction: column; gap: 10px; padding: 8px 8px 6px; white-space: normal; }
+.reg-menu-confirm-text { font-size: 12.5px; color: var(--text-muted); line-height: 18px; }
+.reg-menu-confirm-text b { color: var(--text-main); font-weight: 600; }
+.reg-menu-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.reg-mini-btn {
+  height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent;
+  color: var(--text-muted); font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer;
+}
+.reg-mini-btn:hover { background: var(--hover); color: var(--text-main); }
+.reg-mini-btn.is-primary { background: var(--primary); color: var(--primary-text); font-weight: 600; }
+.reg-mini-btn.is-primary:hover { filter: brightness(1.12); background: var(--primary); color: var(--primary-text); }
+.reg-mini-btn.is-danger { background: var(--danger); color: #fff; font-weight: 600; }
+.reg-mini-btn.is-danger:hover { filter: brightness(1.08); background: var(--danger); color: #fff; }
+.reg-mini-btn:disabled { opacity: .55; cursor: progress; }
+.reg-menu-input {
+  width: 100%; height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px;
+  background: var(--bg-surface); color: var(--text-main); font: inherit; font-size: 12.5px; outline: none;
+}
+.reg-menu-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.reg-menu-err { font-size: 12px; color: var(--danger-t); }
+
+/* ── Общие элементы ──────────────────────────────────────────────────── */
+.reg { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.reg .reg-num { font-family: var(--font-mono); font-variant-ligatures: none; }
+.reg-row { transition: background .12s ease; }
+.reg-row:hover { background: var(--softer); }
+.reg-row.is-even { background: var(--softer); }
+.reg-row.is-filtered, .reg-row.is-paged { display: none !important; }
+
+/* Пилюля типа записи: IP / Домен / URL / Хэш */
+.reg-kind { display: inline-block; padding: 1px 8px; border-radius: 6px; background: var(--soft); font-size: 11.5px; line-height: 18px; font-weight: 500; color: var(--muted); white-space: nowrap; }
+
+/* Статус записи «на xFW»: точка 6px + текст 12.5px (справочник SPEC §0) */
+.reg-fw { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); }
+.reg-fw-dot { width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: var(--ok); }
+.reg-fw.is-pending { color: var(--warn-t); }
+.reg-fw.is-pending .reg-fw-dot { background: var(--warn); }
+.reg-fw.is-revoked_present { color: var(--danger-t); }
+.reg-fw.is-revoked_present .reg-fw-dot { background: var(--danger); }
+.reg-fw.is-removed { color: var(--faint); }
+.reg-fw.is-removed .reg-fw-dot { background: var(--off); }
+.reg-fw.is-not_applicable { color: var(--faint); }
+.reg-fw.is-not_applicable .reg-fw-dot { background: transparent; }
+.reg-fw.is-unknown { color: var(--faint); }
+.reg-fw.is-unknown .reg-fw-dot { background: transparent; box-shadow: inset 0 0 0 1px var(--off); }
+.reg-fw-via { font-family: var(--font-mono); font-size: 11.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; }
+
+.reg-dot { width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; display: inline-block; }
+.reg-dot.is-warn { background: var(--warn); }
+.reg-dot.is-info { background: var(--info); }
+.reg-dot.is-danger { background: var(--danger); }
+.reg-dot.is-ok { background: var(--ok); }
+
+/* Шапка и тело таблиц раздела: шапка 36px на --soft, прокручивается тело */
+.reg-thead { flex-shrink: 0; height: 36px; display: grid; align-items: center; border-radius: 8px 8px 0 0; background: var(--soft); color: var(--muted); font-size: 12px; font-weight: 600; }
+.reg-tbody { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 0 16px; }
+.reg-more { height: 44px; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12.5px; color: var(--faint); }
+.reg-link-btn { padding: 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+.reg-link-btn:hover { text-decoration: underline; }
+.reg-empty { padding: 36px 0; text-align: center; font-size: 13px; color: var(--muted); }
+.reg-empty b { color: var(--text); font-weight: 600; }
+
+/* Прогресс-бар: трек --soft (в таблице) или --reg-track (на цветной полосе) */
+.reg-bar { width: 70px; height: 4px; flex-shrink: 0; border-radius: 4px; background: var(--soft); overflow: hidden; }
+.reg-bar > span { display: block; height: 100%; border-radius: 4px; background: var(--warn); }
+.reg-bar.is-done > span { background: var(--ok); }
+.reg-bar.is-wide { width: 110px; height: 5px; background: var(--reg-track); }
+
+/* ── Главная: сводные карточки (1.2) ─────────────────────────────────── */
+.reg-cards { flex-shrink: 0; margin: 0 0 18px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-radius: 12px; box-shadow: inset 0 0 0 1px var(--line-strong); overflow: hidden; }
+.reg-card { display: flex; flex-direction: column; gap: 4px; padding: 14px 18px; min-width: 0; }
+.reg-card + .reg-card { border-left: 1px solid var(--line); }
+.reg-card.is-warn { background: var(--warn-soft); }
+.reg-card-label { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.reg-card.is-warn .reg-card-label, .reg-card.is-warn .reg-card-value { color: var(--warn-t); }
+.reg-card-value { font-family: var(--font-mono); font-variant-ligatures: none; font-size: 20px; line-height: 28px; font-weight: 600; letter-spacing: -0.01em; }
+.reg-card-value.is-text { font-family: var(--font-sans); font-size: 15px; letter-spacing: 0; }
+.reg-card-value.is-faint { color: var(--faint); }
+.reg-card-note { font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reg-card-note .mono { font-size: 12px; }
+.reg-card-note.is-objs { font-family: var(--font-mono); font-size: 11.5px; }
+.reg-card-note.is-warn { color: var(--warn-t); font-family: var(--font-sans); font-size: 12px; white-space: normal; }
+.reg .reg-card-link { font-size: 12px; font-weight: 600; color: var(--accent); }
+.reg .reg-card.is-warn .reg-card-link { color: var(--warn-t); }
+
+/* ── Проверить адрес или домен (1.3) ─────────────────────────────────── */
+.reg-check { flex-shrink: 0; display: flex; align-items: flex-end; gap: 14px; padding: 0 0 16px; margin: 0; }
+.reg-check-field { display: flex; flex-direction: column; gap: 6px; margin: 0; flex-shrink: 0; }
+.reg-check-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.reg-search { position: relative; display: flex; align-items: center; }
+.reg-search > svg { position: absolute; left: 12px; color: var(--muted); pointer-events: none; }
+.reg-check-input {
+  width: 360px; height: 40px; padding: 0 12px 0 36px;
+  border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); color: var(--text);
+  font-family: var(--font-mono); font-variant-ligatures: none; font-size: 13px; outline: none;
+}
+.reg-check-input:focus, .reg-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+.reg-verdict {
+  min-height: 40px; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; padding: 8px 14px;
+  border-radius: 10px; background: var(--soft); font-size: 13px; line-height: 20px; color: var(--muted);
+}
+.reg-verdict > svg { flex-shrink: 0; }
+.reg-verdict-title { font-weight: 600; color: var(--text); }
+.reg-verdict .mono { color: var(--text); }
+.reg-verdict a.mono { color: var(--accent); font-weight: 500; }
+.reg-verdict.is-blocked { background: var(--reg-ok-soft); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+.reg-verdict.is-blocked .reg-verdict-title, .reg-verdict.is-blocked > svg { color: var(--ok-t); }
+.reg-verdict.is-pending { background: var(--warn-soft); }
+.reg-verdict.is-pending .reg-verdict-title, .reg-verdict.is-pending > svg, .reg .reg-verdict.is-pending .reg-verdict-cta { color: var(--warn-t); }
+.reg-verdict.is-revoked_present { background: var(--reg-danger-soft); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.reg-verdict.is-revoked_present .reg-verdict-title, .reg-verdict.is-revoked_present > svg { color: var(--danger-t); }
+.reg-verdict.is-only_fw { background: var(--reg-info-soft); background: color-mix(in srgb, var(--info) 10%, transparent); }
+.reg-verdict.is-only_fw .reg-verdict-title, .reg-verdict.is-only_fw > svg { color: var(--reg-info-t); }
+.reg-verdict.is-removed > svg, .reg-verdict.is-not_found > svg, .reg-verdict.is-unknown > svg { color: var(--faint); }
+.reg-verdict-cta { font-weight: 600; white-space: nowrap; }
+
+/* ── Вкладки главной (1.4): .acl-q-tabs/.acl-q-tab из acl.css ─────────── */
+.reg-tabs { flex-shrink: 0; gap: 22px; }
+.reg-tabs .acl-q-tab { height: 38px; gap: 7px; }
+.reg-tab-count { font-family: var(--font-mono); font-size: 11.5px; color: var(--faint); font-weight: 400; }
+
+/* ── Вкладка «Письма» (1.5) ──────────────────────────────────────────── */
+.reg-letters-head, .reg-letter { grid-template-columns: 190px 110px minmax(0, 1fr) 90px 180px 120px 24px; }
+.reg-letters-head { margin-top: 14px; }
+.reg-letter { height: 44px; display: grid; align-items: center; border-bottom: 1px solid var(--line); color: var(--text); text-decoration: none; }
+.reg .reg-letter:hover { color: var(--text); text-decoration: none; }
+.reg-letter-no { font-weight: 500; }
+.reg-letter-date, .reg-letter-count { font-size: 12.5px; color: var(--muted); }
+.reg-letter-count { text-align: right; color: var(--text); }
+.reg-letter-note { color: var(--muted); }
+.reg-letter-by { font-size: 12.5px; color: var(--muted); }
+.reg-applied { display: flex; align-items: center; gap: 10px; }
+.reg-applied-text { font-size: 12.5px; color: var(--warn-t); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reg-applied-text.is-done, .reg-applied-text.is-faint { color: var(--muted); }
+.reg-applied-text.is-faint { color: var(--faint); }
+.reg-chev { display: flex; color: var(--faint); }
+
+/* ── Вкладка «Все записи» (1.6) ──────────────────────────────────────── */
+.reg-toolbar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0 10px; }
+.reg-toolbar-left, .reg-toolbar-right { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.reg-toolbar-right { gap: 16px; }
+.reg-chip-sep { width: 1px; height: 18px; margin: 0 6px; background: var(--line-strong); }
+.reg .acl-gchip { height: 30px; }
+.reg .acl-gchip .reg-dot { margin-right: -1px; }
+.reg-check-box { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12.5px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.reg-check-box input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
+.reg-input {
+  height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px;
+  background: var(--surface); color: var(--text); font-size: 12.5px; outline: none;
+}
+.reg-search.is-small > svg { left: 10px; color: var(--faint); }
+.reg-search.is-small .reg-input { width: 220px; padding-left: 30px; }
+
+.reg-entries-head, .reg-entry { grid-template-columns: 90px minmax(0, 1fr) 190px 110px 190px 110px; }
+.reg-entry { height: 40px; display: grid; align-items: center; border-bottom: 1px solid var(--line); }
+.reg-entry-value { font-size: 12.5px; }
+.reg-entry.is-revoked .reg-entry-value { color: var(--faint); }
+.reg-entry-doc { font-size: 12.5px; }
+.reg-entry-status { font-size: 12.5px; }
+.reg-entry.is-revoked .reg-entry-status { color: var(--faint); }
+.reg-entry-added { font-size: 12px; color: var(--faint); }
+.reg-entry-others { font-family: var(--font-sans); font-size: 11.5px; color: var(--faint); margin-left: 4px; }
+
+/* ── Вкладка «Сверка с xFW» (1.7) ────────────────────────────────────── */
+.reg-sync { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 16px 0 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; align-content: start; }
+.reg-sec { border-radius: 12px; box-shadow: inset 0 0 0 1px var(--line-strong); overflow: hidden; min-width: 0; align-self: start; }
+.reg-sec-head { padding: 14px 16px; background: var(--softer); border-bottom: 1px solid var(--line); }
+.reg-sec-head.is-warn { background: var(--warn-soft); }
+.reg-sec-head.is-danger { background: var(--reg-danger-soft); background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.reg-sec-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.reg-sec-title { font-size: 14px; font-weight: 600; }
+.reg-sec-head.is-warn .reg-sec-title, .reg .reg-sec-head.is-warn a { color: var(--warn-t); }
+.reg-sec-head.is-danger .reg-sec-title, .reg .reg-sec-head.is-danger a { color: var(--danger-t); }
+.reg-sec-cta { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.reg-sec-desc { font-size: 12.5px; color: var(--muted); }
+.reg-sline { height: 40px; display: grid; grid-template-columns: 70px minmax(0, 1fr) 150px; align-items: center; border-bottom: 1px solid var(--line); }
+.reg-sline:last-child { border-bottom: 0; }
+.reg-sline-kind { font-size: 12px; color: var(--muted); }
+.reg-sline-value { font-size: 12.5px; }
+.reg-sline-doc { font-size: 12px; }
+.reg-sline-obj { font-size: 11.5px; color: var(--faint); }
+.reg-sec-empty { padding: 18px 16px; font-size: 12.5px; color: var(--faint); }
+.reg-sync-ok { grid-column: 1 / -1; padding: 28px; border-radius: 12px; background: var(--reg-ok-soft); background: color-mix(in srgb, var(--ok) 8%, transparent); color: var(--ok-t); font-size: 13.5px; font-weight: 600; text-align: center; }
+.reg-alert { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 10px; background: var(--warn-soft); color: var(--warn-t); font-size: 12.5px; line-height: 18px; }
+.reg-alert > svg { flex-shrink: 0; margin-top: 1px; }
+.reg-alert b { font-weight: 600; }
+.reg-alert .mono { font-size: 12px; }
+.reg-alert.is-danger { background: var(--reg-danger-soft); background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger-t); }
+.reg-alert.is-ok { background: var(--reg-ok-soft); background: color-mix(in srgb, var(--ok) 10%, transparent); color: var(--ok-t); }
+.reg-alert.is-wide { grid-column: 1 / -1; }
+
+/* ── Карточка письма (раздел 2) ──────────────────────────────────────── */
+.reg-doc-sub { flex-shrink: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 6px; margin: -8px 0 0; font-size: 13px; color: var(--muted); }
+.reg-doc-sub #regulator-note-display { margin: 0; font-size: 13px; color: var(--muted); max-width: none; }
+.reg-doc-sub #regulator-note-display:empty, .reg-doc-sub #regulator-note-display:empty + .reg-doc-sep { display: none; }
+.reg-doc-sep { color: var(--faint); }
+
+.reg-sum { flex-shrink: 0; margin: 16px 0 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; border-radius: 12px; background: var(--softer); box-shadow: inset 0 0 0 1px var(--line); }
+.reg-sum.is-warn { background: var(--warn-soft); box-shadow: none; }
+.reg-sum.is-done { background: var(--reg-ok-soft); background: color-mix(in srgb, var(--ok) 8%, transparent); box-shadow: none; }
+.reg-sum-left { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 22px; font-size: 13px; min-width: 0; }
+.reg-sum-total { font-weight: 600; }
+.reg-sum-muted { color: var(--muted); }
+.reg-sum-prog { display: flex; align-items: center; gap: 8px; }
+.reg-sum-prog-text { font-weight: 600; color: var(--muted); }
+.reg-sum.is-warn .reg-sum-prog-text, .reg .reg-sum.is-warn .reg-sum-cta { color: var(--warn-t); }
+.reg-sum.is-done .reg-sum-prog-text { color: var(--ok-t); }
+.reg-sum-danger { color: var(--danger-t); font-weight: 600; }
+.reg-sum-cta { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+
+.reg-intake { flex-shrink: 0; margin: 14px 0 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.reg-intake-card { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--line-strong); min-width: 0; }
+.reg-intake-title { font-size: 13px; font-weight: 600; }
+.reg-intake-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.reg-intake-form { display: flex; gap: 8px; margin: 0; }
+.reg-intake-input {
+  flex-grow: 1; min-width: 0; height: 38px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 9px;
+  background: var(--surface); color: var(--text); font-family: var(--font-mono); font-variant-ligatures: none; font-size: 13px; outline: none;
+}
+.reg-intake-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.reg-btn-primary {
+  height: 38px; padding: 0 16px; border: 0; border-radius: 9px; background: var(--primary); color: var(--primary-text);
+  font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.reg-btn-primary:hover { filter: brightness(1.12); }
+.reg-btn-primary:disabled { opacity: .5; cursor: not-allowed; filter: none; }
+.reg-intake-hint { font-size: 12px; color: var(--faint); }
+.reg-intake-card .quick-add-error { margin: 0; padding: 0; background: transparent; border: 0; font-size: 12px; color: var(--danger-t); }
+.reg-intake-card .quick-add-error:empty { display: none; }
+.reg-intake-form.htmx-request .reg-btn-primary { opacity: .6; cursor: progress; }
+
+.reg-drop { position: relative; display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 12px; border: 1.5px dashed var(--line-strong); background: var(--softer); min-width: 0; margin: 0; transition: border-color .12s ease, background .12s ease; }
+.reg-drop.is-over { border-color: var(--accent); background: var(--accent-soft); }
+.reg-drop-icon { width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); }
+.reg-drop-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.reg-drop-title { font-size: 13px; font-weight: 600; }
+.reg-drop-line { font-size: 12.5px; color: var(--muted); }
+.reg-drop-hint { font-size: 12px; color: var(--faint); }
+.reg-drop-busy { display: none; position: absolute; inset: 0; align-items: center; justify-content: center; gap: 10px; border-radius: 11px; background: color-mix(in srgb, var(--surface) 82%, transparent); font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.reg-drop.htmx-request .reg-drop-busy { display: flex; }
+.reg-drop-busy .shell-spinner { width: 20px; height: 20px; border-width: 2.5px; }
+
+.reg-doc-entries { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.reg-doc-table { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.reg-doc-entries-top { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 0 10px; }
+.reg-doc-entries-title { font-size: 14px; font-weight: 600; }
+.reg-doc-head, .reg-doc-row { grid-template-columns: 90px minmax(0, 1fr) 110px 210px 110px 44px; }
+.reg-doc-row { height: 40px; display: grid; align-items: center; border-bottom: 1px solid var(--line); }
+.reg-doc-row.is-revoked .reg-entry-value { color: var(--faint); }
+.reg-doc-row.is-flash { animation: reg-flash 1.6s ease-out; }
+@keyframes reg-flash { from { background: var(--accent-soft); } to { background: transparent; } }
+.reg-row-act { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 7px; background: transparent; color: var(--faint); cursor: pointer; justify-self: center; }
+.reg-row-act:hover, .reg-row-act.is-open { background: var(--hover); color: var(--text); }
+/* Меню действий записи — одно на страницу, позиционируется у нажатой «⋯» */
+.reg-rowmenu { position: fixed; top: 0; left: 0; right: auto; width: 260px; z-index: 70; }
+
+/* Пока на экране «Проверьте, что распознано» — таблица записей скрыта
+   (SPEC §3: блок заменяет заголовок и таблицу), шапка/сводка/приём остаются */
+.reg-doc:has(#ioc-preview-panel .reg-pv) .reg-doc-entries { display: none; }
+#ioc-preview-panel { flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; }
+.reg-doc:has(#ioc-preview-panel .reg-pv) #ioc-preview-panel { flex: 1 1 auto; }
+
+/* ── Предпросмотр «Проверьте, что распознано» (раздел 3) ─────────────── */
+.reg-pv { flex: 1 1 auto; min-height: 0; margin: 16px 0 0; display: flex; flex-direction: column; border-radius: 12px; box-shadow: inset 0 0 0 1.5px var(--accent-line); overflow: hidden; }
+.reg-pv-form { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; margin: 0; }
+.reg-pv-head { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; background: var(--accent-soft); }
+.reg-pv-titles { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.reg-pv-title { font-size: 14px; font-weight: 600; }
+.reg-pv-meta { font-size: 12.5px; color: var(--muted); }
+.reg-pv-meta .mono { color: var(--text); }
+.reg-pv-cancel { height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 500; cursor: pointer; flex-shrink: 0; }
+.reg-pv-notes { flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.reg-pv-stamp { flex-shrink: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.reg-pv-stamp-label { font-weight: 600; color: var(--muted); }
+.reg-pv-stamp-input { width: 280px; height: 30px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--text); font-family: var(--font-mono); font-size: 12.5px; outline: none; }
+.reg-pv-stamp-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.reg-pv-stamp-hint { color: var(--faint); }
+.reg-pv-thead, .reg-pv-row { display: grid; grid-template-columns: 44px 110px minmax(0, 1fr) minmax(0, 1fr) 260px; align-items: center; }
+.reg-pv-thead { flex-shrink: 0; height: 34px; background: var(--soft); color: var(--muted); font-size: 12px; font-weight: 600; }
+.reg-pv-body { flex: 1 1 auto; min-height: 120px; overflow: auto; }
+.reg-pv-row { height: 40px; border-bottom: 1px solid var(--line); }
+.reg-pv-row.is-even { background: var(--softer); }
+.reg-pv-row.is-dup { opacity: .55; }
+.reg-pv-row.is-elsewhere { background: var(--warn-soft); }
+.reg-pv-check { display: flex; justify-content: center; }
+.reg-pv-check input, .reg-pv-thead input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
+.reg-pv-kind {
+  height: 26px; padding: 0 24px 0 8px; border: 0; border-radius: 7px; box-shadow: inset 0 0 0 1px var(--line-strong);
+  background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%238c8c96' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 8px center;
+  color: var(--text); font-size: 12px; -webkit-appearance: none; appearance: none; cursor: pointer; outline: none;
+}
+.reg-pv-kind:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--accent-soft); }
+.reg-pv-value { width: 100%; height: 28px; padding: 0 6px; margin-left: -6px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text); font-family: var(--font-mono); font-variant-ligatures: none; font-size: 12.5px; outline: none; text-overflow: ellipsis; }
+.reg-pv-value:hover { border-color: var(--line); }
+.reg-pv-value:focus { border-color: var(--accent); background: var(--surface); }
+.reg-pv-value:disabled, .reg-pv-kind:disabled { color: var(--faint); cursor: default; }
+.reg-pv-raw { font-size: 12px; color: var(--faint); }
+.reg-pv-where { font-size: 12px; color: var(--muted); }
+.reg-pv-where.is-faint { color: var(--faint); }
+.reg-pv-where.is-warn { color: var(--warn-t); }
+.reg .reg-pv-where.is-warn a { color: var(--warn-t); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.reg-pv-flag { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 5px; background: var(--warn-soft); color: var(--warn-t); font-size: 11px; line-height: 18px; font-weight: 600; }
+.reg-pv-foot { flex-shrink: 0; height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 16px; border-top: 1px solid var(--line); background: var(--softer); }
+.reg-pv-count { font-size: 12.5px; color: var(--muted); }
+.reg-pv-count b { color: var(--text); font-weight: 600; }
+.reg-pv-foot .reg-btn-primary { height: 36px; padding: 0 18px; }
+.reg-pv-form.htmx-request .reg-pv-foot .reg-btn-primary { opacity: .6; pointer-events: none; }
+.reg-pv-err { display: flex; align-items: flex-start; gap: 10px; margin: 14px 0 0; }
+.reg-pv-err ul, .reg-pv-notes ul { margin: 0; padding-left: 18px; }
+
+/* ── Мастер «Команды для xFW» (раздел 4) ─────────────────────────────── */
+.reg-cmd-sub { flex-shrink: 0; margin: -8px 0 0; font-size: 13px; color: var(--muted); }
+.reg-cmd-sub .mono { color: var(--text); }
+.reg-cmd-alerts { flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; margin: 14px 0 0; }
+.reg-steps-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 18px 0 24px; }
+.reg-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.reg-step { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 16px; }
+.reg-step-rail { display: flex; flex-direction: column; align-items: center; }
+.reg-step-badge { width: 28px; height: 28px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--primary); color: var(--primary-text); font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+.reg-step.is-off .reg-step-badge { background: var(--soft); color: var(--muted); }
+.reg-step.is-done .reg-step-badge { background: var(--ok); color: #fff; }
+.reg-step-line { flex-grow: 1; width: 1.5px; margin: 6px 0; background: var(--line-strong); }
+.reg-step-body { padding: 2px 0 26px; min-width: 0; }
+.reg-step-title { font-size: 15px; line-height: 24px; font-weight: 600; }
+.reg-step.is-off .reg-step-title { color: var(--muted); }
+.reg-step-text { margin-top: 2px; font-size: 13px; color: var(--muted); }
+.reg-step-text .mono { color: var(--text); font-size: 12.5px; }
+.reg-step-content { margin-top: 12px; }
+
+.reg-diff { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.reg-diff-sec { border-radius: 12px; box-shadow: inset 0 0 0 1px var(--line-strong); overflow: hidden; min-width: 0; }
+.reg-diff-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; background: var(--soft); }
+.reg-diff-title { font-size: 13.5px; font-weight: 600; }
+.reg-diff-names { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reg-diff-names b { color: var(--text); font-weight: 600; }
+.reg-diff-nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--line); }
+.reg-diff-num { padding: 10px 16px; }
+.reg-diff-num + .reg-diff-num { border-left: 1px solid var(--line); }
+.reg-diff-num-label { font-size: 12px; color: var(--muted); }
+.reg-diff-num-value { font-family: var(--font-mono); font-size: 17px; line-height: 24px; font-weight: 600; }
+.reg-diff-num.is-add .reg-diff-num-label, .reg-diff-num.is-add .reg-diff-num-value { color: var(--ok-t); }
+.reg-diff-num.is-del .reg-diff-num-label, .reg-diff-num.is-del .reg-diff-num-value { color: var(--danger-t); }
+.reg-diff-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px; max-height: 260px; overflow: auto; }
+.reg-diff-chip { height: 24px; display: inline-flex; align-items: center; padding: 0 8px; border-radius: 6px; font-size: 12px; white-space: nowrap; }
+.reg-diff-chip.is-add { background: var(--reg-ok-chip); background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok-t); }
+.reg-diff-chip.is-del { background: var(--reg-danger-soft); background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger-t); text-decoration: line-through; }
+.reg-diff-chip.is-extra { display: none; }
+.reg-diff-chips.is-all .reg-diff-chip.is-extra { display: inline-flex; }
+.reg-diff-more { height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: var(--soft); color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer; }
+.reg-diff-same { padding: 12px 16px; font-size: 12.5px; color: var(--faint); }
+
+.reg-cmds { display: flex; flex-direction: column; gap: 10px; }
+.reg-cmd { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 10px 10px 16px; border-radius: 10px; background: var(--console-bg); color: var(--console-text); }
+.reg-cmd-line { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: var(--font-mono); font-variant-ligatures: none; font-size: 12.5px; line-height: 20px; }
+.reg-cmd.is-wrapped { align-items: start; }
+.reg-cmd.is-wrapped .reg-cmd-line { white-space: pre-wrap; word-break: break-all; max-height: 320px; overflow: auto; text-overflow: clip; }
+.reg-cmd-prompt { color: var(--console-prompt); }
+.reg-cmd-name { color: var(--console-name); }
+.reg-cmd-side { display: flex; align-items: center; gap: 10px; }
+.reg-cmd-count { font-size: 12px; color: var(--console-count); white-space: nowrap; }
+.reg-cmd-btn { height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border: 0; border-radius: 7px; background: var(--console-btn); color: var(--console-btn-text); font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.reg-cmd-btn:hover { background: var(--console-btn-hover); }
+.reg-cmd-btn.is-ghost { background: transparent; color: var(--console-count); font-weight: 500; }
+.reg-cmd-btn.is-ghost:hover { background: var(--console-btn); color: var(--console-btn-text); }
+
+.reg-rules { display: flex; flex-wrap: wrap; gap: 8px; }
+.reg-rule { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 8px; background: var(--soft); font-size: 12.5px; }
+.reg-rule .mono { font-size: 12.5px; }
+.reg-rule-map { color: var(--muted); }
+.reg-rule-map b { color: var(--text); font-weight: 600; }
+
+.reg-mark { display: flex; align-items: center; gap: 14px; margin: 0; }
+.reg-mark-btn { height: 38px; padding: 0 18px; border: 0; border-radius: 10px; background: var(--primary); color: var(--primary-text); font-size: 13px; font-weight: 600; cursor: pointer; }
+.reg-mark-btn:hover { filter: brightness(1.12); }
+.reg-mark-btn:disabled { opacity: .5; cursor: not-allowed; filter: none; }
+.reg-mark-btn.is-done { background: var(--ok); color: #fff; cursor: default; filter: none; }
+.reg-mark-hint { font-size: 12.5px; color: var(--faint); }
+.reg-step-off-note { font-size: 12.5px; color: var(--faint); }
+
+/* .acl a (acl.css) окрашивает все ссылки в --accent и перебивает классы
+   вкладок и строк-ссылок — возвращаем цвета по макету */
+.reg a.acl-q-tab { color: var(--muted); }
+.reg a.acl-q-tab:hover, .reg a.acl-q-tab.is-active { color: var(--text); text-decoration: none; }
+.reg a.reg-letter, .reg a.reg-letter:hover { color: var(--text); text-decoration: none; }
+/* .acl input { font-family: inherit } (acl.css) перебивает моноширинный шрифт полей значений */
+.reg .reg-check-input, .reg .reg-intake-input, .reg .reg-pv-value, .reg .reg-pv-stamp-input { font-family: var(--font-mono); font-variant-ligatures: none; }

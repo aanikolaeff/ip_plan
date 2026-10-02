@@ -440,6 +440,22 @@ def apply(uploaded, selected, replace_secrets=False, apply_config=False, apply_l
                 target.append(payload)
             applied.append(f"{item['kind']} {item['label']}")
 
+    # Те же правила, что у ручной правки: импорт не должен класть в
+    # devices.json то, что карточка модели или устройства сохранить не дала бы.
+    if dev_data is not None:
+        types = dev_data.get("device_types") or {}
+        for item in plan_items:
+            if f"{item['kind']}:{item['key']}" not in chosen or item.get("blocked"):
+                continue
+            try:
+                if item["kind"] == "model":
+                    sc.validate_device_type(types[item["key"]])
+                elif item["kind"] == "device":
+                    sc.validate_device(dev_data["devices"][item["key"]], types)
+            except sc.SyncConfigError as e:
+                kind = "Модель" if item["kind"] == "model" else "Устройство"
+                raise BundleError(f"{kind} «{item['key']}»: {e} Ничего не импортировано.")
+
     if apply_config and "config" in uploaded:
         writes["config"] = uploaded["config"]
         applied.append("config.json целиком")

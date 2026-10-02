@@ -170,6 +170,119 @@
         },
       });
 
+      // Правая панель (drawer) — карточка адреса; то же, что $store.modal,
+      // но для бокового окна. Сервер закрывает её HX-Trigger'ом close-drawer.
+      Alpine.store('drawer', {
+        open: false,
+        dirty: false,
+        requestClose() {
+          if (this.dirty && !window.confirm('Закрыть без сохранения изменений?')) return;
+          this.open = false;
+          this.dirty = false;
+          const box = document.getElementById('drawer-content');
+          if (box) box.innerHTML = '';
+        },
+      });
+      window.addEventListener('close-drawer', () => {
+        const box = document.getElementById('drawer-content');
+        if (box) box.innerHTML = '';
+      });
+
+      // ⌘↵ / Ctrl+Enter — отправить форму открытой панели или модалки.
+      window.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return;
+        const host = Alpine.store('drawer').open ? '#drawer-content' : (Alpine.store('modal').open ? '#modal-content' : null);
+        if (!host) return;
+        const form = document.querySelector(host + ' form');
+        if (form) { e.preventDefault(); form.requestSubmit(); }
+      });
+
+      // Модалка «Новый IP-адрес» (ip_add_modal.html): подсказка «адрес
+      // свободен/занят» по списку свободных адресов, переданному таблицей,
+      // чипы свободных, комментарий по кнопке.
+      // initialAddress — из сервера, вторым аргументом: x-model перезаписал
+      // бы value инпута пустой строкой модели раньше, чем init() успел бы
+      // её прочитать.
+      Alpine.data('ipAddForm', (free, initialAddress) => ({
+        free: Array.isArray(free) ? free : [],
+        address: initialAddress || '',
+        comment: false,
+        init() {
+          const input = this.$el.querySelector('input[name="address"]');
+          if (input && !this.address) input.focus();
+          const c = this.$el.querySelector('textarea[name="comments"]');
+          if (c && c.value) this.comment = true;
+        },
+        pick(a) {
+          const mask = (this.address.split('/')[1] || '').trim();
+          this.address = a + (mask ? '/' + mask : '');
+          const input = this.$el.querySelector('input[name="address"]');
+          if (input) { input.value = this.address; input.focus(); }
+        },
+        freeState() {
+          if (!this.address) return 'is-empty';
+          if (!this.free.length) return 'is-unknown';
+          return this.free.includes(this.address.split('/')[0]) ? 'is-free' : 'is-unknown';
+        },
+        freeLabel() {
+          const s = this.freeState();
+          return s === 'is-free' ? '✓ Адрес свободен' : (s === 'is-unknown' ? 'Проверится при сохранении' : '');
+        },
+      }));
+
+      // Панель карточки адреса (ip_edit_panel.html): действия по адресу
+      // (проверка доступности, порты, DNS — те же эндпоинты, что у меню
+      // строки), удаление, подпись статуса рядом с адресом.
+      Alpine.data('ipEditForm', () => ({
+        dirty: false,
+        result: '',
+        resultKind: '',
+        status: (window.__ipEdit || {}).status || 'active',
+        statusLabel() { return ((window.__ipEdit || {}).labels || {})[this.status] || this.status; },
+        copy(text) { navigator.clipboard.writeText(text); window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Адрес скопирован', kind: 'success' } })); },
+        async run(kind, started) {
+          const id = (window.__ipEdit || {}).id;
+          if (!id) return;
+          this.result = started; this.resultKind = '';
+          try {
+            const resp = await fetch((window.URL_PREFIX || '') + '/ip/' + id + '/' + kind + '/', {
+              method: 'POST', credentials: 'same-origin',
+              headers: { 'X-CSRFToken': getCookie(CSRF_COOKIE_NAME) },
+            });
+            const data = await resp.json();
+            if (!resp.ok || data.error) throw new Error(data.error || ('HTTP ' + resp.status));
+            if (kind === 'check') {
+              this.result = data.alive ? ('Доступен, ' + (data.latency_ms != null ? data.latency_ms + ' мс' : 'ответил') ) : 'Не отвечает';
+              this.resultKind = data.alive ? 'is-ok' : 'is-bad';
+            } else if (kind === 'scan-ports') {
+              this.result = data.ports ? ('Открытые порты: ' + data.ports) : 'Открытых портов не найдено';
+              this.resultKind = 'is-ok';
+            } else {
+              this.result = data.resolved ? ('DNS: ' + data.resolved + (data.action === 'saved' ? ' (сохранено)' : '')) : 'Имя не резолвится';
+              this.resultKind = data.resolved ? 'is-ok' : 'is-bad';
+            }
+            window.dispatchEvent(new CustomEvent('ip-addresses-changed'));
+          } catch (err) {
+            this.result = 'Ошибка: ' + err.message; this.resultKind = 'is-bad';
+          }
+        },
+        async remove() {
+          const id = (window.__ipEdit || {}).id;
+          if (!id || !window.confirm('Удалить этот IP-адрес из NetBox?')) return;
+          const resp = await fetch((window.URL_PREFIX || '') + '/ip/' + id + '/delete/', {
+            method: 'DELETE', credentials: 'same-origin', headers: { 'X-CSRFToken': getCookie(CSRF_COOKIE_NAME) },
+          });
+          if (resp.ok) {
+            Alpine.store('drawer').dirty = false;
+            window.dispatchEvent(new CustomEvent('close-drawer'));
+            window.dispatchEvent(new CustomEvent('ip-addresses-changed'));
+            window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'IP-адрес удалён', kind: 'success' } }));
+          } else {
+            window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Не удалось удалить адрес', kind: 'error' } }));
+          }
+        },
+      }));
+
       // Сводка последнего прогона netbox-sync (ip_plan/services/sync_log.py).
       // Глобальный $store, а не локальное состояние компонента — читается
       // сразу в ДВУХ разных местах шапки: постоянный индикатор рядом с
@@ -222,6 +335,36 @@
       // темы). Именованный компонент, а не инлайн x-data прямо в base.html
       // (как раньше, пока там была только тема) — дальнейшие настройки
       // будут добавляться в ЭТОТ ЖЕ блок, не меняя место в шапке.
+      // Оболочка (base.html, x-data="shell" на <body>): боковое меню
+      // свёрнуто/развёрнуто (localStorage 'ip_plan_sidebar', до загрузки
+      // Alpine то же состояние даёт <html data-sidebar>), меню площадок,
+      // тема. Клавиша «[» сворачивает меню, как в макете.
+      Alpine.data('shell', () => ({
+        collapsed: localStorage.getItem('ip_plan_sidebar') === 'collapsed',
+        siteMenu: false,
+        siteQuery: '',
+        theme: (localStorage.getItem('ip_plan_theme') === 'dark' ? 'dark' : 'light'),
+        init() {
+          const aside = this.$el.querySelector('.sb');
+          if (aside) aside.classList.add('alpine-ready');
+          window.addEventListener('keydown', (e) => {
+            if (e.key !== '[' || e.ctrlKey || e.metaKey || e.altKey) return;
+            if (/^(input|textarea|select)$/i.test(e.target.tagName) || e.target.isContentEditable) return;
+            this.toggleSidebar();
+          });
+        },
+        toggleSidebar() {
+          this.collapsed = !this.collapsed;
+          localStorage.setItem('ip_plan_sidebar', this.collapsed ? 'collapsed' : 'expanded');
+          if (this.collapsed) document.documentElement.setAttribute('data-sidebar', 'collapsed');
+          else document.documentElement.removeAttribute('data-sidebar');
+        },
+        toggleTheme() {
+          this.theme = this.theme === 'dark' ? 'light' : 'dark';
+          window.setIpPlanTheme(this.theme);
+        },
+      }));
+
       Alpine.data('navSettings', () => ({
         open: false,
         theme: (localStorage.getItem('ip_plan_theme') === 'dark' ? 'dark' : 'light'),

@@ -1,8 +1,12 @@
-// Персистентность состояния колонок в localStorage — те же принципы, что
-// были в app.js (COLUMN_VISIBILITY_STORAGE_KEY и т.д.): версия в ключе
-// растёт при изменении набора/смысла колонок, чтобы устаревшая запись не
-// применилась к другой структуре (см. историю версий v1..v6 в app.js).
-const PREFIX = 'ip_table_react_v1_';
+// Персистентность настроек вида в localStorage. Новый префикс ключей
+// (v2) — набор и смысл сохранённого изменились вместе с макетом
+// (плотность, порядок/видимость колонок, свободные диапазоны, размер
+// страницы), миграция со старых ключей ip_table_react_v1_* не нужна:
+// там хранились ширины колонок и видимость под другой состав колонок.
+// Фильтры и поиск сознательно не сохраняются.
+const PREFIX = 'ip_table_v2_';
+
+export const STORAGE_KEYS = ['density', 'columnVisibility', 'columnOrder', 'showGaps', 'pageSize'];
 
 export function loadJSON(key, fallback) {
   try {
@@ -22,18 +26,8 @@ export function saveJSON(key, value) {
   }
 }
 
-export function loadSession(key, fallback) {
+export function removeKey(key) {
   try {
-    const raw = sessionStorage.getItem(PREFIX + key);
-    if (raw === null) return fallback;
-    return JSON.parse(raw);
-  } catch (e) {
-    return fallback;
-  }
-}
-
-export function saveSession(key, value) {
-  try {
-    sessionStorage.setItem(PREFIX + key, JSON.stringify(value));
+    localStorage.removeItem(PREFIX + key);
   } catch (e) { /* см. выше */ }
 }

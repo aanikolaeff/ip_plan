@@ -1,0 +1,81 @@
+[id]
+id= 0x1a2b0022
+name= operator.one                                     VPN-4242
+ip= 10.200.60.11
+accessip= 11.0.9.11
+port= 55777
+dynamic_timeout= 0
+virtualip= 11.0.9.11
+
+[id]
+id= 0x1a2b0086
+name= lab-hw01                                         VPN-4242
+ip= 172.30.30.1
+ip= 172.31.0.1
+ip= 198.51.100.5
+tunnel= 10.200.100.1-10.200.100.60
+tunnel= 10.200.101.1-10.200.101.254
+tunnel_local_networks= on
+accessip= 198.51.100.5
+virtualip= 11.0.9.1
+
+[id]
+id= 0x1a2b0017
+name= operator.two                                     VPN-4242
+ip= 10.200.60.12, 11.0.9.12
+accessip= 11.0.9.12
+firewallip= 198.51.100.77
+virtualip= 11.0.9.12
+
+[id]
+id= 0x1a2b0019
+name= АП Тестов Т.Т. (лаборатория)                     VPN-7777
+accessip= 11.0.9.19
+port= 55777
+dynamic_timeout= 0
+virtualip= 11.0.9.19
+
+[id]
+id= 0x1a2b0038
+name= analyst.a                                        VPN-4242
+ip= 10.200.61.38
+virtualip= 11.0.9.38
+
+[id]
+id= 0x1a2b006d
+name= analyst.b                                        VPN-4242
+ip= 10.200.61.109
+virtualip= 11.0.9.109
+
+[id]
+id= 0x1a2b0070
+name= staff.one                                        VPN-4242
+ip= 10.200.62.70
+virtualip= 11.0.9.70
+
+[id]
+id= 0x1a2b0072
+name= staff.two                                        VPN-4242
+ip= 10.200.62.72
+virtualip= 11.0.9.72
+
+[id]
+id= 0x1a2b0060
+name= remote-hw                                        VPN-9999
+ip= 203.0.113.60, 11.0.9.60
+accessip= 11.0.9.60
+tunnel= 172.16.0.24-172.16.0.24 to 11.0.9.167-11.0.9.167
+tunnel= 172.16.0.133-172.16.0.133 to 11.0.9.168-11.0.9.168
+firewallip= 203.0.113.60
+
+[adapter]
+name= eth0
+type= external
+allowtraffic= on
+
+[misc]
+timesync= on
+warnoldautosave= off
+
+[dynamic]
+dynamic_proxy= off

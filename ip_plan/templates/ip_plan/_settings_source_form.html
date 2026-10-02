@@ -1,49 +1,63 @@
-<div class="modal-title-bar">
-  <h5>{% if index is not None %}{{ item.name }}{% else %}Новый источник — {{ kind_title }}{% endif %}</h5>
-  <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+{% comment %}
+  Источник гипервизора (RedVirt / vCenter) — модалка. Поля name / url /
+  user / password / site (source_save собирает объект заново из них).
+  Пароль в браузер не уходит: пусто = не менять, маска в placeholder.
+{% endcomment %}
+<div class="st st-modal">
+  <div class="modal-title-bar">
+    <div>
+      <h5>{% if index is not None %}{{ item.name }}{% else %}Новый источник{% endif %}</h5>
+      <div class="st-modal-sub">{{ kind_title }}</div>
+    </div>
+    <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>
+
+  <form hx-post="{% if index is not None %}{% url 'ip_plan:settings_source_save' kind index %}{% else %}{% url 'ip_plan:settings_source_add_save' kind %}{% endif %}"
+        hx-target="#modal-content" hx-indicator="#modal-spinner">
+    {% csrf_token %}
+    <input type="hidden" name="file_hash" value="{{ file_hash }}">
+
+    <div class="modal-body-pad">
+      <div class="st-grid2">
+        <label class="st-field">
+          <span class="st-label">Имя</span>
+          <input class="st-input" name="name" value="{{ item.name|default:'' }}" required autofocus autocomplete="off">
+        </label>
+        <label class="st-field">
+          <span class="st-label">Площадка</span>
+          {% if sites %}
+            <span class="st-select">
+              <select class="st-input" name="site" required>
+                {% for s in sites %}
+                  <option value="{{ s.slug }}"{% if s.slug == site %} selected{% endif %}>{{ s.name }} ({{ s.slug }})</option>
+                {% endfor %}
+              </select>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>
+            </span>
+          {% else %}
+            <input class="st-input is-mono" name="site" value="{{ site }}" required>
+          {% endif %}
+        </label>
+        <label class="st-field st-span">
+          <span class="st-label">Адрес API</span>
+          <input class="st-input is-mono" name="url" value="{{ item.url|default:'' }}" placeholder="{{ url_hint }}" required autocomplete="off" spellcheck="false">
+          <span class="st-hint">Адрес API, а не веб-интерфейса — например <code>{{ url_hint }}</code>.{% if sites %} Кластеры, хосты и ВМ источника попадут в NetBox на выбранную площадку.{% else %} NetBox недоступен, список площадок не загружен — slug площадки укажите вручную.{% endif %}</span>
+        </label>
+        <label class="st-field">
+          <span class="st-label">Пользователь</span>
+          <input class="st-input is-mono" name="user" value="{{ item.user|default:'' }}" required autocomplete="off" spellcheck="false">
+        </label>
+        <label class="st-field">
+          <span class="st-label">Пароль</span>
+          <input class="st-input" name="password" type="password" placeholder="{{ password_mask }}" autocomplete="new-password">
+          <span class="st-hint">{% if password_mask %}Оставьте пустым, чтобы не менять.{% else %}Обязателен.{% endif %}</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="modal-footer-bar">
+      <button type="button" class="st-btn st-btn-ghost" @click="$store.modal.requestClose()">Отмена</button>
+      <button type="submit" class="st-btn st-btn-primary is-md">Сохранить</button>
+    </div>
+  </form>
 </div>
-
-<form hx-post="{% if index is not None %}{% url 'ip_plan:settings_source_save' kind index %}{% else %}{% url 'ip_plan:settings_source_add_save' kind %}{% endif %}"
-      hx-target="#modal-content" hx-indicator="#modal-spinner">
-  {% csrf_token %}
-  <input type="hidden" name="file_hash" value="{{ file_hash }}">
-
-  <div class="modal-body-pad">
-    <div class="field-group">
-      <div class="field-group-title">{{ kind_title }}</div>
-      <div class="set-field">
-        <label class="field-label" for="s-name">Имя</label>
-        <input class="field-control" id="s-name" name="name" value="{{ item.name|default:'' }}" required autofocus>
-      </div>
-      <div class="set-field" style="margin-top:.7rem">
-        <label class="field-label" for="s-url">Адрес</label>
-        <input class="field-control set-mono" id="s-url" name="url" value="{{ item.url|default:'' }}"
-               placeholder="{{ url_hint }}" required>
-        <div class="set-hint">Например: <code>{{ url_hint }}</code></div>
-      </div>
-    </div>
-
-    <div class="field-group">
-      <div class="field-group-title">Учётные данные</div>
-      <div class="set-form-row">
-        <div class="set-field">
-          <label class="field-label" for="s-user">Пользователь</label>
-          <input class="field-control set-mono" id="s-user" name="user" value="{{ item.user|default:'' }}" required>
-        </div>
-        <div class="set-field">
-          <label class="field-label" for="s-password">Пароль</label>
-          <input class="field-control" id="s-password" name="password" type="password"
-                 placeholder="{{ password_mask }}" autocomplete="new-password">
-          <div class="set-hint">
-            {% if password_mask %}Оставьте пустым, чтобы не менять.{% else %}Обязателен.{% endif %}
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="modal-footer-bar">
-    <button type="button" class="btn-modal-secondary" @click="$store.modal.requestClose()">Отмена</button>
-    <button type="submit" class="btn-modal-primary">Сохранить</button>
-  </div>
-</form>

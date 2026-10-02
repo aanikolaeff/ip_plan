@@ -1,76 +1,78 @@
-<div class="set-panel">
-  <div class="set-panel-head">
+{% comment %}
+  «Пользователи» (SPEC §8; CONTRACT-settings §7). Контекст: user_rows
+  [{user, is_local, account, initials, full_name, state, state_label,
+  last_login}]. Локальные учётки правятся модалкой (settings_user_edit) и
+  удаляются из меню «⋯» (не свою), пользователи FreeIPA — в каталоге.
+{% endcomment %}
+<div class="st-screen">
+  <div class="st-screen-head">
     <div>
-      <h2 class="set-panel-title">Учётные записи</h2>
-      <p class="set-panel-desc">
-        Локальные учётки — это аварийный вход: когда каталог недоступен или настроен
-        неверно, попасть в приложение можно только ими. Пользователи из FreeIPA показаны
-        для полноты картины, но правятся в каталоге.
-      </p>
+      <h2 class="st-h2">Пользователи</h2>
+      <p class="st-lead is-680">Локальные учётки — аварийный вход на случай, если каталог недоступен. Пользователи из FreeIPA показаны для полноты, права им даются группами в каталоге.</p>
     </div>
-    <div class="set-panel-actions">
-      <button type="button" class="btn-modal-primary"
-              hx-get="{% url 'ip_plan:settings_user_add' %}"
-              hx-target="#modal-content" hx-indicator="#modal-spinner"
-              @click="$store.modal.dirty = false; $dispatch('open-modal')">Добавить локальную учётку</button>
-    </div>
+    <button type="button" class="st-btn st-btn-primary"
+            hx-get="{% url 'ip_plan:settings_user_add' %}"
+            hx-target="#modal-content" hx-indicator="#modal-spinner"
+            @click="$store.modal.dirty = false; $dispatch('open-modal')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+      Локальная учётка
+    </button>
   </div>
 
-  <div class="set-panel-body set-panel-body-flush">
-    <table class="set-table">
-      <thead>
-        <tr><th>Пользователь</th><th>Откуда</th><th>Права</th><th>Состояние</th><th>Последний вход</th><th></th></tr>
-      </thead>
-      <tbody>
-        {% for row in user_rows %}
-          <tr>
-            <td>
-              <span class="set-name">{{ row.user.username }}</span>
-              {% if row.user.get_full_name %}<span class="set-sub">{{ row.user.get_full_name }}</span>{% endif %}
-            </td>
-            <td>{% if row.is_local %}локальная{% else %}FreeIPA{% endif %}</td>
-            <td>
-              <div class="set-chips">
-                {% if row.user.is_superuser %}<span class="set-chip set-chip-accent">суперпользователь</span>{% endif %}
-                {% if row.user.is_staff %}<span class="set-chip">настройки</span>{% endif %}
-                {% if not row.user.is_staff and not row.user.is_superuser %}<span class="set-muted">только просмотр</span>{% endif %}
-              </div>
-            </td>
-            <td>
-              {% if not row.user.is_active %}
-                <span class="set-muted">отключена</span>
-              {% elif row.account.must_change_password %}
-                <span class="set-chip">нужна смена пароля</span>
-              {% else %}
-                активна
-              {% endif %}
-            </td>
-            <td class="set-mono set-muted">{{ row.user.last_login|date:"d.m.Y H:i"|default:"—" }}</td>
-            <td>
-              <div class="set-row-actions">
-                {% if row.is_local %}
-                  <button type="button" class="btn-modal-secondary btn-pill-sm"
-                          hx-get="{% url 'ip_plan:settings_user_edit' row.user.id %}"
-                          hx-target="#modal-content" hx-indicator="#modal-spinner"
-                          @click="$store.modal.dirty = false; $dispatch('open-modal')">Изменить</button>
-                  {% if row.user.id != user.id %}
-                    <form hx-post="{% url 'ip_plan:settings_user_delete' row.user.id %}"
-                          hx-target="#modal-content"
-                          hx-confirm="Удалить учётную запись «{{ row.user.username }}»?">
+  <div class="st-tbl">
+    <div class="st-tbl-in st-cols-users-in">
+      <div class="st-thead st-cols-users">
+        <span class="st-cell is-first">Пользователь</span><span class="st-cell">Откуда</span><span class="st-cell">Права</span><span class="st-cell">Состояние</span><span class="st-cell">Последний вход</span><span></span>
+      </div>
+      {% for row in user_rows %}
+        <div class="st-tr st-cols-users is-hover{% if forloop.counter|divisibleby:2 %} is-even{% endif %}">
+          <span style="min-width:0; display:flex; align-items:center; gap:10px; padding-left:16px">
+            <span class="st-avatar">{{ row.initials }}</span>
+            <span style="min-width:0; display:flex; flex-direction:column">
+              <span class="mono" style="font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ row.user.username }}</span>
+              <span style="font-size:12px; color:var(--faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ row.full_name|default:"—" }}</span>
+            </span>
+          </span>
+          <span class="st-cell" style="font-size:12.5px">{% if row.is_local %}локальная{% else %}FreeIPA{% endif %}</span>
+          <span style="min-width:0; display:flex; flex-wrap:wrap; gap:4px; padding:6px 12px">
+            {% if row.user.is_superuser %}<span class="st-tag is-accent">суперпользователь</span><span class="st-tag is-soft">настройки</span>
+            {% elif row.user.is_staff %}<span class="st-tag is-soft">настройки</span>
+            {% else %}<span class="st-tag is-plain">только просмотр</span>{% endif %}
+          </span>
+          <span class="st-cell" style="font-size:12.5px; color:{% if row.state == 'warn' %}var(--warn-t){% elif row.state == 'off' %}var(--faint){% else %}var(--text){% endif %}">{{ row.state_label }}</span>
+          <span class="st-cell mono" style="font-size:12px; color:var(--faint)">{{ row.last_login|default:"—" }}</span>
+          <span class="st-cell is-end" style="gap:4px; align-items:center; overflow:visible">
+            {% if row.is_local %}
+              <button type="button" class="st-btn st-btn-outline"
+                      hx-get="{% url 'ip_plan:settings_user_edit' row.user.id %}"
+                      hx-target="#modal-content" hx-indicator="#modal-spinner"
+                      @click="$store.modal.dirty = false; $dispatch('open-modal')">Изменить</button>
+              {% if row.user.id != user.id %}
+                <span class="st-rowmenu" x-data="stMenu()" @click.outside="close()" @keydown.escape.window="close()">
+                  <button type="button" class="st-more" :class="{ 'is-open': open }" @click="toggle($el)"
+                          aria-haspopup="menu" :aria-expanded="open ? 'true' : 'false'" aria-label="Действия с {{ row.user.username }}">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+                  </button>
+                  <div class="st-menu" role="menu" x-ref="menu" :class="{ 'is-open': open }" :style="pos">
+                    <form hx-post="{% url 'ip_plan:settings_user_delete' row.user.id %}" hx-target="#modal-content"
+                          hx-confirm="Удалить учётную запись «{{ row.user.username }}»?"
+                          hx-on::after-request="if (event.detail.xhr.status >= 400) { Alpine.store('modal').dirty = false; window.dispatchEvent(new CustomEvent('open-modal')); }">
                       {% csrf_token %}
-                      <button type="submit" class="btn-danger-quiet">Удалить</button>
+                      <button type="submit" class="st-menu-item is-danger" role="menuitem" @click="close()">Удалить учётку</button>
                     </form>
-                  {% endif %}
-                {% else %}
-                  <span class="set-muted">правится в FreeIPA</span>
-                {% endif %}
-              </div>
-            </td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="6" class="set-empty">Пользователей нет.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+                  </div>
+                </span>
+              {% else %}
+                <span style="width:30px" title="Свою учётную запись удалить нельзя"></span>
+              {% endif %}
+            {% else %}
+              <span style="font-size:12px; color:var(--faint)">правится в FreeIPA</span>
+            {% endif %}
+          </span>
+        </div>
+      {% empty %}
+        <div class="st-empty">Пользователей нет.</div>
+      {% endfor %}
+    </div>
   </div>
 </div>

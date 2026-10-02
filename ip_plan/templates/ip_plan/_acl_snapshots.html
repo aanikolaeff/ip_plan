@@ -1,0 +1,48 @@
+<section class="hero" style="margin-top: 2rem;">
+  <div class="hero-title-row">
+    <h2 class="title" style="font-size: 1.25rem;">Снимки политики</h2>
+  </div>
+  <p class="subtitle">Когда и что снято с устройств; версия — «Current Rules Set Id» у ViPNet.</p>
+</section>
+{% if snapshot_rows %}
+  <div class="table-wrapper">
+    <table class="table acl-table">
+      <thead>
+        <tr>
+          <th>Устройство</th>
+          <th>Модель / разбор</th>
+          <th>Списков</th>
+          <th>Правил</th>
+          <th>Снято</th>
+          <th>Менялось</th>
+          <th>Версия</th>
+          <th>Файлы</th>
+          <th>Замечания</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in snapshot_rows %}
+          <tr>
+            <td><a href="{% url 'ip_plan:acl_history' device=row.device %}" title="История снимков и изменения">{{ row.device }}</a></td>
+            <td>{{ row.model|default:"—" }} <span class="badge-acl-type">{{ row.parser }}</span></td>
+            <td>{{ row.acl_count }}</td>
+            <td>{{ row.rule_count }}</td>
+            <td>{{ row.updated|date:"d.m.Y H:i"|default:"—" }}</td>
+            <td>{{ row.changed|date:"d.m.Y H:i"|default:"—" }}</td>
+            <td>{{ row.rules_set_id|default:"—" }}</td>
+            <td>{{ row.files|join:", " }}</td>
+            <td>
+              {% for w in row.warnings %}
+                <div class="acl-hint acl-hint-error" style="margin:0">{{ w }}</div>
+              {% empty %}
+                <span class="badge-status" data-status="active">ок</span>
+              {% endfor %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="acl-hint">Снимков пока нет — нужен прогон шага «Config backup».</p>
+{% endif %}

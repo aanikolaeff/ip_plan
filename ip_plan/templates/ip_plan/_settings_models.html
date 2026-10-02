@@ -1,71 +1,91 @@
-<div class="set-panel">
-  <div class="set-panel-head">
+{% comment %}
+  «Модели» (SPEC §4; CONTRACT-settings §3). Контекст: device_type_rows,
+  vendors [(имя, число)], mac_capable, lldp_capable, file_hash.
+  Поиск (по названию и парсеру) и фильтр производителя — клиентские
+  (stFilter, data-search / data-vendor), зебра пересчитывается. Название
+  ведёт на карточку модели (settings_model.html). Сноска о возможностях
+  парсеров генерируется из MAC_CAPABLE_PARSERS / LLDP_CAPABLE_PARSERS.
+{% endcomment %}
+<div class="st-screen" x-data="stFilter({{ device_type_rows|length }})">
+  <div class="st-screen-head">
     <div>
-      <h2 class="set-panel-title">Профили моделей</h2>
-      <p class="set-panel-desc">
-        Что и какими командами синхронизация спрашивает у каждой модели устройства.
-        Устройство ссылается на профиль полем «Модель».
-      </p>
+      <h2 class="st-h2">Модели</h2>
+      <p class="st-lead is-680">Как синхронизация общается с каждой моделью и что собирает с её устройств по умолчанию. Устройство может переопределить любой пункт.</p>
     </div>
-    <div class="set-panel-actions">
-      <button type="button" class="btn-modal-primary"
-              hx-get="{% url 'ip_plan:settings_type_add' %}"
-              hx-target="#modal-content" hx-indicator="#modal-spinner"
-              @click="$store.modal.dirty = false; $dispatch('open-modal')">Добавить модель</button>
+    <a class="st-btn st-btn-primary" href="{% url 'ip_plan:settings_type_add' %}">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+      Добавить модель
+    </a>
+  </div>
+
+  <div class="st-banner is-danger">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+    <span class="st-banner-text">Настройки модели выполняются на боевом оборудовании. Ошибка ломает синхронизацию сразу для всех устройств этой модели — после правки запустите шаг «Устройства» и проверьте результат.</span>
+  </div>
+
+  <div class="st-toolbar is-wrap">
+    <label class="st-search is-240">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      <input type="search" aria-label="Найти модель" placeholder="Название или парсер" x-model="q" @input="apply()" autocomplete="off">
+    </label>
+    <div class="st-chipgroup" role="group" aria-label="Производитель">
+      <span class="st-chipgroup-label">Производитель</span>
+      <button type="button" class="st-seg is-on" :class="{ 'is-on': vendor === '' }" :aria-pressed="vendor === '' ? 'true' : 'false'" aria-pressed="true" @click="pickVendor('')">Все <span class="mono">{{ device_type_rows|length }}</span></button>
+      {% for vname, vcount in vendors %}
+        <button type="button" class="st-seg" :class="{ 'is-on': vendor === '{{ vname|escapejs }}' }" :aria-pressed="vendor === '{{ vname|escapejs }}' ? 'true' : 'false'" aria-pressed="false" @click="pickVendor('{{ vname|escapejs }}')">{{ vname }} <span class="mono">{{ vcount }}</span></button>
+      {% endfor %}
     </div>
   </div>
 
-  <div class="set-panel-body">
-    <div class="set-note set-note-warn">
-      Поля профиля — это команды, которые выполняются на боевом оборудовании.
-      Ошибка здесь ломает синхронизацию для всех устройств этой модели сразу, и увидите
-      вы это только утром в логе прогона.
-    </div>
-  </div>
-
-  <div class="set-panel-body set-panel-body-flush">
-    <table class="set-table">
-      <thead>
-        <tr><th>Модель</th><th>Производитель</th><th>Роль в NetBox</th><th>Парсер</th><th>Устройства</th><th></th></tr>
-      </thead>
-      <tbody>
-        {% for t in device_type_rows %}
-          <tr>
-            <td><span class="set-name">{{ t.name }}</span></td>
-            <td>{{ t.cfg.manufacturer }}</td>
-            <td>{{ t.cfg.role }}</td>
-            <td class="set-mono">{{ t.cfg.interfaces_parser|default:"—" }}</td>
-            <td>
+  <div class="st-tbl">
+    <div class="st-tbl-in st-cols-models-in">
+      <div class="st-thead st-cols-models">
+        <span class="st-cell is-first">Модель</span><span class="st-cell">Производитель</span><span class="st-cell">Роль в NetBox</span><span class="st-cell">Парсер</span><span class="st-cell" style="padding-left:0">По умолчанию собираем</span><span class="st-cell">Устройства</span><span></span>
+      </div>
+      {% for t in device_type_rows %}
+        <div class="st-tr st-cols-models is-50 is-hover{% if forloop.counter|divisibleby:2 %} is-even{% endif %}" data-search="{{ t.search }}" data-vendor="{{ t.manufacturer }}">
+          <span class="st-namecell" style="align-items:flex-start">
+            <a class="st-namecell-name" href="{% url 'ip_plan:settings_type_edit' t.name %}" title="Изменить {{ t.name }}">{{ t.name }}</a>
+            {% if t.cluster %}<span class="mono" style="font-size:11.5px; color:var(--faint)">cluster: {{ t.cluster }}</span>{% endif %}
+          </span>
+          <span class="st-cell is-flex" style="gap:7px; font-size:12.5px"><span class="st-ini">{{ t.initials }}</span><span style="overflow:hidden; text-overflow:ellipsis" title="{{ t.manufacturer }}">{{ t.manufacturer }}</span></span>
+          <span class="st-cell" style="font-size:12.5px; color:var(--muted)" title="{{ t.role }}">{{ t.role|default:"—" }}</span>
+          <span class="st-cell is-flex" style="gap:6px">
+            {% if t.parser %}<span class="mono" style="font-size:12px; overflow:hidden; text-overflow:ellipsis">{{ t.parser }}</span><span class="st-via">{{ t.transport }}</span>{% else %}<span style="color:var(--faint)">—</span>{% endif %}
+          </span>
+          <span class="st-flags">
+            {% for f in t.defaults %}<span class="st-flag is-model">{{ f }}</span>{% empty %}<span class="st-flags-none">ничего</span>{% endfor %}
+          </span>
+          <span class="st-cell" style="font-size:12.5px{% if not t.used_by %}; color:var(--faint){% endif %}" title="{{ t.used_by|join:', ' }}">
+            {% if t.used_by %}{{ t.used_by.0 }}{% if t.used_by|length > 1 %} +{{ t.used_by|length|add:"-1" }}{% endif %}{% else %}не используется{% endif %}
+          </span>
+          <span class="st-rowmenu" x-data="stMenu()" @click.outside="close()" @keydown.escape.window="close()">
+            <button type="button" class="st-more" :class="{ 'is-open': open }" @click="toggle($el)"
+                    aria-haspopup="menu" :aria-expanded="open ? 'true' : 'false'" aria-label="Действия">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+            </button>
+            <div class="st-menu" role="menu" x-ref="menu" :class="{ 'is-open': open }" :style="pos">
+              <a class="st-menu-item" role="menuitem" href="{% url 'ip_plan:settings_type_edit' t.name %}">Изменить</a>
+              <div class="st-menu-sep"></div>
               {% if t.used_by %}
-                <div class="set-chips">
-                  {% for d in t.used_by %}<span class="set-chip">{{ d }}</span>{% endfor %}
-                </div>
+                <button type="button" class="st-menu-item" role="menuitem" disabled title="Используется: {{ t.used_by|join:', ' }}">Удалить — модель используется</button>
               {% else %}
-                <span class="set-muted">не используется</span>
+                <form hx-post="{% url 'ip_plan:settings_type_delete' t.name %}" hx-target="#modal-content"
+                      hx-confirm="Удалить модель «{{ t.name }}»?"
+                      hx-on::after-request="if (event.detail.xhr.status >= 400) { Alpine.store('modal').dirty = false; window.dispatchEvent(new CustomEvent('open-modal')); }">
+                  {% csrf_token %}
+                  <input type="hidden" name="file_hash" value="{{ file_hash }}">
+                  <button type="submit" class="st-menu-item is-danger" role="menuitem" @click="close()">Удалить</button>
+                </form>
               {% endif %}
-            </td>
-            <td>
-              <div class="set-row-actions">
-                <button type="button" class="btn-modal-secondary btn-pill-sm"
-                        hx-get="{% url 'ip_plan:settings_type_edit' t.name %}"
-                        hx-target="#modal-content" hx-indicator="#modal-spinner"
-                        @click="$store.modal.dirty = false; $dispatch('open-modal')">Изменить</button>
-                {% if not t.used_by %}
-                  <form hx-post="{% url 'ip_plan:settings_type_delete' t.name %}"
-                        hx-target="#modal-content"
-                        hx-confirm="Удалить профиль «{{ t.name }}»?">
-                    {% csrf_token %}
-                    <input type="hidden" name="file_hash" value="{{ file_hash }}">
-                    <button type="submit" class="btn-danger-quiet">Удалить</button>
-                  </form>
-                {% endif %}
-              </div>
-            </td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="6" class="set-empty">Профилей нет.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+            </div>
+          </span>
+        </div>
+      {% empty %}
+        <div class="st-empty">Моделей нет. Добавьте первую — без неё устройство не завести.</div>
+      {% endfor %}
+    </div>
   </div>
+
+  <span class="st-footnote">MAC-таблицы умеют парсеры {{ mac_capable|join:", " }}; LLDP — {{ lldp_capable|join:", " }}. Для остальных эти пункты в форме недоступны.</span>
 </div>

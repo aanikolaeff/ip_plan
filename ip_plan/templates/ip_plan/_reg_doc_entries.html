@@ -1,0 +1,47 @@
+{% load ip_plan_extras %}
+{% comment %}
+  Таблица записей письма (SPEC-reg.md, 2.4) — HTMX-фрагмент. Контекст —
+  _reg_document_context: document, progress, entries (уже отсортированы:
+  проблемные выше), snapshot; плюс in_page=True, когда фрагмент включён в
+  саму страницу reg_document.html.
+
+  Корень сам себя перерисовывает по событию regulator-entries-changed (его
+  шлют сервер в HX-Trigger после быстрого ввода и сохранения импорта, и
+  reg.js после снять / вернуть / удалить). В ответе фрагмента (не на
+  странице) — ещё и сводка письма OOB. Фильтр «Найти в письме», «Показать
+  хэши» и пагинацию по 200 строк после каждой замены применяет regDoc
+  (reg.js) по data-kind / data-search. Меню «⋯» — одно на страницу (в
+  reg_document.html), строки отдают ему id/статус/значение data-атрибутами.
+{% endcomment %}
+{% now "Y" as cur_year %}
+<div id="reg-doc-entries" class="reg-doc-table"
+     hx-get="{% url 'ip_plan:regulator_document_entries' document.id %}"
+     hx-trigger="regulator-entries-changed from:window" hx-swap="outerHTML">
+  <div class="reg-thead reg-doc-head" role="row">
+    <span class="cell">Тип</span><span class="cell">Значение</span><span class="cell">Статус</span><span class="cell">На xFW</span><span class="cell">Добавлена</span><span></span>
+  </div>
+  <div class="reg-tbody">
+    {% for e in entries %}
+      <div class="reg-row reg-doc-row{% if e.status != 'active' %} is-revoked{% endif %}{% if e.kind == 'hash' %} is-filtered{% endif %}"
+           data-kind="{{ e.kind }}" data-search="{{ e.value|lower }} {{ e.match_value|lower }}">
+        <span class="cell"><span class="reg-kind">{{ e.kind_label }}</span></span>
+        <span class="cell mono reg-entry-value" title="{{ e.value }}{% if e.other_letters %} · есть и в письмах: {% for o in e.other_letters %}{{ o.reference_no }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}">{{ e.value }}{% if e.other_letters %} <span class="reg-entry-others">+{{ e.other_letters|length }} {{ e.other_letters|length|plural:"письмо,письма,писем" }}</span>{% endif %}</span>
+        <span class="cell reg-entry-status"{% if e.status != 'active' %} title="Снята{% if e.revoked_at %} {{ e.revoked_at|date:'d.m.Y H:i' }}{% endif %}{% if e.revoked_reason %} · {{ e.revoked_reason }}{% endif %}"{% endif %}>{{ e.status_label }}</span>
+        <span class="cell reg-fw is-{{ e.fw_state }}"{% if e.fw_via %} title="Входит в подсеть {{ e.fw_via }} на xFW"{% endif %}><span class="reg-fw-dot"></span>{{ e.fw_state_label }}{% if e.fw_via %} <span class="reg-fw-via">через подсеть</span>{% endif %}</span>
+        <span class="cell mono reg-entry-added" title="{{ e.created_at|date:'d.m.Y H:i' }}">{% if e.created_at|date:"Y" == cur_year %}{{ e.created_at|date:"d.m H:i" }}{% else %}{{ e.created_at|date:"d.m.Y" }}{% endif %}</span>
+        <button type="button" class="reg-row-act" aria-label="Действия" title="Действия"
+                data-row-act data-id="{{ e.id }}" data-status="{{ e.status }}" data-value="{{ e.value }}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+        </button>
+      </div>
+    {% empty %}
+      <div class="reg-empty">Записей пока нет — введите значение слева выше или загрузите файлы письма</div>
+    {% endfor %}
+    <div id="reg-doc-filtered-empty" class="reg-empty is-hidden">Под фильтр ничего не подходит{% if progress.hash %} — хэши скрыты, включите «Показать хэши»{% endif %}</div>
+    <div class="reg-more is-hidden" :class="{ 'is-hidden': rest() <= 0 }">
+      Показано <span class="mono" x-text="num(shown)"></span> из <span class="mono" x-text="num(match)"></span> ·
+      <button type="button" class="reg-link-btn" @click="more()">Показать ещё 200</button>
+    </div>
+  </div>
+</div>
+{% if not in_page %}{% include "ip_plan/_reg_doc_summary.html" with oob=True %}{% endif %}

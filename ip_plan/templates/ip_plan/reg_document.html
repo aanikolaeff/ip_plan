@@ -1,0 +1,186 @@
+{% extends "ip_plan/base.html" %}
+{% load static ip_plan_extras %}
+
+{% comment %}
+  Карточка письма (SPEC-reg.md, разделы 2–3; макет RegDoc / RegDocPreview).
+  Контекст — _reg_document_context: document (модель), progress (строка
+  letters или None), entries, snapshot (CONTRACT-reg.md).
+
+  Сверху вниз: подпись «примечание · добавил» → сводка по письму → приём
+  записей (одна строка → regulator_entry_quick_add; файлы → ioc/parse с
+  предпросмотром в #ioc-preview-panel) → «Записи письма» с поиском и хэшами →
+  таблица (_reg_doc_entries.html, перерисовывается по regulator-entries-
+  changed). Пока открыт предпросмотр «Проверьте, что распознано», таблица
+  скрыта CSS-правилом :has() в reg.css (блок заменяет её, как в макете).
+
+  Крошка «Блокировки / номер от даты» — в шапке оболочки (head_extra),
+  «Изменить» (существующая модалка regulator_document_edit) и «⋯» (удалить
+  письмо) — в head_actions (regDocHead). Меню действий записи — одно на
+  страницу (regDoc в reg.js): снять с причиной, вернуть, удалить с
+  подтверждением — без window.prompt/confirm, через JSON-эндпоинты.
+{% endcomment %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'ip_plan/css/acl.css' %}">
+  <link rel="stylesheet" href="{% static 'ip_plan/css/reg.css' %}">
+{% endblock %}
+{% block extra_scripts %}
+  <script src="{% static 'ip_plan/js/reg.js' %}"></script>
+{% endblock %}
+
+{% block head_extra %}
+  <span class="reg-crumb-slash" aria-hidden="true">/</span>
+  <span class="reg-crumb-title mono" title="Письмо {{ document.reference_no }}">{{ document.reference_no }}</span>
+  <span class="reg-crumb-date">от {{ document.document_date|date:"d.m.Y" }}</span>
+{% endblock %}
+
+{% block head_actions %}
+  {% url 'ip_plan:regulator_document_edit' document.id as edit_url %}
+  {% url 'ip_plan:regulator_document_delete' document.id as delete_url %}
+  {% url 'ip_plan:regulator_list' as list_url %}
+  <div class="reg-head-actions" style="display: flex; align-items: center; gap: 8px"
+       x-data="regDocHead('{{ delete_url|escapejs }}', '{{ list_url|escapejs }}', '{{ edit_url|escapejs }}')">
+    <a class="reg-head-btn is-quiet" href="{{ list_url }}" title="Все письма">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg>
+      Все письма
+    </a>
+    <button type="button" class="reg-head-btn is-quiet" title="Изменить примечание письма"
+            hx-get="{{ edit_url }}" hx-target="#modal-content" hx-indicator="#modal-spinner"
+            @click="$store.modal.dirty = false; $dispatch('open-modal')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"></path></svg>
+      Изменить
+    </button>
+    <div class="reg-menu-wrap" @click.outside="close()" @keydown.escape.window="close()">
+      <button type="button" class="reg-head-btn is-quiet is-icon" aria-label="Ещё действия" title="Ещё действия"
+              :aria-expanded="open ? 'true' : 'false'" @click="toggle()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+      </button>
+      <div class="reg-menu" :class="{ 'is-open': open }" role="menu">
+        <div class="reg-menu-list" :class="{ 'is-hidden': confirm }">
+          <a class="reg-menu-item" role="menuitem" href="{% url 'ip_plan:regulator_commands' %}">Команды для xFW</a>
+          <div class="reg-menu-sep"></div>
+          <button type="button" class="reg-menu-item is-danger" role="menuitem" @click="confirm = true">Удалить письмо…</button>
+        </div>
+        <div class="reg-menu-confirm is-hidden" :class="{ 'is-hidden': !confirm }">
+          <span class="reg-menu-confirm-text">Удалить письмо <b>{{ document.reference_no }}</b>{% if progress.total %} вместе с <b>{{ progress.total|ru_number }}</b> {{ progress.total|plural:"записью,записями,записями" }}{% endif %}? Отменить это нельзя.</span>
+          <span class="reg-menu-err is-hidden" :class="{ 'is-hidden': !err }" x-text="err"></span>
+          <div class="reg-menu-actions">
+            <button type="button" class="reg-mini-btn" @click="confirm = false">Отмена</button>
+            <button type="button" class="reg-mini-btn is-danger" :disabled="busy" @click="remove()">Удалить</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block body_class %} shell-body-fixed{% endblock %}
+
+{% block content %}
+{# Приёмник OOB-ответа модалки «Изменить» (она перерисовывает список писем #regulator-letters-body) — на этой странице списка нет; после успеха regDocHead перезагружает страницу #}
+<div hidden aria-hidden="true"><div id="regulator-letters-body"></div></div>
+
+<div class="acl reg reg-doc shell-island" x-data="regDoc()"
+     @click.window="onWindowClick($event)" @keydown.escape.window="closeMenu()">
+
+  <div class="reg-doc-sub">
+    {# id обязателен: regulator_document_ioc_save обновляет примечание OOB (_regulator_document_note.html) #}
+    <p id="regulator-note-display" class="subtitle">{{ document.note }}</p>
+    {% if document.created_by %}<span class="reg-doc-sep">·</span><span>добавил {{ document.created_by }}</span>{% endif %}
+  </div>
+
+  {% include "ip_plan/_reg_doc_summary.html" %}
+
+  {# ── Приём записей (2.3) ─────────────────────────────────────────────── #}
+  <div class="reg-intake">
+    <div class="reg-intake-card">
+      <span class="reg-intake-title">Добавить вручную</span>
+      <label class="reg-intake-label" for="reg-quick-value">Значение</label>
+      {# Тип определяет сервер (ioc_parser.classify_clean_line); после успеха поле очищается и остаётся в фокусе. Статус проверяем по xhr.status: app.js делает 400 «успешным» для перерисовки форм #}
+      <form class="reg-intake-form" hx-post="{% url 'ip_plan:regulator_entry_quick_add' document.id %}" hx-swap="none"
+            hx-on::after-request="const v = this.querySelector('[name=value]'); if (event.detail.xhr.status === 200) v.value = ''; v.focus();">
+        {% csrf_token %}
+        <input type="text" name="value" id="reg-quick-value" class="reg-intake-input" placeholder="1.2.3.4, example.com, https://… или хэш"
+               autocomplete="off" spellcheck="false" required>
+        <button type="submit" class="reg-btn-primary">Добавить</button>
+      </form>
+      <div id="quick-add-error" class="quick-add-error"></div>
+      <span class="reg-intake-hint">Тип определится сам. Enter — добавить и ввести следующее.</span>
+    </div>
+
+    {# Файлы — сразу на разбор (ioc/parse), ответ — экран «Проверьте, что распознано» вместо #ioc-preview-panel. Оба input'а — ioc_files: Django не отличает папку от набора файлов #}
+    <form id="reg-upload-form" class="reg-drop" :class="{ 'is-over': over }"
+          hx-post="{% url 'ip_plan:regulator_document_ioc_parse' document.id %}" hx-encoding="multipart/form-data"
+          hx-target="#ioc-preview-panel" hx-swap="outerHTML"
+          hx-on::after-request="if (event.detail.xhr.status === 200) this.reset();"
+          @dragover.prevent="over = true" @dragenter.prevent="over = true" @dragleave.prevent="over = false" @drop.prevent="drop($event)">
+      {% csrf_token %}
+      <input type="file" name="ioc_files" data-files multiple accept=".pdf,.docx,.csv,.txt" hidden x-ref="files"
+             @change="if ($event.target.files.length) $el.form.requestSubmit()">
+      <input type="file" name="ioc_files" data-folder multiple webkitdirectory hidden x-ref="folder"
+             @change="if ($event.target.files.length) $el.form.requestSubmit()">
+      <span class="reg-drop-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" x2="12" y1="3" y2="15"></line></svg>
+      </span>
+      <span class="reg-drop-text">
+        <span class="reg-drop-title">Загрузить из файлов</span>
+        <span class="reg-drop-line">Перетащите PDF, DOCX, CSV или TXT — или
+          <button type="button" class="reg-link-btn" @click="$refs.folder.value = ''; $refs.files.click()">выберите файлы</button> /
+          <button type="button" class="reg-link-btn" @click="$refs.files.value = ''; $refs.folder.click()">папку</button></span>
+        <span class="reg-drop-hint">Перед сохранением покажем, что распознано</span>
+      </span>
+      <span class="reg-drop-busy" role="status"><span class="shell-spinner"></span>Разбираем файлы…</span>
+    </form>
+  </div>
+
+  {# Экран «Проверьте, что распознано» (раздел 3) — пусто, пока файлы не выбраны #}
+  {% include "ip_plan/_regulator_ioc_preview.html" with rows=None %}
+
+  {# ── Записи письма (2.4) ─────────────────────────────────────────────── #}
+  <div class="reg-doc-entries">
+    <div class="reg-doc-entries-top">
+      <span class="reg-doc-entries-title">Записи письма</span>
+      <div class="reg-toolbar-right">
+        <label class="reg-search is-small">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+          <input type="search" class="reg-input" placeholder="Найти в письме" aria-label="Найти в письме" x-model="q" @input.debounce.200ms="limit = 200; apply()">
+        </label>
+        <label class="reg-check-box">
+          <input type="checkbox" x-model="hashes" @change="limit = 200; apply()">
+          Показать хэши (IOC) · <span class="mono">{{ progress.hash|default:0|ru_number }}</span>
+        </label>
+      </div>
+    </div>
+    {% include "ip_plan/_reg_doc_entries.html" with in_page=True %}
+  </div>
+
+  {# Меню действий записи — одно на страницу, позиционируется у нажатой «⋯» (regDoc.openMenu) #}
+  <div class="reg-menu reg-rowmenu" :class="{ 'is-open': menu.open }" :style="menuStyle()" role="menu" aria-label="Действия с записью">
+    <div :class="{ 'is-hidden': menu.mode !== 'menu' }">
+      <div class="reg-menu-confirm-text mono" style="padding: 4px 10px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap" x-text="menu.value"></div>
+      <button type="button" class="reg-menu-item" :class="{ 'is-hidden': menu.status !== 'active' }" @click="askRevoke()">Снять…</button>
+      <button type="button" class="reg-menu-item" :class="{ 'is-hidden': menu.status === 'active' }" :disabled="menu.busy" @click="reactivate()">Вернуть в активные</button>
+      <div class="reg-menu-sep"></div>
+      <button type="button" class="reg-menu-item is-danger" @click="askDelete()">Удалить…</button>
+    </div>
+    <div class="reg-menu-confirm is-hidden" :class="{ 'is-hidden': menu.mode !== 'revoke' }">
+      <span class="reg-menu-confirm-text">Снять <b class="mono" x-text="menu.value"></b>? Запись останется в письме со статусом «снята».</span>
+      <input type="text" class="reg-menu-input" placeholder="Причина (необязательно)" maxlength="255" x-model="menu.reason"
+             @keydown.enter.prevent="revoke()" aria-label="Причина снятия">
+      <span class="reg-menu-err is-hidden" :class="{ 'is-hidden': !menu.err }" x-text="menu.err"></span>
+      <div class="reg-menu-actions">
+        <button type="button" class="reg-mini-btn" @click="menu.mode = 'menu'">Отмена</button>
+        <button type="button" class="reg-mini-btn is-primary" :disabled="menu.busy" @click="revoke()">Снять</button>
+      </div>
+    </div>
+    <div class="reg-menu-confirm is-hidden" :class="{ 'is-hidden': menu.mode !== 'delete' }">
+      <span class="reg-menu-confirm-text">Удалить запись <b class="mono" x-text="menu.value"></b> из письма? Отменить это нельзя; если регулятор её отозвал — лучше «Снять».</span>
+      <span class="reg-menu-err is-hidden" :class="{ 'is-hidden': !menu.err }" x-text="menu.err"></span>
+      <div class="reg-menu-actions">
+        <button type="button" class="reg-mini-btn" @click="menu.mode = 'menu'">Отмена</button>
+        <button type="button" class="reg-mini-btn is-danger" :disabled="menu.busy" @click="remove()">Удалить</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

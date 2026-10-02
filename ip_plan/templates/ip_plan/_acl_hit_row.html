@@ -1,0 +1,110 @@
+{% comment %}
+  Строка правила-совпадения на экране «Где встречается адрес» (SPEC-acl.md,
+  раздел 3.3). Контекст: `hit` (HIT из CONTRACT-acl.md), `group` (группа
+  устройство/список — для data-group и ссылки «Правило в списке»), `compact`
+  (True — укороченная строка для свёрток «Через широкие наборы» / «Правила с
+  any», без раскрытия, раздел 3.4).
+
+  Фильтры роли/категории и раскрытие — на клиенте (Alpine aclWhere в acl.js):
+  строка несёт data-role / data-cat / data-group, видимость и раскрытие —
+  классами is-hidden / is-open через :class (не x-show, см. CLAUDE.md).
+  Зебру по сквозному счётчику видимых строк тоже ставит JS (класс is-even).
+{% endcomment %}
+{% load ip_plan_extras %}
+{% if compact %}
+  <div class="acl-hit-c" data-role="{{ hit.role }}">
+    <span class="cell mono acl-hit-id">{{ hit.rule_id }}</span>
+    <span class="cell acl-hit-c-name"><a href="{{ hit.list_url }}" class="acl-hit-c-link" title="Открыть правило в списке {{ hit.acl_name }}">{{ hit.name|default:hit.rule_id }}</a> <span class="mono acl-hit-c-dev">{{ hit.device }}</span></span>
+    <span class="cell"><span class="acl-pill is-{{ hit.action }}">{{ hit.action_label }}</span></span>
+    <span class="cell mono acl-hit-c-flow">{% if hit.role == 'dst' %}{{ hit.other_short }} → адрес{% elif hit.role == 'both' %}адрес → адрес{% else %}адрес → {{ hit.other_short }}{% endif %}</span>
+    <span class="cell mono acl-hit-c-svc">{{ hit.service_short }}</span>
+    <span class="cell mono acl-hit-c-via" title="{{ hit.via }}">{{ hit.via }}</span>
+    <span></span>
+  </div>
+{% else %}
+  <div class="acl-hit" data-key="{{ hit.key }}" data-role="{{ hit.role }}" data-cat="{{ hit.category }}" data-group="{{ group.key }}"
+       :class="{ 'is-open': open === '{{ hit.key|escapejs }}', 'is-hidden': !visible('{{ hit.role }}', '{{ hit.category }}') }">
+    <div class="acl-hit-row{% if hit.inactive %} is-inactive{% endif %}">
+      <span class="cell mono acl-hit-id" title="ID правила">{{ hit.rule_id }}</span>
+      <button type="button" class="cell acl-hit-name" @click="toggleOpen('{{ hit.key|escapejs }}')"
+              :aria-expanded="open === '{{ hit.key|escapejs }}' ? 'true' : 'false'"
+              title="{{ hit.name|default:hit.rule_id }}{% if hit.inactive %} · правило выключено{% endif %}{% if hit.schedule %} · по расписанию: {{ hit.schedule }}{% endif %}">{{ hit.name|default:hit.rule_id }}{% if hit.inactive %} <span class="acl-hit-flag">выкл.</span>{% endif %}</button>
+      <span class="cell"><span class="acl-pill is-{{ hit.action }}">{{ hit.action_label }}</span></span>
+      <span class="cell acl-hit-flow">
+        {% if hit.role == 'dst' %}
+          <span class="mono acl-hit-other" title="{{ hit.src.short }}">{{ hit.other_short }}</span>
+          <span class="acl-hit-arrow" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg></span>
+          <span class="acl-addr-chip">адрес</span>
+        {% elif hit.role == 'both' %}
+          {# Адрес и в источнике, и в назначении (SPEC 3.3: роль «оба» в макете не нарисована — рисуем «адрес → адрес») #}
+          <span class="acl-addr-chip" title="{{ hit.src.short }}">адрес</span>
+          <span class="acl-hit-arrow" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg></span>
+          <span class="acl-addr-chip" title="{{ hit.dst.short }}">адрес</span>
+        {% else %}
+          <span class="acl-addr-chip">адрес</span>
+          <span class="acl-hit-arrow" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg></span>
+          <span class="mono acl-hit-other" title="{{ hit.dst.short }}">{{ hit.other_short }}</span>
+        {% endif %}
+      </span>
+      <span class="cell mono acl-hit-svc" title="{{ hit.service_full }}">{{ hit.service_short }}</span>
+      <span class="cell acl-hit-via">
+        <span class="acl-dot is-{{ hit.category }}" aria-hidden="true"></span>
+        {% if hit.category == 'exact' %}
+          <span class="acl-hit-via-text">{{ hit.via_text|default:"указан явно" }}</span>
+        {% else %}
+          <span class="mono acl-hit-via-token" title="{{ hit.via }}">{{ hit.via }}</span>
+        {% endif %}
+      </span>
+      <button type="button" class="acl-hit-chev ghost" @click="toggleOpen('{{ hit.key|escapejs }}')" aria-label="Подробнее о правиле">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+      </button>
+    </div>
+
+    {# ── Раскрытое правило: Откуда / Куда / Сервис / Почему совпало / ссылки ── #}
+    <div class="acl-hit-details">
+      <div class="acl-hit-col">
+        <span class="sec">Откуда</span>
+        <div class="acl-chips">
+          {% for t in hit.src.tokens %}
+            {% if t.panel_url %}
+              <button type="button" class="mono acl-chip is-link{% if t.hit %} is-hit{% endif %}" @click="openPanel('{{ t.panel_url|escapejs }}')" title="{{ t.panel_title|default:'Группа адресов · открыть' }}">{{ t.text }}</button>
+            {% else %}
+              <span class="mono acl-chip{% if t.hit %} is-hit{% endif %}{% if t.kind == 'any' %} is-any{% endif %}"{% if t.title %} title="{{ t.title }}"{% endif %}>{{ t.text }}</span>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      <div class="acl-hit-col">
+        <span class="sec">Куда</span>
+        <div class="acl-chips">
+          {% for t in hit.dst.tokens %}
+            {% if t.panel_url %}
+              <button type="button" class="mono acl-chip is-link{% if t.hit %} is-hit{% endif %}" @click="openPanel('{{ t.panel_url|escapejs }}')" title="{{ t.panel_title|default:'Группа адресов · открыть' }}">{{ t.text }}</button>
+            {% else %}
+              <span class="mono acl-chip{% if t.hit %} is-hit{% endif %}{% if t.kind == 'any' %} is-any{% endif %}"{% if t.title %} title="{{ t.title }}"{% endif %}>{{ t.text }}</span>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      <div class="acl-hit-col">
+        <span class="sec">Сервис</span>
+        <span class="mono acl-hit-svc-full">{{ hit.service_full|default:hit.service_short }}</span>
+      </div>
+      <div class="acl-hit-col acl-hit-why">
+        <span class="sec">Почему совпало</span>
+        <div class="acl-chain">
+          {% for c in hit.chain %}
+            {% if not forloop.first %}<span class="acl-chain-sep">входит в</span>{% endif %}
+            <span class="mono acl-chip is-chain">{{ c.value }}{% if c.note %}<span class="acl-chip-note">{{ c.note }}</span>{% endif %}</span>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="acl-hit-links">
+        {% if hit.object and hit.object.panel_url %}
+          <button type="button" class="acl-link-btn" @click="openPanel('{{ hit.object.panel_url|escapejs }}')">Открыть объект <span class="mono">{{ hit.object.name }}</span> →</button>
+        {% endif %}
+        <a href="{{ hit.list_url }}">Правило в списке {{ hit.acl_name }} →</a>
+      </div>
+    </div>
+  </div>
+{% endif %}

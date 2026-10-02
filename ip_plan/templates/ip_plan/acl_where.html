@@ -1,0 +1,169 @@
+{% extends "ip_plan/base.html" %}
+{% load static ip_plan_extras %}
+
+{% comment %}
+  Результат «Где встречается адрес» (SPEC-acl.md, раздел 3). Контекст —
+  question, snapshot_summary, error, result (CONTRACT-acl.md).
+
+  Сервер отдаёт полный результат (все группы и строки без фильтров), а роль /
+  категория / раскрытие / свёртки живут на клиенте в Alpine-компоненте
+  aclWhere (acl.js): строки несут data-role / data-cat / data-group, счётчики
+  чипов берутся из result.cat_counts (json_script), счётчики «3 из 13» в
+  заголовках групп и скрытие пустых групп считаются по DOM. Итоговая фраза
+  всегда по полному результату и от фильтров не зависит.
+{% endcomment %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'ip_plan/css/acl.css' %}">
+{% endblock %}
+{% block extra_scripts %}
+  <script src="{% static 'ip_plan/js/acl.js' %}"></script>
+{% endblock %}
+
+{% block head_actions %}
+  <span class="acl-snapshot" title="Когда сняты конфигурации устройств">{{ snapshot_summary.text }}</span>
+{% endblock %}
+
+{% block body_class %} shell-body-fixed{% endblock %}
+
+{% block content %}
+<div class="acl shell-island">
+  {% include "ip_plan/_acl_question.html" %}
+
+  {% if error %}
+    <div class="acl-error" role="alert">{{ error }}</div>
+
+  {% elif result %}
+    {{ result.cat_counts|json_script:"acl-cat-counts" }}
+    <div class="acl-where" x-data="aclWhere()">
+
+      {# ── 3.1 Итоговая фраза и переключатель роли ── #}
+      <div class="acl-summary">
+        <div class="acl-summary-text">
+          {% if result.empty %}
+            <div class="acl-summary-line"><span class="mono acl-summary-q">{{ result.query }}</span> не встречается ни в одном списке доступа{% if question.selected %} на выбранных устройствах{% else %} на устройствах площадки{% endif %}</div>
+            <div class="acl-summary-sub">Ни напрямую, ни через подсеть или объект, ни через широкие наборы и <span class="mono">any</span>. Проверьте адрес и выбор устройств — или снимки конфигураций ещё не сняты.</div>
+          {% else %}
+            <div class="acl-summary-line"><span class="mono acl-summary-q">{{ result.query }}</span> встречается в <b>{{ result.total_rules|ru_number }} {{ result.total_rules|plural:"правиле,правилах,правилах" }}</b> на <b>{{ result.total_devices|ru_number }} {{ result.total_devices|plural:"устройстве,устройствах,устройствах" }}</b></div>
+            <div class="acl-summary-sub">
+              {% if result.explicit_denies %}<span class="acl-summary-deny">Явных запретов: {{ result.explicit_denies }}.</span>{% else %}Явных запретов нет.{% endif %}
+              {% if result.hidden_count %}Ещё {{ result.hidden_count|ru_number }} {{ result.hidden_count|plural:"правило подходит,правила подходят,правил подходят" }} этому адресу только потому, что охватывают целые сети или <span class="mono">any</span> — они свёрнуты внизу.{% endif %}
+            </div>
+          {% endif %}
+        </div>
+        {% if not result.empty %}
+        <div class="acl-seg" role="group" aria-label="Роль адреса в правиле">
+          <button type="button" class="acl-seg-btn" :class="{ 'is-on': role === 'any' }" :aria-pressed="role === 'any' ? 'true' : 'false'" @click="setRole('any')">Любая роль</button>
+          <button type="button" class="acl-seg-btn" :class="{ 'is-on': role === 'src' }" :aria-pressed="role === 'src' ? 'true' : 'false'" @click="setRole('src')">Источник</button>
+          <button type="button" class="acl-seg-btn" :class="{ 'is-on': role === 'dst' }" :aria-pressed="role === 'dst' ? 'true' : 'false'" @click="setRole('dst')">Назначение</button>
+        </div>
+        {% endif %}
+      </div>
+
+      {% if not result.empty %}
+      {# ── 3.2 Фильтр «Как попадает» ── #}
+      <div class="acl-cats">
+        <span class="acl-cats-label">Как попадает</span>
+        <button type="button" class="gchip acl-gchip" :class="{ 'is-on': cat === 'all' }" :aria-pressed="cat === 'all' ? 'true' : 'false'" @click="setCat('all')">
+          <span class="acl-dot is-all" aria-hidden="true"></span>Все<span class="mono acl-gchip-n" x-text="catCount('all')">{{ result.cat_counts.all.any }}</span>
+        </button>
+        <button type="button" class="gchip acl-gchip" :class="{ 'is-on': cat === 'exact' }" :aria-pressed="cat === 'exact' ? 'true' : 'false'" @click="setCat('exact')">
+          <span class="acl-dot is-exact" aria-hidden="true"></span>Указан явно<span class="mono acl-gchip-n" x-text="catCount('exact')">{{ result.cat_counts.exact.any }}</span>
+        </button>
+        <button type="button" class="gchip acl-gchip" :class="{ 'is-on': cat === 'net' }" :aria-pressed="cat === 'net' ? 'true' : 'false'" @click="setCat('net')">
+          <span class="acl-dot is-net" aria-hidden="true"></span>Входит в подсеть<span class="mono acl-gchip-n" x-text="catCount('net')">{{ result.cat_counts.net.any }}</span>
+        </button>
+        <button type="button" class="gchip acl-gchip" :class="{ 'is-on': cat === 'obj' }" :aria-pressed="cat === 'obj' ? 'true' : 'false'" @click="setCat('obj')">
+          <span class="acl-dot is-obj" aria-hidden="true"></span>Через объект<span class="mono acl-gchip-n" x-text="catCount('obj')">{{ result.cat_counts.obj.any }}</span>
+        </button>
+        <span class="acl-grow"></span>
+        <span class="acl-cats-hint">Сначала самые точные совпадения</span>
+      </div>
+
+      {# ── 3.3 Таблица ── #}
+      <div class="acl-where-head" role="row">
+        <span class="cell">ID</span><span class="cell">Правило</span><span class="cell">Действие</span><span class="cell">Как идёт трафик</span><span class="cell">Сервис</span><span class="cell">Совпало по</span><span></span>
+      </div>
+      <div class="acl-where-body">
+        {% for g in result.groups %}
+          <div class="acl-group" data-group="{{ g.key }}" :class="{ 'is-hidden': groupVisible('{{ g.key|escapejs }}') === 0 }">
+            <div class="acl-group-head">
+              <span class="acl-group-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="8" x="2" y="14" rx="2"></rect><path d="M6.01 18H6"></path><path d="M10.01 18H10"></path><path d="M15 10v4"></path><path d="M17.84 7.17a4 4 0 0 0-5.66 0"></path><path d="M20.66 4.34a8 8 0 0 0-11.31 0"></path></svg></span>
+              <span class="mono acl-group-dev">{{ g.device }}</span>
+              {% if g.model %}<span class="acl-group-model">{{ g.model }}</span>{% endif %}
+              <span class="acl-group-slash" aria-hidden="true">/</span>
+              <span class="acl-group-list">{{ g.type_label|default:g.acl_name }}</span>
+              {% if g.purpose %}<span class="acl-group-purpose">{{ g.purpose }}</span>{% endif %}
+              <span class="acl-status{% if not g.applied %} is-off{% endif %}"><span class="acl-status-dot" aria-hidden="true"></span>{{ g.where_text }}</span>
+              <span class="acl-grow"></span>
+              <span class="acl-group-count" x-text="groupCountText('{{ g.key|escapejs }}', {{ g.rule_count }})">{{ g.rule_count }} {{ g.rule_count|plural:"правило,правила,правил" }}</span>
+              <a class="acl-group-open" href="{{ g.list_url }}">Открыть список →</a>
+            </div>
+            {% for hit in g.hits %}
+              {% include "ip_plan/_acl_hit_row.html" with hit=hit group=g compact=False %}
+            {% endfor %}
+          </div>
+        {% endfor %}
+
+        <div class="acl-empty acl-filter-empty" :class="{ 'is-hidden': visibleTotal() > 0 }">По этому фильтру правил нет.</div>
+
+        {# ── 3.4 Свёртки: широкие наборы и any ── #}
+        {% if result.broad.count or result.any.count %}
+        <div class="acl-folds">
+          {% if result.broad.count %}
+          <div class="acl-fold-head">
+            <span class="acl-dot is-broad" aria-hidden="true"></span>
+            <div class="acl-fold-text">
+              <span><b>Через широкие наборы</b> <span class="mono acl-fold-n">{{ result.broad.count|ru_number }}</span> <span class="acl-fold-desc">— адрес попал как часть всех частных сетей или всего интернета</span></span>
+              <span class="acl-fold-objs">
+                {% for o in result.broad.objects %}
+                  <span class="mono acl-fold-obj">{{ o.name }} <span class="acl-fold-obj-net">{{ o.network }}</span> <span class="acl-fold-obj-n">{{ o.count }}</span></span>
+                {% endfor %}
+                {% if result.broad.more_objects_count %}
+                  <span class="mono acl-fold-obj">ещё {{ result.broad.more_objects_count }} {{ result.broad.more_objects_count|plural:"объект,объекта,объектов" }} <span class="acl-fold-obj-n">{{ result.broad.more_objects_rules }}</span></span>
+                {% endif %}
+              </span>
+            </div>
+            <button type="button" class="ghost acl-fold-btn" @click="broadOpen = !broadOpen" :aria-expanded="broadOpen ? 'true' : 'false'" x-text="broadOpen ? 'Свернуть' : 'Показать'">Показать</button>
+          </div>
+          <div class="acl-fold-rows" :class="{ 'is-open': broadOpen }">
+            {% for hit in result.broad.hits %}
+              <div class="acl-fold-row{% if forloop.counter > 5 %} acl-fold-more{% endif %}"{% if forloop.counter > 5 %} :class="{ 'is-hidden': !broadAll }"{% endif %}>
+                {% include "ip_plan/_acl_hit_row.html" with hit=hit compact=True %}
+              </div>
+            {% endfor %}
+            {% if result.broad.hits|length > 5 %}
+              <div class="acl-fold-rest" :class="{ 'is-hidden': broadAll }">
+                и ещё {{ result.broad.hits|length|add:"-5" }} {{ result.broad.hits|length|add:"-5"|plural:"правило,правила,правил" }} — <button type="button" class="acl-link-btn" @click="broadAll = true">показать все</button>
+              </div>
+            {% endif %}
+          </div>
+          {% endif %}
+
+          {% if result.any.count %}
+          <div class="acl-fold-head acl-fold-any">
+            <span class="acl-dot is-any" aria-hidden="true"></span>
+            <span class="acl-grow"><b>Правила с <span class="mono">any</span></b> <span class="mono acl-fold-n">{{ result.any.count|ru_number }}</span> <span class="acl-fold-desc">— подходят любому адресу, сам адрес в них не указан</span></span>
+            <button type="button" class="ghost acl-fold-btn" @click="anyOpen = !anyOpen" :aria-expanded="anyOpen ? 'true' : 'false'" x-text="anyOpen ? 'Свернуть' : 'Показать'">Показать</button>
+          </div>
+          <div class="acl-fold-rows" :class="{ 'is-open': anyOpen }">
+            {% for hit in result.any.hits %}
+              <div class="acl-fold-row{% if forloop.counter > 5 %} acl-fold-more{% endif %}"{% if forloop.counter > 5 %} :class="{ 'is-hidden': !anyAll }"{% endif %}>
+                {% include "ip_plan/_acl_hit_row.html" with hit=hit compact=True %}
+              </div>
+            {% endfor %}
+            {% if result.any.hits|length > 5 %}
+              <div class="acl-fold-rest" :class="{ 'is-hidden': anyAll }">
+                и ещё {{ result.any.hits|length|add:"-5" }} {{ result.any.hits|length|add:"-5"|plural:"правило,правила,правил" }} — <button type="button" class="acl-link-btn" @click="anyAll = true">показать все</button>
+              </div>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

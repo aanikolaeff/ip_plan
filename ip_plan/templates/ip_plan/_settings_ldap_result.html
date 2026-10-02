@@ -1,4 +1,27 @@
-<div class="set-result {% if ok %}set-result-ok{% else %}set-result-fail{% endif %}">
-  <div class="set-result-title">{% if ok %}Проверка пройдена{% else %}Проверка не пройдена{% endif %}</div>
+{% comment %}
+  Итог проверки в правой колонке. Два отправителя:
+  - settings_ldap_test: ok, message, verdict (разобранный итог проверки
+    пользователя или None, если проверялось только подключение);
+  - settings_ssh_access_test (вкладка «Доступ к хостам»): ok, message —
+    вход на хост служебным ключом.
+{% endcomment %}
+{% if request.resolver_match.url_name == "settings_ssh_access_test" %}
+  {% if ok %}
+    <span class="st-result-verdict is-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>Вход выполнен</span>
+  {% else %}
+    <span class="st-result-verdict is-fail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>Не вошли</span>
+  {% endif %}
   <pre>{{ message }}</pre>
-</div>
+{% elif verdict %}
+  <span class="st-result-verdict is-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>Войдёт</span>
+  <span class="st-result-line"><span class="mono">{{ verdict.username }}</span> · группы: {% if verdict.groups %}{{ verdict.groups|join:", " }}{% else %}нет групп из настроек{% endif %}</span>
+  <span class="st-result-line">Права: <b>{{ verdict.rights }}</b></span>
+  <details><summary>Подробности проверки</summary><pre>{{ message }}</pre></details>
+{% elif ok %}
+  <span class="st-result-verdict is-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>Каталог отвечает</span>
+  <span class="st-result-line">Проверено только подключение — укажите пользователя и пароль, чтобы проверить вход.</span>
+  <details><summary>Подробности проверки</summary><pre>{{ message }}</pre></details>
+{% else %}
+  <span class="st-result-verdict is-fail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>Не войдёт</span>
+  <pre>{{ message }}</pre>
+{% endif %}

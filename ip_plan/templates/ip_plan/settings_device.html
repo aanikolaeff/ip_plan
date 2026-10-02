@@ -1,0 +1,327 @@
+{% extends "ip_plan/settings_base.html" %}
+
+{% comment %}
+  Карточка устройства (в макете её нет — по образцу карточки модели, SPEC
+  §4a; CONTRACT-settings §2а). Страница, а не модалка: device_form.
+
+  Поля и их name — прежние (device_save читает ровно их). Поля обеих веток
+  транспорта (SSH: port/username/password/enable_password; SNMP-модель:
+  cluster_peer_of/cluster_reserve/reserve_interface) и обеих версий SNMP
+  всегда в DOM — Alpine (stDevice) их только прячет, сервер сам вычищает
+  ключи другой ветки. Секреты в браузер не уходят: поле пустое, маска в
+  placeholder, пустое при сохранении = «не менять».
+
+  Форма стоит на странице: ошибка приходит партиалом в #modal-content со
+  статусом ≥400 — hx-on открывает модалку. Успех — 204 + HX-Redirect на
+  список. Удаление — отдельная форма вне основной (кнопка в нижней панели
+  ссылается на неё атрибутом form).
+{% endcomment %}
+
+{% block settings_main %}
+<form id="st-device-form" class="st-form-page"
+      hx-post="{% if name %}{% url 'ip_plan:settings_device_save' name %}{% else %}{% url 'ip_plan:settings_device_add_save' %}{% endif %}"
+      hx-target="#modal-content" hx-indicator="#modal-spinner"
+      hx-on::after-request="if (event.detail.xhr.status >= 400) { Alpine.store('modal').dirty = false; window.dispatchEvent(new CustomEvent('open-modal')); }"
+      x-data="stDevice({{ model_transports }}, '{{ cfg.model|default:''|escapejs }}', '{{ snmp_version|default:''|escapejs }}')"
+      x-init="if ($refs.model) model = $refs.model.value">
+  {% csrf_token %}
+  <input type="hidden" name="file_hash" value="{{ file_hash }}">
+
+  <div class="st-card">
+    <div class="st-card-left">
+      <div>
+        <nav class="st-crumbs" aria-label="Путь">
+          <a href="{% url 'ip_plan:settings_tab' 'devices' %}">Оборудование</a>
+          <span class="st-crumbs-sep">/</span>
+          <span>{% if name %}изменение{% else %}новое устройство{% endif %}</span>
+        </nav>
+        <h2 class="st-h2-lg{% if name %} mono{% endif %}">{% if name %}{{ name }}{% else %}Новое устройство{% endif %}</h2>
+      </div>
+
+      {# ── Устройство ── #}
+      <section class="st-sec">
+        <span class="st-sec-title">Устройство</span>
+        <div class="st-grid2">
+          <label class="st-field">
+            <span class="st-label">Имя</span>
+            <input class="st-input is-mono" name="name" value="{{ name|default:'' }}" required autocomplete="off" spellcheck="false"{% if not name %} autofocus{% endif %}>
+            <span class="st-hint">Под этим именем устройство появится в NetBox. Без пробелов.</span>
+          </label>
+          <label class="st-field">
+            <span class="st-label">Модель</span>
+            <span class="st-select">
+              <select class="st-input" name="model" required x-ref="model" @change="model = $event.target.value"
+                      hx-get="{% url 'ip_plan:settings_device_flags' %}" hx-trigger="change"
+                      hx-target="#device-flags" hx-swap="innerHTML" hx-indicator="none"
+                      hx-vals='{"name": "{{ name|default:''|escapejs }}"}'>
+                {% for t in device_types %}
+                  <option value="{{ t }}"{% if t == cfg.model %} selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+              </select>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>
+            </span>
+            <span class="st-hint">Определяет команды и разбор ответа — карточка на вкладке «Модели».</span>
+          </label>
+        </div>
+      </section>
+
+      {# ── Размещение ── #}
+      <section class="st-sec">
+        <span class="st-sec-title">Размещение</span>
+        <div class="st-grid2">
+          <label class="st-field">
+            <span class="st-label">Площадка</span>
+            {% if sites %}
+              <span class="st-select">
+                <select class="st-input" name="site" required>
+                  {% for s in sites %}
+                    <option value="{{ s.slug }}"{% if s.slug == site %} selected{% endif %}>{{ s.name }} ({{ s.slug }})</option>
+                  {% endfor %}
+                </select>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>
+              </span>
+              <span class="st-hint">Из справочника площадок NetBox.</span>
+            {% else %}
+              <input class="st-input is-mono" name="site" value="{{ site }}" required>
+              <span class="st-hint">NetBox недоступен, список площадок не загружен — укажите slug вручную.</span>
+            {% endif %}
+          </label>
+          <label class="st-field">
+            <span class="st-label">Статус</span>
+            <span class="st-select">
+              <select class="st-input is-mono" name="status">
+                {% for s in statuses %}
+                  <option value="{{ s }}"{% if s == cfg.status %} selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+              </select>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>
+            </span>
+            <span class="st-hint">Статус устройства в NetBox.</span>
+          </label>
+        </div>
+        <div class="st-switch-tile">
+          <span class="st-switch-text">
+            <span class="st-switch-title">Ядро сети <span class="st-switch-key">network_core</span></span>
+            <span class="st-switch-note">Маршрутизирует трафик площадки (у нас — xFW). Префиксы сетей импортируются только с ядра; адреса на L3-коммутаторах — служебные.</span>
+          </span>
+          <label class="st-switch" title="Ядро сети">
+            <input type="checkbox" role="switch" name="network_core" value="1"{% if cfg.network_core %} checked{% endif %} aria-label="Ядро сети">
+            <span class="st-switch-track" aria-hidden="true"></span>
+          </label>
+        </div>
+      </section>
+
+      {# ── Подключение: ветка по транспорту модели ── #}
+      <section class="st-sec">
+        <div>
+          <span class="st-sec-title">Подключение</span>
+          <div class="st-sec-desc" :class="{ 'is-hidden': isSnmp() }">Синхронизация ходит на устройство по SSH этими реквизитами.</div>
+          <div class="st-sec-desc is-hidden" :class="{ 'is-hidden': !isSnmp() }">Модель опрашивается по SNMP: реквизиты — в разделе «SNMP» ниже (Континент — v3).</div>
+        </div>
+        <div class="st-grid2">
+          <label class="st-field">
+            <span class="st-label">Адрес</span>
+            <input class="st-input is-mono" name="host" value="{{ cfg.host|default:'' }}" :required="!isSnmp()" autocomplete="off" spellcheck="false">
+            <span class="st-hint is-hidden" :class="{ 'is-hidden': !isSnmp() }">Пусто допустимо только у инвентарной записи резервной платформы (заполните «Резерв для»).</span>
+          </label>
+          <label class="st-field">
+            <span class="st-label">Адрес в NetBox</span>
+            <input class="st-input is-mono" name="mgmt_ip" value="{{ cfg.mgmt_ip|default:'' }}" placeholder="как адрес" autocomplete="off" spellcheck="false">
+            <span class="st-hint">Если в учёте адрес другой (криптошлюзы — через туннель 7.0.0.x). Пусто — берётся адрес.</span>
+          </label>
+        </div>
+
+        {# SSH #}
+        <div class="st-grid2" :class="{ 'is-hidden': isSnmp() }">
+          <label class="st-field">
+            <span class="st-label">Логин</span>
+            <input class="st-input is-mono" name="username" value="{{ cfg.username|default:'' }}" :required="!isSnmp()" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="st-field">
+            <span class="st-label">Порт SSH</span>
+            <input class="st-input is-mono" name="port" value="{{ cfg.port|default:22 }}" inputmode="numeric">
+          </label>
+          <label class="st-field">
+            <span class="st-label">Пароль</span>
+            <input class="st-input" name="password" type="password" placeholder="{{ password_mask }}" autocomplete="new-password">
+            <span class="st-hint">{% if password_mask %}Оставьте пустым, чтобы не менять.{% else %}Обязателен.{% endif %}</span>
+          </label>
+          <label class="st-field">
+            <span class="st-label">Пароль enable</span>
+            <input class="st-input" name="enable_password" type="password" placeholder="{{ enable_mask }}" autocomplete="new-password">
+            <span class="st-hint">{% if enable_mask %}Оставьте пустым, чтобы не менять. {% endif %}Нужен не всем моделям — например, Maipu.</span>
+          </label>
+        </div>
+
+        {# Кластер Континента (SNMP-модель) #}
+        <div class="st-grid2 is-hidden" :class="{ 'is-hidden': !isSnmp() }">
+          <label class="st-field">
+            <span class="st-label">Резерв для</span>
+            <span class="st-select">
+              <select class="st-input is-mono" name="cluster_peer_of">
+                <option value="">— не резерв —</option>
+                {% for peer in peer_candidates %}
+                  <option value="{{ peer }}"{% if peer == cfg.cluster_peer_of %} selected{% endif %}>{{ peer }}</option>
+                {% endfor %}
+              </select>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>
+            </span>
+            <span class="st-hint">Для инвентарной записи резервной платформы: адрес и реквизиты не нужны, шаги сбора выключены — данные приходят с активной ноды.</span>
+          </label>
+          <label class="st-field">
+            <span class="st-label">Резервная платформа кластера</span>
+            <input class="st-input is-mono" name="cluster_reserve" value="{{ cfg.cluster_reserve|default:'' }}" placeholder="имя устройства в NetBox" autocomplete="off">
+            <span class="st-hint">Для активной ноды: под этим именем синк заведёт вторую платформу; её же заведите отдельной записью с «Резерв для».</span>
+          </label>
+          <label class="st-field">
+            <span class="st-label">Интерфейс резервирования</span>
+            <input class="st-input is-mono" name="reserve_interface" value="{{ cfg.reserve_interface|default:'' }}" placeholder="lagg0" autocomplete="off">
+            <span class="st-hint">Только если синк не нашёл линк к резервной ноде сам.</span>
+          </label>
+        </div>
+      </section>
+
+      {# ── SNMP: есть у каждого устройства ── #}
+      <section class="st-sec">
+        <div>
+          <span class="st-sec-title">SNMP</span>
+          <div class="st-sec-desc">У SNMP-моделей (Континент) по нему идёт весь сбор; у остальных проверяется отдельным шагом в проверке подключения.</div>
+        </div>
+        <div class="st-grid2">
+          <label class="st-field">
+            <span class="st-label">Версия</span>
+            <span class="st-select">
+              <select class="st-input is-mono" name="snmp_version" x-model="v">
+                {% for ver in snmp_versions %}
+                  <option value="{{ ver }}"{% if ver == snmp_version %} selected{% endif %}>{% if ver %}{{ ver }}{% else %}не настроен{% endif %}</option>
+                {% endfor %}
+              </select>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>
+            </span>
+          </label>
+          <label class="st-field{% if not snmp_version %} is-hidden{% endif %}" :class="{ 'is-hidden': !v }">
+            <span class="st-label">Порт</span>
+            <input class="st-input is-mono" name="snmp_port" value="{{ cfg.snmp_port|default:161 }}" inputmode="numeric">
+          </label>
+          <label class="st-field st-span{% if snmp_version != 'v2c' %} is-hidden{% endif %}" :class="{ 'is-hidden': v !== 'v2c' }">
+            <span class="st-label">Community</span>
+            <input class="st-input is-mono" name="snmp_communities" value="{{ snmp_communities }}" placeholder="public" autocomplete="off">
+            <span class="st-hint">Несколько — через запятую. У кластеров ViPNet первая адресует активную ноду, вторая — пассивную: по ним синк снимает состояние кластера.</span>
+          </label>
+        </div>
+        <div class="st-grid2{% if snmp_version != 'v3' %} is-hidden{% endif %}" :class="{ 'is-hidden': v !== 'v3' }">
+          <label class="st-field st-span">
+            <span class="st-label">Имя безопасности (пользователь)</span>
+            <input class="st-input is-mono" name="snmp_user" value="{{ cfg.snmp_user|default:'' }}" autocomplete="off">
+            <span class="st-hint">В ПУ ЦУС Континента это «имя безопасности». Адрес, с которого ходит синк, должен быть в списке разрешённых хостов SNMP устройства.</span>
+          </label>
+          <label class="st-field">
+            <span class="st-label">Аутентификация</span>
+            <span class="st-select">
+              <select class="st-input is-mono" name="snmp_auth_proto">
+                {% for a in snmp_auth_protos %}
+                  <option value="{{ a }}"{% if a == cfg.snmp_auth_proto|default:"md5" %} selected{% endif %}>{{ a }}</option>
+                {% endfor %}
+              </select>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>
+            </span>
+          </label>
+          <label class="st-field">
+            <span class="st-label">Пароль аутентификации</span>
+            <input class="st-input" name="snmp_auth_password" type="password" placeholder="{{ snmp_auth_mask }}" autocomplete="new-password">
+            <span class="st-hint">{% if snmp_auth_mask %}Оставьте пустым, чтобы не менять.{% else %}Обязателен.{% endif %}</span>
+          </label>
+          <label class="st-field">
+            <span class="st-label">Шифрование</span>
+            <span class="st-select">
+              <select class="st-input is-mono" name="snmp_priv_proto">
+                {% for a in snmp_priv_protos %}
+                  <option value="{{ a }}"{% if a == cfg.snmp_priv_proto|default:"des" %} selected{% endif %}>{{ a }}</option>
+                {% endfor %}
+              </select>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5"></path><path d="m7 9 5-5 5 5"></path></svg>
+            </span>
+          </label>
+          <label class="st-field">
+            <span class="st-label">Пароль шифрования</span>
+            <input class="st-input" name="snmp_priv_password" type="password" placeholder="{{ snmp_priv_mask }}" autocomplete="new-password">
+            <span class="st-hint">{% if snmp_priv_mask %}Оставьте пустым, чтобы не менять.{% else %}Пусто — authNoPriv.{% endif %}</span>
+          </label>
+        </div>
+      </section>
+
+      {# ── Что собирать (перерисовывается при смене модели) ── #}
+      <section class="st-sec is-flags" id="device-flags">
+        {% include "ip_plan/_settings_device_flags.html" %}
+      </section>
+
+      {# ── Дополнительно ── #}
+      <section class="st-sec is-flush">
+        <button type="button" class="st-adv-head" @click="adv = !adv" :aria-expanded="adv ? 'true' : 'false'" aria-expanded="false">
+          <span><span class="st-adv-title">Дополнительно</span><span class="st-adv-sub">объекты блокировки</span></span>
+          <svg class="st-adv-chev" :class="{ 'is-open': adv }" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <div class="st-adv-body is-hidden" :class="{ 'is-hidden': !adv }">
+          <label class="st-field">
+            <span class="st-label">Объекты блокировки (JSON)</span>
+            <textarea class="st-input" name="blocklist_objects" rows="4" spellcheck="false">{{ blocklist_objects }}</textarea>
+            <span class="st-hint">Соответствие «тип → имя объекта». Учитывается, только если включены списки блокировок; имена объектов xFW раздел «Блокировки» теперь ведёт сам.</span>
+          </label>
+        </div>
+      </section>
+    </div>
+
+    {# ── Правая липкая колонка ── #}
+    <aside class="st-card-aside">
+      <section class="st-side-card is-apply">
+        <span class="st-side-title is-13">Состояние</span>
+        {% if name %}
+          <div class="st-flags" style="padding:0">
+            {% for chip in chips %}
+              <span class="st-flag is-{{ chip.kind }}" title="{{ chip.title }}">{{ chip.label }}</span>
+            {% empty %}
+              <span class="st-flags-none">ничего не собирается</span>
+            {% endfor %}
+          </div>
+          {% if testable %}
+            <div class="st-side-li">
+              <span>Проверка подключения</span>
+              {% include "ip_plan/_settings_test_button.html" with kind="device" key=name test=test %}
+            </div>
+          {% else %}
+            <span class="st-side-note">{% if cfg.cluster_peer_of %}Инвентарная запись резервной платформы — подключения нет.{% else %}Адрес не задан — проверять подключение нечего.{% endif %}</span>
+          {% endif %}
+        {% else %}
+          <span class="st-side-note">Устройство ещё не сохранено — шаги и проверка подключения появятся после сохранения.</span>
+        {% endif %}
+      </section>
+      <section class="st-side-card is-plain">
+        <span class="st-side-title is-13">Как читаются настройки</span>
+        <span class="st-side-text">Синк берёт настройки модели и поверх — правки устройства. Пустое значение здесь — «как у модели».</span>
+        <span class="st-side-text">Правки попадут в NetBox при следующем прогоне — по расписанию или вручную.</span>
+      </section>
+    </aside>
+  </div>
+
+  {# ── Нижняя панель ── #}
+  <div class="st-bar">
+    {% if name %}
+      <button type="submit" form="st-device-delete" class="st-btn st-btn-ghost is-danger">Удалить устройство</button>
+    {% endif %}
+    <div class="st-bar-right">
+      <a class="st-btn st-btn-ghost" href="{% url 'ip_plan:settings_tab' 'devices' %}">Отмена</a>
+      <button type="submit" class="st-btn st-btn-primary is-md">Сохранить</button>
+    </div>
+  </div>
+</form>
+
+{% if name %}
+  <form id="st-device-delete" hidden
+        hx-post="{% url 'ip_plan:settings_device_delete' name %}" hx-target="#modal-content"
+        hx-confirm="Убрать «{{ name }}» из синхронизации? Объекты, уже заведённые в NetBox, останутся — они просто перестанут обновляться."
+        hx-on::after-request="if (event.detail.xhr.status >= 400) { Alpine.store('modal').dirty = false; window.dispatchEvent(new CustomEvent('open-modal')); }">
+    {% csrf_token %}
+    <input type="hidden" name="file_hash" value="{{ file_hash }}">
+  </form>
+{% endif %}
+{% endblock %}
