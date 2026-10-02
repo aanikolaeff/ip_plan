@@ -138,6 +138,10 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="16" y="16" width="6" height="6" rx="1"></rect><rect x="2" y="16" width="6" height="6" rx="1"></rect><rect x="9" y="2" width="6" height="6" rx="1"></rect><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"></path><path d="M12 12V8"></path></svg>
             <span class="sb-label">Карта сети</span>
           </a>
+          <a class="sb-item{% if url_name|slice:':4' == 'obs_' %} active{% endif %}" href="{% url 'ip_plan:obs_search' %}" title="Поиск MAC/IP"{% if url_name|slice:':4' == 'obs_' %} aria-current="page"{% endif %}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><circle cx="11.5" cy="11.5" r="3.5"></circle><path d="m16 16-1.9-1.9"></path></svg>
+            <span class="sb-label">Поиск MAC/IP</span>
+          </a>
 
           <div class="sb-group sb-label">Справочники</div>
           <div class="sb-rule sb-collapsed-only"></div>

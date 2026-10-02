@@ -1,0 +1,133 @@
+{% extends "ip_plan/base.html" %}
+{% load static ip_plan_extras %}
+
+{% comment %}
+  «Поиск MAC/IP» (U11 плана хранилища наблюдений, views_obs.obs_search).
+  Контекст: q, limit, result (netobs_search.SearchResult), status
+  (netobs_search.Status — только на начальном экране), error (ошибка ввода),
+  unavailable (текст: netobs не настроена или недоступна), not_configured.
+
+  Ищет по всем площадкам — переключатель площадки на эту страницу не
+  действует. Порядок строк задаёт сервис (текущие → меньше адресов за портом
+  → свежие); прежние и перенесённые из NetBox строки приглушены (.is-muted).
+{% endcomment %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'ip_plan/css/obs.css' %}">
+{% endblock %}
+
+{% block head_actions %}
+  <span class="obs-scope" title="Переключатель площадки здесь не действует: адрес ищется по всей сети">Все площадки</span>
+{% endblock %}
+
+{% block body_class %} shell-body-fixed{% endblock %}
+
+{% block content %}
+<div class="obs shell-island">
+  <form class="obs-q" method="get" action="{% url 'ip_plan:obs_search' %}" role="search">
+    <label class="obs-q-field">
+      <span class="obs-q-label">MAC или IP-адрес</span>
+      <span class="obs-search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+        <input class="obs-input mono" type="search" name="q" value="{{ q }}"
+               placeholder="90:54:b7:34:06:c0 · 9054.b734.06c0 · 06c0 · 10.1.141.166"
+               autocomplete="off" spellcheck="false" autocapitalize="off"{% if not q %} autofocus{% endif %}>
+      </span>
+    </label>
+    <button type="submit" class="obs-primary">Найти</button>
+  </form>
+
+  {% if unavailable %}
+    <div class="obs-alert{% if not not_configured %} is-error{% endif %}" role="alert">
+      <b>{% if not_configured %}Поиск не настроен.{% else %}Поиск сейчас не работает.{% endif %}</b>
+      {{ unavailable }}
+      {% if not not_configured %}<span class="obs-alert-sub">Остальные разделы приложения работают как обычно.</span>{% endif %}
+    </div>
+
+  {% elif error %}
+    <div class="obs-alert is-error" role="alert">{{ error }}</div>
+
+  {% elif result %}
+    {% if result.rows %}
+      <div class="obs-summary">
+        <div class="obs-summary-line">
+          <span class="mono obs-summary-q">{% if result.query.kind == 'mac_part' %}…{{ result.query.value }}…{% else %}{{ result.query.value }}{% endif %}</span>
+          {% if result.truncated %}
+            — найдено {{ result.total|ru_number }} {{ result.total|plural:"строка,строки,строк" }}, показано {{ result.rows|length }} из {{ result.total }}. Уточните запрос, чтобы увидеть остальные.
+          {% else %}
+            — {{ result.total|ru_number }} {{ result.total|plural:"строка,строки,строк" }}
+          {% endif %}
+        </div>
+        <div class="obs-summary-sub">
+          Сверху — текущие строки, среди них первыми порты с меньшим числом адресов: скорее всего, это порт подключения, а не транк. Дальше — по времени последнего появления.
+          Прежние и перенесённые из NetBox строки приглушены.
+        </div>
+      </div>
+
+      <div class="obs-table-wrap">
+        <table class="obs-table">
+          <thead>
+            <tr>
+              <th scope="col">MAC</th>
+              <th scope="col">IP</th>
+              <th scope="col">Устройство</th>
+              <th scope="col">Порт</th>
+              <th scope="col">Источник</th>
+              <th scope="col" class="obs-num" title="Сколько разных адресов видно за этим портом сейчас (по текущим строкам)">Адресов за портом</th>
+              <th scope="col">Состояние</th>
+              <th scope="col">Впервые</th>
+              <th scope="col">Последний раз</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in result.rows %}
+              <tr class="{% if r.muted %}is-muted{% endif %}">
+                <td class="mono">{{ r.mac|default:"—" }}</td>
+                <td class="mono">{{ r.ip|default:"" }}</td>
+                <td class="mono">{{ r.device }}</td>
+                <td class="mono">{{ r.interface }}{% if r.vlan is not None %}<span class="obs-vlan">VLAN {{ r.vlan }}</span>{% endif %}</td>
+                <td><span class="obs-src" title="{{ r.source }}">{{ r.source_label }}</span></td>
+                <td class="obs-num mono">{{ r.port_addrs }}</td>
+                <td>
+                  <span class="obs-state{% if r.is_current %} is-current{% endif %}"><span class="obs-dot" aria-hidden="true"></span>{{ r.state }}</span>
+                  {% if r.imported %}<span class="obs-tag" title="Строка перенесена из NetBox и с тех пор не подтверждена опросом">из NetBox</span>{% endif %}
+                </td>
+                <td class="obs-when">{{ r.first_seen_text }}</td>
+                <td class="obs-when" title="{{ r.last_seen_title }}">{{ r.last_seen_age }}<span class="obs-date">{{ r.last_seen_title }}</span></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="obs-empty" role="status">
+        <div class="obs-empty-title">{% if result.no_polls %}Данных пока нет{% else %}<span class="mono">{{ result.query.value }}</span> не найден{% endif %}</div>
+        <div>{{ result.empty_text }}</div>
+      </div>
+    {% endif %}
+
+  {% else %}
+    <div class="obs-start">
+      <p class="obs-start-lead">Где в сети виден MAC или IP — по истории MAC-таблиц коммутаторов и ARP-таблиц ядер и криптошлюзов, которую собирает синхронизация. Поиск идёт по всем площадкам.</p>
+      <dl class="obs-formats">
+        <dt>MAC целиком</dt>
+        <dd>
+          {% for ex in mac_examples %}<a class="mono obs-ex" href="?q={{ ex|urlencode }}">{{ ex }}</a>{% endfor %}
+          <span class="obs-ex-note">aa:bb:…, aabb.ccdd.eeff, AA-BB-…, 12 цифр подряд — одно и то же</span>
+        </dd>
+        <dt>Часть MAC</dt>
+        <dd><a class="mono obs-ex" href="?q=06c0">06c0</a> <a class="mono obs-ex" href="?q=90:54:b7">90:54:b7</a><span class="obs-ex-note">не короче 4 шестнадцатеричных цифр, в любом месте адреса</span></dd>
+        <dt>IP-адрес</dt>
+        <dd><a class="mono obs-ex" href="?q=10.1.141.166">10.1.141.166</a><span class="obs-ex-note">точное совпадение; находится через ARP, затем по найденному MAC — порты коммутаторов</span></dd>
+      </dl>
+      {% if status %}
+        <p class="obs-start-status">
+          {% if not status.any_ok %}Опросы ещё не выполнялись — искать пока не в чем.
+          {% elif status.last_poll_text %}Последний успешный опрос — {{ status.last_poll_text }}.
+          {% else %}Успешных опросов ещё не было, есть только записи, перенесённые из NetBox.{% endif %}
+        </p>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

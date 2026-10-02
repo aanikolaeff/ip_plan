@@ -33,6 +33,7 @@ _SECTION_TITLES = (
     ("acl_", "ACL"),
     ("regulator_", "Блокировки"),
     ("map_", "Карта сети"),
+    ("obs_", "Поиск MAC/IP"),
     ("settings", "Настройки"),
     ("password_change", "Смена пароля"),
 )

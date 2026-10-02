@@ -1,0 +1,105 @@
+/* ══ Раздел «Поиск MAC/IP» (obs_search.html) ══════════════════════════════
+   Токены (--line, --soft, --accent-soft, --ok, --danger-t…) — из style.css,
+   обе темы. Раскладка как у ACL: корень — shell-island на всю высоту области
+   содержимого, прокручивается только таблица, шапка таблицы закреплена. */
+
+.obs {
+  --text: var(--text-main);
+  --muted: var(--text-muted);
+  --faint: var(--text-faint);
+  --surface: var(--bg-surface);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 20px;
+}
+.obs *, .obs *::before, .obs *::after { box-sizing: border-box; }
+.obs .mono { font-family: var(--font-mono); font-variant-ligatures: none; }
+.obs a { color: var(--accent); text-decoration: none; }
+.obs a:hover { text-decoration: underline; }
+
+.obs-scope {
+  font-size: 12px; color: var(--text-faint); white-space: nowrap; margin-right: 6px;
+  padding: 2px 8px; border-radius: 999px; background: var(--soft);
+}
+
+/* ── Форма ─────────────────────────────────────────────────────────── */
+.obs-q { flex-shrink: 0; display: flex; align-items: flex-end; gap: 12px; margin: 0 0 18px; flex-wrap: wrap; }
+.obs-q-field { display: flex; flex-direction: column; gap: 6px; margin: 0; flex: 0 1 520px; min-width: 0; }
+.obs-q-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.obs-search { position: relative; display: flex; align-items: center; }
+.obs-search > svg { position: absolute; left: 13px; color: var(--muted); pointer-events: none; }
+.obs-input {
+  width: 100%; height: 42px; padding: 0 14px 0 38px;
+  border: 1px solid var(--line-strong); border-radius: 10px;
+  background: var(--surface); color: var(--text);
+  font-size: 13.5px; outline: none;
+}
+.obs-input::placeholder { color: var(--faint); font-family: var(--font-sans); }
+.obs-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.obs-primary {
+  height: 42px; padding: 0 22px; border: 0; border-radius: 10px;
+  background: var(--primary); color: var(--primary-text);
+  font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.obs-primary:hover { filter: brightness(1.12); }
+.obs-primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── Сообщения ─────────────────────────────────────────────────────── */
+.obs-alert {
+  flex-shrink: 0; padding: 12px 14px; border-radius: 10px;
+  background: var(--warn-soft); color: var(--warn-t); font-size: 13px;
+}
+.obs-alert.is-error { background: rgba(229, 72, 77, .08); background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger-t); }
+.obs-alert-sub { display: block; margin-top: 2px; color: var(--muted); }
+
+.obs-empty { padding: 40px 0; text-align: center; color: var(--muted); }
+.obs-empty-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+
+/* ── Начальный экран ───────────────────────────────────────────────── */
+.obs-start { max-width: 760px; }
+.obs-start-lead { margin: 0 0 14px; color: var(--muted); }
+.obs-formats { display: grid; grid-template-columns: 140px 1fr; gap: 10px 16px; margin: 0 0 16px; }
+.obs-formats dt { font-weight: 600; font-size: 12.5px; color: var(--muted); padding-top: 3px; }
+.obs-formats dd { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.obs-ex { padding: 2px 8px; border-radius: 6px; background: var(--soft); color: var(--text) !important; font-size: 12.5px; }
+.obs-ex:hover { background: var(--accent-soft); text-decoration: none !important; }
+.obs-ex-note { flex-basis: 100%; font-size: 12px; color: var(--faint); }
+.obs-start-status { margin: 0; font-size: 12.5px; color: var(--faint); }
+
+/* ── Итог и подпись порядка ────────────────────────────────────────── */
+.obs-summary { flex-shrink: 0; padding: 0 0 12px; }
+.obs-summary-line { font-size: 15px; line-height: 24px; }
+.obs-summary-q { font-weight: 600; }
+.obs-summary-sub { font-size: 12.5px; color: var(--muted); max-width: 920px; }
+
+/* ── Таблица ───────────────────────────────────────────────────────── */
+.obs-table-wrap {
+  flex: 1 1 auto; min-height: 0; overflow: auto;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+}
+.obs-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
+.obs-table th {
+  position: sticky; top: 0; z-index: 1;
+  padding: 9px 12px; text-align: left; white-space: nowrap;
+  font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--faint);
+  background: var(--softer); border-bottom: 1px solid var(--line);
+}
+.obs-table td { padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: top; }
+.obs-table tbody tr:last-child td { border-bottom: 0; }
+.obs-table tbody tr:hover { background: var(--softer); }
+.obs-num { text-align: right; }
+.obs-table th.obs-num { text-align: right; }
+
+/* Прежние и перенесённые из NetBox строки — приглушены */
+.obs-table tr.is-muted td { color: var(--faint); }
+.obs-table tr.is-muted .obs-src { opacity: .7; }
+
+.obs-vlan { margin-left: 6px; font-size: 11px; color: var(--faint); }
+.obs-src { display: inline-block; padding: 0 7px; border-radius: 999px; background: var(--soft); font-size: 11.5px; }
+.obs-state { display: inline-flex; align-items: center; gap: 6px; }
+.obs-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--off); flex-shrink: 0; }
+.obs-state.is-current .obs-dot { background: var(--ok); }
+.obs-state.is-current { color: var(--ok-t); font-weight: 600; }
+.obs-tag { margin-left: 6px; padding: 0 6px; border-radius: 4px; background: var(--soft); font-size: 11px; color: var(--muted); }
+.obs-when { color: var(--muted); }
+.obs-date { display: block; font-size: 11px; color: var(--faint); font-family: var(--font-mono); }

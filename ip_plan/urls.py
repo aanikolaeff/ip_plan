@@ -2,7 +2,7 @@ from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_not_required
 from django.urls import path
 
-from . import views_map, views, views_settings
+from . import views_map, views, views_obs, views_settings
 
 app_name = "ip_plan"
 
@@ -103,6 +103,7 @@ urlpatterns = [
     path("regulator/entries.json", views.regulator_entries_json, name="regulator_entries_json"),
     path("regulator/commands/", views.regulator_commands, name="regulator_commands"),
     path("map/", views_map.map_view, name="map_view"),
+    path("obs/", views_obs.obs_search, name="obs_search"),
     path("map/data.json", views_map.map_data, name="map_data"),
     path("map/layout.json", views_map.map_layout, name="map_layout"),
     path("regulator/document/<int:document_id>/entries/", views.regulator_document_entries, name="regulator_document_entries"),

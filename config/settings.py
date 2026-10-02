@@ -125,32 +125,36 @@ def build_databases(get=config):
     поднимется как будто впервые. Откат — вернуть sqlite: том sqlite_data
     при переходе не трогается.
     """
+    databases = {"default": _default_database(get)}
+    netobs = _netobs_database(get)
+    if netobs:
+        databases["netobs"] = netobs
+    return databases
+
+
+def _default_database(get):
     engine = (get("IP_PLAN_DB_ENGINE", default="") or "sqlite").strip().lower()
     if engine == "sqlite":
         return {
-            "default": {
-                "ENGINE": "django.db.backends.sqlite3",
-                # IP_PLAN_SQLITE_PATH — только для scripts/sqlite_to_postgres.sh:
-                # перенос читает копию файла, обратный перенос пишет в новый.
-                # Приложение всегда работает с data/db.sqlite3.
-                "NAME": get("IP_PLAN_SQLITE_PATH", default="") or BASE_DIR / "data" / "db.sqlite3",
-            },
+            "ENGINE": "django.db.backends.sqlite3",
+            # IP_PLAN_SQLITE_PATH — только для scripts/sqlite_to_postgres.sh:
+            # перенос читает копию файла, обратный перенос пишет в новый.
+            # Приложение всегда работает с data/db.sqlite3.
+            "NAME": get("IP_PLAN_SQLITE_PATH", default="") or BASE_DIR / "data" / "db.sqlite3",
         }
     if engine in ("postgres", "postgresql"):
         # Изнутри compose — postgres:5432; с хоста (manage.py против той же
         # базы) — 127.0.0.1:<POSTGRES_HOST_PORT>, задаётся через окружение.
         return {
-            "default": {
-                "ENGINE": "django.db.backends.postgresql",
-                "HOST": get("IP_PLAN_DB_HOST", default="") or "postgres",
-                "PORT": str(get("IP_PLAN_DB_PORT", default="") or "5432"),
-                "NAME": get("IP_PLAN_DB_NAME", default="") or "ip_plan",
-                "USER": get("IP_PLAN_DB_USER", default="") or "ip_plan",
-                "PASSWORD": get("IP_PLAN_DB_PASSWORD", default=""),
-                # Недоступная база должна давать быструю ошибку, а не
-                # подвешивать воркер gunicorn на системный TCP-таймаут.
-                "OPTIONS": {"connect_timeout": 5},
-            },
+            "ENGINE": "django.db.backends.postgresql",
+            "HOST": get("IP_PLAN_DB_HOST", default="") or "postgres",
+            "PORT": str(get("IP_PLAN_DB_PORT", default="") or "5432"),
+            "NAME": get("IP_PLAN_DB_NAME", default="") or "ip_plan",
+            "USER": get("IP_PLAN_DB_USER", default="") or "ip_plan",
+            "PASSWORD": get("IP_PLAN_DB_PASSWORD", default=""),
+            # Недоступная база должна давать быструю ошибку, а не
+            # подвешивать воркер gunicorn на системный TCP-таймаут.
+            "OPTIONS": {"connect_timeout": 5},
         }
     # Опечатка в CI-переменной не должна молча поднять web на SQLite (или на
     # пустой базе) — пусть контейнер упадёт при старте с понятной причиной.
@@ -160,7 +164,37 @@ def build_databases(get=config):
     )
 
 
+def _netobs_database(get):
+    """Хранилище наблюдений netbox-sync (база netobs) — только для страницы
+    «Поиск MAC/IP» (KTD11): роль ip_plan_ro с правом SELECT и
+    default_transaction_read_only. Без NETOBS_RO_NAME/NETOBS_RO_USER алиас
+    не объявляется вовсе — страница пишет «не настроено», остальное
+    приложение о netobs не знает. Таймауты короткие: недоступная или
+    подвисшая netobs не должна держать воркер gunicorn (R12)."""
+    name = (get("NETOBS_RO_NAME", default="") or "").strip()
+    user = (get("NETOBS_RO_USER", default="") or "").strip()
+    if not name or not user:
+        return None
+    return {
+        "ENGINE": "django.db.backends.postgresql",
+        "HOST": get("NETOBS_RO_HOST", default="") or "postgres",
+        "PORT": str(get("NETOBS_RO_PORT", default="") or "5432"),
+        "NAME": name,
+        "USER": user,
+        "PASSWORD": get("NETOBS_RO_PASSWORD", default=""),
+        "OPTIONS": {
+            "connect_timeout": 3,
+            "options": "-c statement_timeout=5000",
+        },
+    }
+
+
 DATABASES = build_databases()
+# Миграции — только default, запись в netobs запрещена (ip_plan/db_routers.py).
+# Тест-раннер Django создаёт тестовые базы лишь для алиасов, объявленных в
+# TestCase.databases, — для netobs тестовая база не создаётся (тесты мокают
+# сервисный слой, схема принадлежит netbox-sync).
+DATABASE_ROUTERS = ["ip_plan.db_routers.NetobsRouter"]
 
 LANGUAGE_CODE = "ru-ru"
 TIME_ZONE = "UTC"
