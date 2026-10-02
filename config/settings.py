@@ -130,7 +130,10 @@ def build_databases(get=config):
         return {
             "default": {
                 "ENGINE": "django.db.backends.sqlite3",
-                "NAME": BASE_DIR / "data" / "db.sqlite3",
+                # IP_PLAN_SQLITE_PATH — только для scripts/sqlite_to_postgres.sh:
+                # перенос читает копию файла, обратный перенос пишет в новый.
+                # Приложение всегда работает с data/db.sqlite3.
+                "NAME": get("IP_PLAN_SQLITE_PATH", default="") or BASE_DIR / "data" / "db.sqlite3",
             },
         }
     if engine in ("postgres", "postgresql"):

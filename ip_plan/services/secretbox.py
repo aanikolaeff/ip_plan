@@ -53,3 +53,17 @@ def decrypt(token):
             "Введите пароль заново в разделе «Настройки»."
         )
         return ""
+
+
+def is_readable(token):
+    """Расшифровывается ли token текущим SECRET_KEY — без подмены на пустую
+    строку, как в decrypt(). Нужно переносу между СУБД
+    (scripts/sqlite_to_postgres.sh): там нечитаемый пароль — не повод
+    продолжать работу, а признак чужого SECRET_KEY, и перенос надо остановить."""
+    if not token:
+        return True
+    try:
+        _fernet().decrypt(token.encode("ascii"))
+        return True
+    except (InvalidToken, ValueError):
+        return False

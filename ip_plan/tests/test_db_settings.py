@@ -27,6 +27,13 @@ class BuildDatabasesTests(SimpleTestCase):
         self.assertEqual(Path(default["NAME"]),
                          project_settings.BASE_DIR / "data" / "db.sqlite3")
 
+    def test_sqlite_path_override(self):
+        # Перенос (scripts/sqlite_to_postgres.sh) читает копию файла, а
+        # обратный перенос пишет в новый — путь задаётся окружением.
+        dbs = project_settings.build_databases(
+            _getter({"IP_PLAN_SQLITE_PATH": "/app/data/xfer/copy.sqlite3"}))
+        self.assertEqual(str(dbs["default"]["NAME"]), "/app/data/xfer/copy.sqlite3")
+
     def test_empty_engine_is_sqlite(self):
         # Пустая строка из шаблона .env (CI-переменная не задана) = SQLite.
         dbs = project_settings.build_databases(_getter({"IP_PLAN_DB_ENGINE": ""}))
