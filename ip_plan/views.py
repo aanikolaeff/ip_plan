@@ -727,10 +727,11 @@ def regulator_entry_revoke_api(request, entry_id):
     except (ValueError, TypeError):
         payload = {}
     # [:255] — сознательно, а не полагаемся на валидацию формы (которой тут
-    # больше нет): у RegulatorEntry.revoked_reason max_length=255 на уровне
-    # модели, но не на уровне SQLite-схемы (SQLite не проверяет длину
-    # VARCHAR) — без обрезки слишком длинный prompt() тихо сохранился бы
-    # длиннее объявленного поля.
+    # больше нет): у RegulatorEntry.revoked_reason max_length=255. SQLite
+    # длину VARCHAR не проверяет — без обрезки слишком длинный prompt() тихо
+    # сохранился бы длиннее объявленного поля; PostgreSQL проверяет, и без
+    # обрезки тот же ввод уронил бы запрос с DataError (500). Обрезка нужна
+    # при обоих движках (см. IP_PLAN_DB_ENGINE в config/settings.py).
     entry.status = "revoked"
     entry.revoked_at = timezone.now()
     entry.revoked_reason = (payload.get("revoked_reason") or "").strip()[:255]

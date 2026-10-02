@@ -26,3 +26,8 @@ paramiko==3.5.0
 # чистый Python, без net-snmp в образе; шифрование DES/AES — в -crypto.
 puresnmp==2.0.1
 puresnmp-crypto==1.0.1.post1
+# Драйвер PostgreSQL для Django (IP_PLAN_DB_ENGINE=postgres, config/settings.py)
+# и ожидания базы в entrypoint.sh. [binary] — колесо со своей libpq: не нужны
+# libpq-dev и компилятор в образе. Ставится и при SQLite по умолчанию, чтобы
+# переключение движка было сменой переменной, а не пересборкой образа.
+psycopg[binary]==3.2.13

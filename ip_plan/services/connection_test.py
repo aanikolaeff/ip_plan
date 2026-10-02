@@ -21,6 +21,7 @@ from datetime import timedelta
 from urllib.parse import urlparse
 
 import requests
+from django.db import connection
 from django.utils import timezone
 
 from . import network_tools, sync_config as sc
@@ -317,6 +318,17 @@ def _finish(pk, status, steps, summary):
 
 
 def _worker(pk, kind, key):
+    """Тело фонового потока. Django открывает соединение с базой на поток и
+    сам его не закрывает (это делает только обработчик конца HTTP-запроса),
+    поэтому закрываем явно: на PostgreSQL каждый завершившийся поток иначе
+    оставлял бы за собой открытое соединение до перезапуска процесса."""
+    try:
+        _run_and_finish(pk, kind, key)
+    finally:
+        connection.close()
+
+
+def _run_and_finish(pk, kind, key):
     try:
         if kind == "device":
             steps, failure = _run_device(key)

@@ -113,12 +113,51 @@ WSGI_APPLICATION = "config.wsgi.application"
 # data/, а не прямо в BASE_DIR: каталог смонтирован volume'ом в
 # docker-compose.yml, чтобы сессии/пользователи не терялись при пересборке
 # контейнера (а пересобираем мы его в этом проекте часто).
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "data" / "db.sqlite3",
-    },
-}
+def build_databases(get=config):
+    """DATABASES по окружению. `get` — decouple.config или подставной
+    getter с той же сигнатурой get(name, default=...) (так тесты проверяют
+    выбор движка, не перезагружая settings).
+
+    IP_PLAN_DB_ENGINE: пусто/sqlite — прежний data/db.sqlite3 (по умолчанию),
+    postgres — база ip_plan в сервисе postgres из docker-compose.yml.
+    Переключать на postgres только вместе с переносом данных: на пустой базе
+    migrate создаст схему, ensure_local_admin — admin/admin, и приложение
+    поднимется как будто впервые. Откат — вернуть sqlite: том sqlite_data
+    при переходе не трогается.
+    """
+    engine = (get("IP_PLAN_DB_ENGINE", default="") or "sqlite").strip().lower()
+    if engine == "sqlite":
+        return {
+            "default": {
+                "ENGINE": "django.db.backends.sqlite3",
+                "NAME": BASE_DIR / "data" / "db.sqlite3",
+            },
+        }
+    if engine in ("postgres", "postgresql"):
+        # Изнутри compose — postgres:5432; с хоста (manage.py против той же
+        # базы) — 127.0.0.1:<POSTGRES_HOST_PORT>, задаётся через окружение.
+        return {
+            "default": {
+                "ENGINE": "django.db.backends.postgresql",
+                "HOST": get("IP_PLAN_DB_HOST", default="") or "postgres",
+                "PORT": str(get("IP_PLAN_DB_PORT", default="") or "5432"),
+                "NAME": get("IP_PLAN_DB_NAME", default="") or "ip_plan",
+                "USER": get("IP_PLAN_DB_USER", default="") or "ip_plan",
+                "PASSWORD": get("IP_PLAN_DB_PASSWORD", default=""),
+                # Недоступная база должна давать быструю ошибку, а не
+                # подвешивать воркер gunicorn на системный TCP-таймаут.
+                "OPTIONS": {"connect_timeout": 5},
+            },
+        }
+    # Опечатка в CI-переменной не должна молча поднять web на SQLite (или на
+    # пустой базе) — пусть контейнер упадёт при старте с понятной причиной.
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured(
+        f"IP_PLAN_DB_ENGINE={engine!r}: допустимо sqlite или postgres"
+    )
+
+
+DATABASES = build_databases()
 
 LANGUAGE_CODE = "ru-ru"
 TIME_ZONE = "UTC"
