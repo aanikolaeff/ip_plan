@@ -31,7 +31,36 @@ deploy:
       URL_PREFIX=$URL_PREFIX
       LDAP_BIND_PASSWORD=$LDAP_BIND_PASSWORD
       NETBOX_SYNC_DIR=$NETBOX_SYNC_DIR
+      POSTGRES_HOST_PORT=$POSTGRES_HOST_PORT
+      IP_PLAN_DB_HOST=postgres
+      IP_PLAN_DB_PORT=5432
+      IP_PLAN_DB_NAME=ip_plan
+      IP_PLAN_DB_USER=ip_plan
+      IP_PLAN_DB_PASSWORD=$IP_PLAN_DB_PASSWORD
+      NETOBS_RO_HOST=postgres
+      NETOBS_RO_PORT=5432
+      NETOBS_RO_NAME=netobs
+      NETOBS_RO_USER=ip_plan_ro
+      NETOBS_RO_PASSWORD=$NETOBS_RO_PASSWORD
       EOF
+    # Секреты PostgreSQL — отдельный файл только для контейнера postgres
+    # (env_file в docker-compose.yml), чтобы пароль суперпользователя и
+    # владельца netobs не попадали в окружение web. Без этого шага compose
+    # не стартует вовсе (env_file обязателен), а с пустыми переменными
+    # bootstrap.sh остановит инициализацию тома с понятной ошибкой.
+    # POSTGRES_PASSWORD действует только на пустом томе; пароли ролей
+    # применяются к существующему тому ручным запуском bootstrap.sh
+    # (см. .env.db.example).
+    # umask в подшелле: файл получает 0600, а остальные шаги скрипта
+    # (одна сессия shell на весь job) — прежнюю маску.
+    - |
+      (umask 077; cat > .env.db <<EOF
+      POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+      IP_PLAN_DB_PASSWORD=$IP_PLAN_DB_PASSWORD
+      NETBOX_SYNC_DB_PASSWORD=$NETBOX_SYNC_DB_PASSWORD
+      NETOBS_RO_PASSWORD=$NETOBS_RO_PASSWORD
+      EOF
+      )
     - docker compose up -d --build
     - |
       ok=""

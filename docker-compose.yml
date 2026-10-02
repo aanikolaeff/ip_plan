@@ -9,6 +9,14 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    # Ждём не просто запуска контейнера postgres, а healthcheck: на пустом
+    # томе первый старт включает init (bootstrap ролей и баз), и до его конца
+    # web не должен пытаться подключиться. Пока settings.py работает на
+    # SQLite (IP_PLAN_DB_ENGINE=sqlite, см. план этапа 1), зависимость
+    # ничего не ломает — просто postgres поднимается вместе с web.
+    depends_on:
+      postgres:
+        condition: service_healthy
     # host.docker.internal на Docker Desktop работает "из коробки", на
     # обычном Linux Docker Engine — только с этой записью (Docker 20.10+).
     # mdc-ipa-* — статически, чтобы login занимал миллисекунды, а не ~4с:
@@ -62,6 +70,49 @@ services:
       # через tmp+rename, а на bind-mount'е файла rename ломается.
       - ${NETBOX_SYNC_DIR:-../netbox-sync}/conf:/app/netbox_sync_conf
 
+  # --- PostgreSQL: база ip_plan (Django) и база netobs (наблюдения netbox-sync) ---
+  # Одна СУБД, две базы с разными владельцами (KTD1/KTD4 плана
+  # docs/plans/2026-10-03-0059-feat-observations-store-stage1-plan.md):
+  # роли и права создаёт db/bootstrap.sh — автоматически на пустом томе и
+  # вручную на существующем (`docker compose exec postgres bash
+  # /opt/ip_plan_db/bootstrap.sh`). Отдельный контейнер, а не PostgreSQL
+  # боевого NetBox: боевую СУБД не трогаем, локально и на проде одинаково.
+  postgres:
+    image: postgres:18
+    # Секреты СУБД — только здесь, отдельным файлом .env.db: пароль
+    # суперпользователя и пароли ролей нужны только bootstrap.sh. Контейнер
+    # web получает из .env лишь свои параметры подключения (IP_PLAN_DB_*,
+    # NETOBS_RO_*) — ни POSTGRES_PASSWORD, ни пароля владельца netobs у
+    # веб-приложения нет.
+    env_file:
+      - .env.db
+    # Образ 18 хранит данные в /var/lib/postgresql/18/docker и ждёт том на
+    # /var/lib/postgresql — монтирование на .../data, как у старых версий,
+    # он отвергает при старте (сделано ради pg_upgrade --link между версиями).
+    #
+    # ./db — только чтение: bootstrap.sh для ручного запуска, initdb/ —
+    # обёртка, которую образ выполняет на пустом томе.
+    volumes:
+      - pg_data:/var/lib/postgresql
+      - ./db:/opt/ip_plan_db:ro
+      - ./db/initdb:/docker-entrypoint-initdb.d:ro
+    # Только loopback, как у guacamole: netbox-sync на том же хосте ходит в
+    # netobs на 127.0.0.1:5433, а снаружи порт не виден. 5433, а не 5432 —
+    # на проде 5432, вероятно, занят системным PostgreSQL боевого NetBox.
+    # Изнутри compose (web) — postgres:5432, публикация для этого не нужна.
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
+    # -h 127.0.0.1 — проверка по TCP, а не через сокет: во время init образ
+    # поднимает временный сервер, слушающий только unix-сокет, и проверка
+    # через сокет объявила бы контейнер healthy ДО окончания bootstrap.sh.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -t 2 -h 127.0.0.1 -U postgres -d postgres"]
+      start_period: 20s
+      timeout: 30s
+      interval: 10s
+      retries: 5
+    restart: unless-stopped
+
   # --- Шлюз удалённого доступа (Apache Guacamole): SSH / RDP / VNC в браузере ---
   # Оба сервиса — в профиле "gateway": обычный `docker compose up -d` (в том
   # числе деплой из .gitlab-ci.yml) их НЕ поднимает. Включить —
@@ -94,4 +145,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  # sqlite_data остаётся и после перехода на PostgreSQL: из него переносятся
+  # данные (dumpdata), и на него же откатываются сменой IP_PLAN_DB_ENGINE.
   sqlite_data:
+  pg_data:

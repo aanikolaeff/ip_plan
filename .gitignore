@@ -1,4 +1,7 @@
 .env
+# Секреты PostgreSQL (пароль суперпользователя и ролей) — отдельно от .env,
+# см. .env.db.example и сервис postgres в docker-compose.yml.
+.env.db
 __pycache__/
 *.pyc
 db.sqlite3

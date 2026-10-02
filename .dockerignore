@@ -1,4 +1,7 @@
 .env
+# Dockerfile делает `COPY . .` — без этой строки пароли PostgreSQL попали бы
+# в слой образа web, ровно туда, где их быть не должно.
+.env.db
 .git
 .gitignore
 __pycache__
