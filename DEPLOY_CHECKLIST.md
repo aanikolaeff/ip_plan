@@ -161,3 +161,56 @@ docker compose logs -f web
 - [ ] Раздел «Настройки» открывается, вкладки видны по правам (см. пункт
       7), сохранение любого файла (например `devices.json`) проходит и
       появляется в «Журнале».
+
+## 9. Бэкапы PostgreSQL
+
+Обе базы (`ip_plan` и `netobs`) живут в томе `pg_data`. Копия снимается
+`scripts/pg_backup.sh`: `pg_dump -Fc` по каждой базе и
+`pg_dumpall --globals-only` (роли) — через `docker compose exec -T` под
+пользователем `postgres` по сокету внутри контейнера, поэтому пароль нигде
+не передаётся. Файлы с датой пишутся в каталог на хосте **вне тома**
+(`BACKUP_DIR`, по умолчанию `/var/backups/ip_plan_pg`, права 0700/0600 —
+внутри хеши паролей и шифрованный bind-пароль LDAP), старше 14 дней
+(`RETENTION_DAYS`) удаляются. Недописанный дамп не остаётся: файл пишется
+во временный и переименовывается только после успеха; при ошибке любого
+дампа скрипт выходит с ненулевым кодом.
+
+- [ ] Каталог `BACKUP_DIR` лежит на другом диске/разделе, чем том Docker
+      (или копии уезжают дальше по расписанию хоста) — иначе потеря диска
+      забирает и базу, и бэкап.
+- [ ] В cron хоста (от пользователя, который может `docker compose`)
+      добавлена строка — ежедневно в 02:00, до ночного прогона синка в 03:00:
+
+```
+0 2 * * * /opt/ip_plan_docker_react/scripts/pg_backup.sh >> /var/log/ip_plan_pg_backup.log 2>&1
+```
+
+- [ ] Ручной запуск отработал: в каталоге три файла
+      (`ip_plan_*.dump`, `netobs_*.dump`, `globals_*.sql`), код возврата 0.
+
+**Проверка восстановления** — в отдельный временный контейнер, боевой
+postgres не трогаем. Сначала роли (иначе `pg_restore` упадёт на `GRANT ... TO
+ip_plan_ro`), затем базы:
+
+```
+B=/var/backups/ip_plan_pg
+docker run --rm -d --name pgrestore_test -e POSTGRES_PASSWORD=x postgres:18
+# подождать пару секунд, пока контейнер поднимется (pg_isready)
+docker exec -i pgrestore_test psql -U postgres -q < $B/globals_<дата>.sql   # "already exists" для postgres — норма
+docker exec pgrestore_test psql -U postgres -c 'create database ip_plan' -c 'create database netobs'
+docker exec -i pgrestore_test pg_restore -U postgres -d ip_plan --exit-on-error < $B/ip_plan_<дата>.dump
+docker exec -i pgrestore_test pg_restore -U postgres -d netobs  --exit-on-error < $B/netobs_<дата>.dump
+```
+
+- [ ] Оба `pg_restore` завершились без ошибок.
+- [ ] Число строк в таблицах совпадает с боевой базой (допуск — записи,
+      появившиеся после снятия дампа), например для каждой базы:
+      `psql -U postgres -d <база> -Atc "select relname, n_live_tup from pg_stat_user_tables order by 1"`
+      в боевом (`docker compose exec -T -u postgres postgres psql ...`) и
+      во временном контейнере; для `ip_plan` — также `python manage.py db_counts` против восстановленной базы (команда появляется с переносом SQLite → PostgreSQL).
+- [ ] Временный контейнер удалён: `docker rm -f pgrestore_test`.
+
+**Никогда не выполняйте `docker compose down -v` на проде** — флаг `-v`
+удаляет тома, в том числе `pg_data` с обеими базами. Останавливать стек
+нужно `docker compose down` (без `-v`); последняя копия из `BACKUP_DIR` —
+единственная страховка от такой ошибки.
