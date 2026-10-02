@@ -29,6 +29,8 @@ from django.conf import settings
 # «DNS enrich». Меняя full_sync.sh, правьте и этот список — тест
 # test_sync_log сверяет его с самим скриптом, если тот рядом.
 STEPS = [
+    {"name": "Netobs migrate", "script": "netobs_migrate.py",
+     "title": "Хранилище наблюдений", "desc": "Схема базы MAC- и ARP-таблиц (netobs); без настройки шаг пропускается"},
     {"name": "Custom fields", "script": "netbox_ensure_custom_fields.py",
      "title": "Служебные поля", "desc": "Проверяет и создаёт пользовательские поля NetBox"},
     {"name": "VLAN+prefixes", "script": "netbox_network_setup.py",

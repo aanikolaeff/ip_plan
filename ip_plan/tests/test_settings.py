@@ -66,14 +66,17 @@ class SyncLogTests(SimpleTestCase):
     def test_running_step_is_the_started_one(self):
         # LLDP завершён, Reachability начался: раньше текущим показывался
         # «DNS enrich» (Reachability не было в списке).
-        done = [(n, "OK", 1) for n in sync_log.STEP_NAMES[:9]]
+        # Срез — по имени шага, а не по числу: шаги добавляются в начало
+        # (Netobs migrate, 03.10.2026), и позиционный срез молча съезжал.
+        upto = sync_log.STEP_NAMES.index("LLDP topology") + 1
+        done = [(n, "OK", 1) for n in sync_log.STEP_NAMES[:upto]]
         parsed = sync_log.parse(_log(done, running="Reachability", summary=False))
         self.assertEqual(parsed["overall"], "RUNNING")
         self.assertEqual(parsed["running_step"], "Reachability")
 
     def test_finished_and_failed(self):
         steps = [(n, "OK", 2) for n in sync_log.STEP_NAMES]
-        steps[3] = ("Config backup", "FAILED", 1)
+        steps[sync_log.STEP_NAMES.index("Config backup")] = ("Config backup", "FAILED", 1)
         parsed = sync_log.parse(_log(steps))
         self.assertEqual(parsed["overall"], "FAILED")
         self.assertEqual(parsed["finished_at"], "2026-10-02 03:40:00")
@@ -101,30 +104,33 @@ class SyncOverviewTests(SimpleTestCase):
 
     def test_failed_run_rows_and_cards(self):
         steps = [(n, "OK", 60) for n in sync_log.STEP_NAMES]
-        steps[7] = ("vCenter", "TIMEOUT", 120)
+        idx = sync_log.STEP_NAMES.index
+        steps[idx("vCenter")] = ("vCenter", "TIMEOUT", 120)
         self._write("full_sync_2026-10-02_0300.log", _log(steps))
         overview = sync_overview.overview()
         self.assertEqual(overview["state"], "failed")
-        self.assertEqual((overview["ok_count"], overview["total_count"]), (10, 11))
+        self.assertEqual((overview["ok_count"], overview["total_count"]),
+                         (len(steps) - 1, len(steps)))
         self.assertEqual(overview["failed"][0]["label"], "Таймаут")
-        row = overview["steps"][2]
+        row = overview["steps"][idx("Devices")]
         self.assertEqual((row["title"], row["duration"], row["status"]), ("Устройства", "1 мин 00 с", "ok"))
-        self.assertTrue(overview["steps"][5]["schedule_only"])
+        self.assertTrue(overview["steps"][idx("Nmap scan")]["schedule_only"])
 
     def test_running_with_lock_has_progress_and_journal(self):
         prev = [(n, "OK", 100) for n in sync_log.STEP_NAMES]
+        cb = sync_log.STEP_NAMES.index("Config backup")
         self._write("full_sync_2026-10-01_0300.log", _log(prev, started="2026-10-01 03:00:00"))
         started = sync_overview.now() - timedelta(minutes=5)
         self._write("full_sync_2026-10-02_0300.log",
-                    _log([(n, "OK", 100) for n in sync_log.STEP_NAMES[:3]], running="Config backup",
+                    _log([(n, "OK", 100) for n in sync_log.STEP_NAMES[:cb]], running="Config backup",
                          summary=False, started=started.strftime("%Y-%m-%d %H:%M:%S")))
         self.lock.write_text("123")
         overview = sync_overview.overview()
         self.assertEqual(overview["state"], "running")
-        self.assertEqual(overview["progress"]["position"], 4)
+        self.assertEqual(overview["progress"]["position"], cb + 1)
         self.assertEqual(overview["progress"]["step_name"], "Config backup")
         self.assertTrue(overview["progress"]["remaining"].startswith("~"))
-        self.assertEqual([r["status"] for r in overview["steps"][3:5]], ["run", "wait"])
+        self.assertEqual([r["status"] for r in overview["steps"][cb:cb + 2]], ["run", "wait"])
         self.assertTrue(any(line["kind"] == "start" for line in overview["journal"]))
 
     def test_unfinished_log_without_lock_is_aborted(self):
