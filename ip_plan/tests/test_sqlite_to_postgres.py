@@ -14,6 +14,7 @@ import json
 import os
 import tempfile
 from datetime import date
+from unittest import mock
 
 from cryptography.fernet import Fernet
 from django.contrib.auth.models import Group, Permission, User
@@ -211,6 +212,23 @@ class TargetMustBeEmptyTests(_TransferTestBase):
         # и до них дело не дошло.
         self.assertEqual(dict(FirewallObjectName.objects.values_list("kind", "current_name")),
                          self.seed_names)
+
+    def test_failed_loaddata_rolls_back_seed_deletion(self):
+        dump = self.path("dump.json")
+        _run("dump", "--output", dump)
+        self.wipe_to_seed()
+        ldap_before = LdapConfig.objects.filter(pk=1).values().first()
+
+        def broken_loaddata(*args, **kwargs):
+            raise RuntimeError("loaddata упал")
+
+        with mock.patch("ip_plan.services.db_transfer.call_command", broken_loaddata):
+            with self.assertRaises(Exception):
+                _run("load", dump)
+        # Удаление засеянных строк откатилось вместе с упавшей загрузкой.
+        self.assertEqual(dict(FirewallObjectName.objects.values_list("kind", "current_name")),
+                         self.seed_names)
+        self.assertEqual(LdapConfig.objects.filter(pk=1).values().first(), ldap_before)
 
     def test_edited_seed_row_is_not_seed(self):
         FirewallObjectName.objects.filter(kind="ip").update(current_name="BLOCK_BY_IP_9")

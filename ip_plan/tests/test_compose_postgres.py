@@ -92,6 +92,18 @@ class EnvExamplesTests(unittest.TestCase):
         self.assertNotIn("NETBOX_SYNC_DB_PASSWORD", env_part)
         self.assertIn("NETOBS_RO_PASSWORD=$NETOBS_RO_PASSWORD", env_part)
 
+    def test_ci_keeps_local_admin_seeding_on_by_default(self):
+        # Пустое значение decouple читает как false — засев выключался бы молча.
+        self.assertIn("SEED_LOCAL_ADMIN=${SEED_LOCAL_ADMIN:-true}", _read(".gitlab-ci.yml"))
+
+    def test_ci_refuses_empty_db_passwords_before_writing_env_db(self):
+        ci = _read(".gitlab-ci.yml")
+        guard = ci.index("NETOBS_RO_PASSWORD; do")
+        self.assertLess(guard, ci.index("cat > .env.db <<EOF"))
+        for key in ("POSTGRES_PASSWORD", "IP_PLAN_DB_PASSWORD",
+                    "NETBOX_SYNC_DB_PASSWORD", "NETOBS_RO_PASSWORD"):
+            self.assertIn(key, ci[guard - 120:guard + 20])
+
     def test_env_db_never_committed_or_baked_into_image(self):
         self.assertRegex(_read(".gitignore"), r"(?m)^\.env\.db$")
         self.assertRegex(_read(".dockerignore"), r"(?m)^\.env\.db$")

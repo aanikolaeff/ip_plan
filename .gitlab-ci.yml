@@ -32,7 +32,7 @@ deploy:
       LDAP_BIND_PASSWORD=$LDAP_BIND_PASSWORD
       NETBOX_SYNC_DIR=$NETBOX_SYNC_DIR
       POSTGRES_HOST_PORT=$POSTGRES_HOST_PORT
-      SEED_LOCAL_ADMIN=$SEED_LOCAL_ADMIN
+      SEED_LOCAL_ADMIN=${SEED_LOCAL_ADMIN:-true}
       IP_PLAN_DB_ENGINE=${IP_PLAN_DB_ENGINE:-sqlite}
       IP_PLAN_DB_HOST=postgres
       IP_PLAN_DB_PORT=5432
@@ -48,13 +48,22 @@ deploy:
     # Секреты PostgreSQL — отдельный файл только для контейнера postgres
     # (env_file в docker-compose.yml), чтобы пароль суперпользователя и
     # владельца netobs не попадали в окружение web. Без этого шага compose
-    # не стартует вовсе (env_file обязателен), а с пустыми переменными
-    # bootstrap.sh остановит инициализацию тома с понятной ошибкой.
+    # не стартует вовсе (env_file обязателен). Пустые пароли отсекаются до
+    # записи файла: bootstrap.sh на них тоже остановится, но initdb к тому
+    # моменту уже создаст кластер, и после рестарта образ init-скрипты не
+    # повторит — postgres окажется «здоров» без ролей и баз.
     # POSTGRES_PASSWORD действует только на пустом томе; пароли ролей
     # применяются к существующему тому ручным запуском bootstrap.sh
     # (см. .env.db.example).
     # umask в подшелле: файл получает 0600, а остальные шаги скрипта
     # (одна сессия shell на весь job) — прежнюю маску.
+    - |
+      for var in POSTGRES_PASSWORD IP_PLAN_DB_PASSWORD NETBOX_SYNC_DB_PASSWORD NETOBS_RO_PASSWORD; do
+        if [ -z "$(printenv "$var")" ]; then
+          echo "CI-переменная $var не задана — деплой остановлен до запуска PostgreSQL"
+          exit 1
+        fi
+      done
     - |
       (umask 077; cat > .env.db <<EOF
       POSTGRES_PASSWORD=$POSTGRES_PASSWORD
