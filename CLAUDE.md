@@ -14,15 +14,24 @@ git-репозиторий (не часть монорепо `NETBOX/`). Общ�
 ```bash
 cd ip_plan_docker_react
 cp .env.example .env          # заполнить SECRET_KEY, NETBOX_URL, NETBOX_TOKEN, NETBOX_SYNC_DIR
+cp .env.db.example .env.db    # пароли PostgreSQL (см. «PostgreSQL и перенос с SQLite»)
 docker compose up -d --build
 docker compose logs -f web
 ```
 
+`.env.db` обязателен: `docker-compose.yml` подключает его как `env_file` сервиса
+`postgres`, и без файла compose не стартует вовсе. Пароли ролей в нём и в `.env`
+(`IP_PLAN_DB_PASSWORD`, `NETOBS_RO_PASSWORD`) должны совпадать — подробности в
+разделе про PostgreSQL ниже. `web` ждёт `postgres` по healthcheck, поэтому
+первый старт на пустом томе занимает чуть дольше; по умолчанию приложение при
+этом всё равно работает на SQLite (`IP_PLAN_DB_ENGINE` не задан).
+
 Приложение доступно на `http://localhost:8090` (проброс `8090:8000`).
 
-При каждом старте контейнера `entrypoint.sh` выполняет по порядку:
-`manage.py migrate` → `manage.py ensure_local_admin` (см. ниже) →
-`manage.py collectstatic`, затем запускает `gunicorn`.
+При каждом старте контейнера `entrypoint.sh` выполняет по порядку: ожидание
+PostgreSQL (только при `IP_PLAN_DB_ENGINE=postgres`, до `DB_WAIT_SECONDS`, по
+умолчанию 60 с) → `manage.py migrate` → `manage.py ensure_local_admin` (см.
+ниже) → `manage.py collectstatic`, затем запускает `gunicorn`.
 
 ## Архитектура
 
@@ -146,10 +155,18 @@ NetBox API (`ip_plan/services/netbox_client.py`). Но за последнее �
   держит такую учётку на странице смены пароля, пока `LocalAccount.must_change_password`
   не снят — до этого приложение никуда больше не пускает.
 
-SQLite (`data/db.sqlite3`, Docker volume `sqlite_data`) хранит Django-сессии,
-LDAP-зеркалированные объекты `User`, и теперь ещё все модели выше —
-`RegulatorDocument`/`RegulatorEntry`/`FirewallObjectName`/`LocalAccount`/
-`SettingsAudit`/`LdapConfig`/`ConnectionTest`.
+БД Django — **PostgreSQL 18** (сервис `postgres` в `docker-compose.yml`, база
+`ip_plan`) или, по умолчанию, SQLite (`data/db.sqlite3`, Docker volume
+`sqlite_data`). Выбирает переменная `IP_PLAN_DB_ENGINE` (`sqlite` или `postgres`,
+пусто = `sqlite`; любое другое значение — `ImproperlyConfigured` при старте,
+чтобы опечатка не подняла приложение на SQLite молча). На `postgres` переключать
+**только вместе с переносом данных** (раздел «PostgreSQL и перенос с SQLite»
+ниже); откат — вернуть `sqlite` тем же способом, пока в PostgreSQL ничего не
+писали. В базе — Django-сессии, LDAP-зеркалированные объекты `User` и все
+модели выше — `RegulatorDocument`/`RegulatorEntry`/`FirewallObjectName`/
+`LocalAccount`/`SettingsAudit`/`LdapConfig`/`ConnectionTest`. Второй базой того
+же PostgreSQL — `netobs` (наблюдения MAC/IP, пишет netbox-sync) — ip_plan только
+читает, см. «Поиск MAC/IP».
 
 Прочее по-прежнему как было:
 - `ip_plan/services/netbox_client.py` — класс `NetBoxClient`: единая
@@ -215,7 +232,14 @@ LDAP-зеркалированные объекты `User`, и теперь ещ�
 > [!warning] `STEP_NAMES` в `sync_log.py` — ручная копия списка шагов из
 > `full_sync.sh`, и они уже расходились: шаг «LLDP topology» добавили в
 > скрипт, а сюда забыли, и сводка молча показывала девять шагов вместо
-> десяти. Добавляя шаг в `full_sync.sh`, правьте оба списка.
+> десяти. Добавляя шаг в `full_sync.sh`, правьте оба списка. Сейчас шагов 12,
+> первый — «Netobs migrate» (03.10.2026, `netobs_migrate.py`). Тесты в
+> `test_settings.py` ищут шаги **по имени** (`STEP_NAMES.index("LLDP topology")`),
+> а не по номеру, так что вставка шага в начало списка их не ломает — но
+> новый шаг нужно вставлять в том же месте, где он стоит в `full_sync.sh`:
+> порядок строк в сводке и «осталось» считаются по порядку списка. Тот же
+> тест (`test_reachability_is_a_step_and_matches_full_sync`) сверяет имена и
+> скрипты шагов с `full_sync.sh`, если репозиторий netbox-sync лежит рядом.
 
 ## Оболочка: боковое меню, площадка, тема (этап 1 нового дизайна, 01.10.2026)
 
@@ -894,6 +918,177 @@ L3-коммутаторах служебные). У модели — поля «
 пользуется синк — netbox-sync CLAUDE.md, раздел «Ядро сети, серийные
 номера, ARP L3-коммутаторов».
 
+## PostgreSQL и перенос с SQLite (03.10.2026)
+
+С 03.10.2026 в `docker-compose.yml` есть сервис `postgres` (образ
+`postgres:18`) с двумя базами: `ip_plan` (Django) и `netobs` (наблюдения
+MAC/IP, схемой владеет netbox-sync). Решения и причины — в плане
+`docs/plans/2026-10-03-0059-feat-observations-store-stage1-plan.md`
+(KTD1–KTD4, KTD11). Отдельный контейнер, а не PostgreSQL боевого NetBox:
+боевую СУБД не трогаем, локально и на проде всё одинаково.
+
+**Роли и базы** (создаёт `db/bootstrap.sh`):
+
+| Роль | Права |
+|------|-------|
+| `ip_plan` | владелец базы `ip_plan`; `CREATEDB` — ради тестовой базы `manage.py test`, больше ничего |
+| `netbox_sync` | владелец базы `netobs`; под ней netbox-sync пишет наблюдения и применяет миграции схемы |
+| `ip_plan_ro` | в `netobs` только `CONNECT`, `USAGE`, `SELECT` + `ALTER DEFAULT PRIVILEGES FOR ROLE netbox_sync` (новые таблицы остаются читаемыми); `default_transaction_read_only = on` — вторая защита |
+
+Порт на хосте — `127.0.0.1:${POSTGRES_HOST_PORT:-5433}`, только loopback:
+netbox-sync на том же хосте ходит в `netobs` на `127.0.0.1:5433`, снаружи порт
+не виден. 5433, а не 5432 — на проде 5432, вероятно, занят системным
+PostgreSQL боевого NetBox. Изнутри compose (`web`) адрес `postgres:5432`,
+публикация для этого не нужна.
+
+> [!warning] Том `pg_data` монтируется на `/var/lib/postgresql`, а не на
+> `/var/lib/postgresql/data`. Образ `postgres:18` хранит данные в
+> `/var/lib/postgresql/18/docker` и отвергает привычное монтирование на
+> `.../data` (сделано ради `pg_upgrade --link` между версиями). Старый путь
+> молча положил бы данные в анонимный том, и они пропали бы при пересоздании
+> контейнера. **Никогда не выполняйте `docker compose down -v`** — флаг
+> удаляет `pg_data` с обеими базами.
+
+**Секреты разделены на два файла.** `.env` целиком уходит в контейнер `web`:
+там только параметры подключения самого приложения (`IP_PLAN_DB_*`,
+`NETOBS_RO_*`). `.env.db` читает только контейнер `postgres` (`env_file`):
+`POSTGRES_PASSWORD`, `IP_PLAN_DB_PASSWORD`, `NETBOX_SYNC_DB_PASSWORD`,
+`NETOBS_RO_PASSWORD`. У веб-приложения нет ни пароля суперпользователя, ни
+пароля владельца `netobs` — компрометация `web` не даёт записи в наблюдения.
+`.env.db` стоит в `.gitignore` **и в `.dockerignore`**: `Dockerfile` делает
+`COPY . .`, и без второй строки пароли попали бы в слой образа `web`. На проде
+оба файла пишет `.gitlab-ci.yml` из CI/CD-переменных (`.env.db` — с umask 077).
+Пароль `netbox_sync` живёт ещё в одном месте — `netbox-sync/conf/netobs.json`;
+при смене менять и там.
+
+**`db/bootstrap.sh`** — идемпотентный скрипт ролей, баз и прав. На пустом томе
+его выполняет образ (`db/initdb/10-ip-plan-bootstrap.sh`), на **уже
+существующем томе init-скрипты образа не запускаются** — нужные роли, права
+или смену пароля применяют вручную:
+
+```bash
+docker compose exec postgres bash /opt/ip_plan_db/bootstrap.sh
+```
+
+Повторный запуск ничего не пересоздаёт; переписываются только пароли ролей
+(из `.env.db` — это источник истины). Смена пароля = правка `.env.db` (и `.env`,
+где он продублирован) + запуск скрипта + перезапуск `web`.
+`POSTGRES_PASSWORD` читается только при инициализации пустого тома, потом его
+меняют `ALTER ROLE` вручную. Healthcheck делает `pg_isready` по TCP
+(`-h 127.0.0.1`), а не через сокет: во время init образ поднимает временный
+сервер только на сокете, и проверка по сокету объявила бы контейнер готовым до
+конца `bootstrap.sh`. `entrypoint.sh` дополнительно ждёт базу сам: после
+перезапуска хоста демон Docker поднимает контейнеры с `restart: unless-stopped`
+без учёта `depends_on`, и `migrate` иначе падал бы в цикле рестартов.
+
+**Перенос данных — `scripts/sqlite_to_postgres.sh`** (логика шагов — в
+`ip_plan/services/db_transfer.py`, management-команды `db_transfer` и
+`db_counts`). Запускается из корня репозитория при собранном образе `web` и
+запущенном `postgres`:
+
+```bash
+scripts/sqlite_to_postgres.sh --stop-web          # рабочий перенос SQLite → база ip_plan
+scripts/sqlite_to_postgres.sh --sqlite /app/data/db.copy.sqlite3 --pg-db ip_plan_xfer_test   # пробный
+scripts/sqlite_to_postgres.sh --reverse --stop-web                                            # PostgreSQL → новый SQLite
+```
+
+Шаги: (1) копия SQLite через backup API и предпроверки источника (миграции на
+версии кода, нет строк длиннее `max_length`, NUL и значений не того типа, нет
+висячих ссылок, пароль LDAP расшифровывается текущим `SECRET_KEY`), затем
+предпроверка цели (пуста, кроме засеянного миграциями); (2) выгрузка
+`dumpdata --natural-foreign --natural-primary` без `contenttypes`,
+`auth.permission`, `sessions`; (3) `migrate` на цели с `SEED_LOCAL_ADMIN=false`;
+(4–5) удаление засеянных строк (`0003`, `0008`), `loaddata` и сброс
+последовательностей — одной транзакцией; (6) `db_counts` цели = `db_counts`
+источника по каждой модели, пароль LDAP читается, у `LocalAccount`/`MapLayout`
+есть пользователь. Любая ошибка останавливает скрипт, рабочий файл
+`data/db.sqlite3` не изменяется никогда (при прямом переносе читается копия, при
+обратном пишется новый файл). Сессии не переносятся — пользователи входят заново.
+
+- `--stop-web` останавливает `web` перед снятием копии; для рабочего переноса
+  обязателен, иначе записи после копии в цель не попадут. Обратно скрипт `web`
+  не запускает.
+- **Переключатель скрипт не трогает**: в конце он печатает следующий шаг —
+  `IP_PLAN_DB_ENGINE=postgres` (локально — в `.env`, на проде — CI-переменная и
+  повторный деплой, потому что CI перезаписывает `.env` при каждом деплое) и
+  `docker compose up -d web`. По умолчанию (`IP_PLAN_DB_ENGINE` пуст) — SQLite.
+  Переключать на `postgres` без переноса нельзя: на пустой базе `migrate` создаст
+  схему, а `ensure_local_admin` — `admin`/`admin`, и приложение поднимется как
+  новое. На проде вместе с переключением ставят `SEED_LOCAL_ADMIN=false`.
+- **Выгрузка лежит в томе `sqlite_data`**, каталог
+  `/app/data/xfer/<время>-sqlite-to-pg/` (0700; внутри `source.sqlite3`,
+  `dump.json`, `counts_source.tsv`, `counts_target.tsv`). Её **не удалять** —
+  по ней проверяют границу отката. В выгрузке хеши паролей и зашифрованный
+  пароль LDAP; на хост: `docker compose cp web:<каталог> ./`.
+- **`db_counts`** — число строк по каждой переносимой модели
+  (`--json`, `--output FILE`, `--compare FILE` — сверка с ранее сохранённым
+  выводом, расхождение — ошибка).
+
+> [!warning] Откат на SQLite возможен только до первой записи в PostgreSQL.
+> Любая запись в любую модель после переключения (правка реестра, имена
+> объектов `FirewallObjectName`, настройки) в SQLite не вернётся, а часть из
+> этого отражает состояние реального xFW: имя объекта, ушедшее в команды,
+> следующая генерация выдала бы заново. Перед откатом сравните
+> `db_counts --compare .../counts_target.tsv` на PostgreSQL (ловит добавленные и
+> удалённые строки, но не правки существующих) и, при сомнении, свежую выгрузку
+> `db_transfer dump --output …` с `dump.json` из каталога переноса (входы
+> пользователей меняют `last_login`, это ожидаемое отличие). Любое
+> другое отличие — откат только обратным переносом (`--reverse --stop-web`):
+> он пишет **новый** файл SQLite, и дальше его ставят на место
+> `data/db.sqlite3` по инструкции, которую скрипт печатает в конце. Просто
+> сменить `IP_PLAN_DB_ENGINE=sqlite` можно лишь тогда, когда в PostgreSQL
+> ничего не писали.
+
+**Бэкапы** — `scripts/pg_backup.sh`: `pg_dump -Fc` по каждой базе (`ip_plan`,
+`netobs`) и `pg_dumpall --globals-only` в каталог на хосте вне тома
+(`BACKUP_DIR`, по умолчанию `/var/backups/ip_plan_pg`), хранение
+`RETENTION_DAYS` (14). Cron и проверка восстановления — в `DEPLOY_CHECKLIST.md`,
+раздел 9.
+
+Тесты ip_plan на PostgreSQL: `ip_plan` имеет `CREATEDB`, поэтому
+`manage.py test` создаёт тестовую базу сам. Тесты выбора движка и переноса
+(`test_db_settings.py`, `test_sqlite_to_postgres.py`, `test_db_counts.py`,
+`test_compose_postgres.py`) проверяют настройки и логику без боевой базы.
+
+## Поиск MAC/IP (03.10.2026)
+
+Пункт бокового меню «Поиск MAC/IP» — `/obs/?q=…` (`views_obs.obs_search`,
+`ip_plan/services/netobs_search.py`, шаблон `obs_search.html`, стили `obs.css`).
+Отвечает на вопрос «где в сети виден этот MAC или IP» по истории наблюдений
+netbox-sync (MAC-таблицы коммутаторов и ARP), а не по снимку, переписываемому
+каждую ночь.
+
+- **Доступ** — любой вошедший пользователь. Ищет по всем площадкам сразу,
+  cookie площадки не читает: адрес ищут по всей сети.
+- **Источник данных** — база `netobs` (схема в `netbox-sync/netobs/migrations`,
+  моделей Django нет), сырой SQL через алиас `DATABASES["netobs"]`. Алиас
+  объявляется **только** при заданных `NETOBS_RO_NAME` и `NETOBS_RO_USER`; роль
+  `ip_plan_ro`, `connect_timeout` 3 с, `statement_timeout` 5 с — недоступная
+  или подвисшая `netobs` не должна держать воркер gunicorn.
+  `ip_plan/db_routers.NetobsRouter`: миграции только в `default`,
+  `db_for_write` всегда `default` (явно, а не `None`: иначе объект, прочитанный
+  через `.using("netobs")`, попытался бы сохраниться обратно туда).
+- **Ввод**: MAC в любой из четырёх записей (`aa:bb:…`, `aabb.ccdd.eeff`,
+  `AA-BB-…`, 12 hex); часть MAC от 4 hex — подстрока (`LIKE` с экранированием
+  спецсимволов); IP — только точное совпадение; иначе понятная ошибка. По IP
+  выдаются ARP-строки (`arp-table`, `arp-l3`) с этим IP плюс строки MAC-таблиц
+  найденных в них MAC; чужие IP того же MAC (маршрутизатор в ARP ядра — десятки
+  адресов) в выдачу не попадают.
+- **Выдача** — не больше 200 строк, подпись «показано N из M». Колонки: MAC, IP,
+  устройство, порт (+VLAN), источник, «адресов за портом», состояние, «впервые»,
+  «последний раз». «Текущее» — строка есть в представлении
+  `current_observations` (то же определение, что у топологии), иначе «прежнее».
+  Пустой `first_seen` показывается как «до переноса» — запись импортирована из
+  NetBox, когда адрес увидели впервые, неизвестно. Порядок: текущие первыми,
+  затем порты с меньшим числом адресов (порт доступа, а не транк), затем
+  свежие; прежние и импортированные приглушены.
+- **Состояния страницы**: «не настроено» (нет `NETOBS_RO_*`) и «недоступно» —
+  страница отвечает 200 с сообщением, остальное приложение работает как
+  раньше; «опросы ещё не выполнялись»; «для этого IP нет ARP-записей»;
+  «не встречался… последний успешный опрос — …».
+- **Тесты** (`test_obs_search.py`, `test_db_routers.py`) мокают хранилище,
+  тестовая база `netobs` не создаётся: схема принадлежит другому репозиторию.
+
 ## Ключевые настройки (`.env`)
 
 | Переменная | Заметки |
@@ -907,6 +1102,13 @@ L3-коммутаторах служебные). У модели — поля «
 | `NETBOX_SYNC_DIR` | Хостовый (не внутриконтейнерный) путь до корня `netbox-sync` — только для `docker-compose.yml volumes`, Django не читает напрямую. Пусто = сиблинг-директория `../netbox-sync`. На проде — обязательно (раннер чекаутит проекты не рядом), см. `NETBOX_SYNC_DIR` в `netbox-sync/CLAUDE.md` про `DEPLOY_PATH=/opt/scan` |
 | `ACL_CONFIG_BACKUPS_DIR` / `SYNC_LOGS_DIR` / `FIREWALL_BLOCKLISTS_DIR` | Пути ВНУТРИ контейнера до примонтированных read-only данных netbox-sync (страница ACL, сводка в «Настройках», блокировки регулятора) — пусто = дефолт, совпадающий с точкой монтирования в `docker-compose.yml` |
 | `SYNC_LOG_TZ` / `SYNC_SCHEDULE` | Зона времени в логах full_sync.sh (по умолчанию Europe/Moscow) и cron хоста синка (`0 3 * * *`) — для «Настройки → Запуск и расписание» |
+| `IP_PLAN_DB_ENGINE` | `sqlite` (пусто = sqlite) или `postgres`. На `postgres` — только вместе с переносом `scripts/sqlite_to_postgres.sh`; на проде CI-переменная (`${IP_PLAN_DB_ENGINE:-sqlite}` пишется в `.env` при каждом деплое — правка `.env` на хосте не работает). Неизвестное значение — ошибка при старте |
+| `IP_PLAN_DB_HOST` / `_PORT` / `_NAME` / `_USER` / `_PASSWORD` | База Django при `postgres`: `postgres` / `5432` / `ip_plan` / `ip_plan` / пароль. Изнутри compose порт 5432, а не `POSTGRES_HOST_PORT`; с хоста (`manage.py` против той же базы) — `127.0.0.1` и порт хоста. Пароль = `IP_PLAN_DB_PASSWORD` из `.env.db` |
+| `NETOBS_RO_HOST` / `_PORT` / `_NAME` / `_USER` / `_PASSWORD` | Чтение базы `netobs` для «Поиска MAC/IP»: `postgres` / `5432` / `netobs` / `ip_plan_ro` / пароль (= `NETOBS_RO_PASSWORD` из `.env.db`). Алиас `netobs` объявляется только при заданных `_NAME` и `_USER`; без них страница пишет «не настроено» |
+| `POSTGRES_HOST_PORT` | Порт PostgreSQL на хосте, только `127.0.0.1`. Пусто = 5433 (5432 на проде, вероятно, занят). По нему netbox-sync подключается к `netobs` (`conf/netobs.json`) |
+| `IP_PLAN_SQLITE_PATH` | Путь к файлу SQLite — **только для `scripts/sqlite_to_postgres.sh`** (перенос читает копию, обратный перенос пишет в новый файл). Приложение всегда работает с `data/db.sqlite3` |
+| `DB_WAIT_SECONDS` | Сколько `entrypoint.sh` ждёт PostgreSQL при старте (по умолчанию 60) |
+| `.env.db`: `POSTGRES_PASSWORD`, `IP_PLAN_DB_PASSWORD`, `NETBOX_SYNC_DB_PASSWORD`, `NETOBS_RO_PASSWORD` | Секреты контейнера `postgres` (файл `.env.db`, не `.env`; в `.gitignore` и `.dockerignore`). `POSTGRES_PASSWORD` действует только при инициализации пустого тома; пароли ролей применяет `bootstrap.sh` при каждом запуске. `NETBOX_SYNC_DB_PASSWORD` в `.env` быть не должен — он нужен только синку (`netbox-sync/conf/netobs.json`) |
 | `LDAP_BIND_PASSWORD` | Нужна только ОДИН раз — при первом применении миграции `0008_seed_ldap_config`. После — не читается, пароль правится в «Настройки → LDAP» |
 | `LDAP_TLS_CA_CERT` | Единственный LDAP-параметр, который нельзя поменять из UI (см. выше) |
 | `LDAP_LOG_LEVEL` | Уровень логов `django_auth_ldap`, для диагностики bind/фильтра/групп |
@@ -953,14 +1155,17 @@ auto` (переполнение прокручивается, а не среза
 
 ## Источники, использованные для этого файла
 
-`docker-compose.yml`, `.env.example`, `config/settings.py`, `ip_plan/models.py`,
+`docker-compose.yml`, `.env.example`, `.env.db.example`, `config/settings.py`
+(`build_databases`), `entrypoint.sh`, `db/bootstrap.sh`, `scripts/sqlite_to_postgres.sh`,
+`scripts/pg_backup.sh`, `ip_plan/services/db_transfer.py`, `ip_plan/db_routers.py`,
+`ip_plan/services/netobs_search.py`, `ip_plan/views_obs.py`, `ip_plan/models.py`,
 `ip_plan/migrations/`, `ip_plan/views_settings.py`, `ip_plan/middleware.py`,
 `ip_plan/auth_backends.py`, `ip_plan/services/sync_config.py`, `package.json`,
-`Dockerfile`, `DEPLOY_CHECKLIST.md` (частично устарел — см. ниже).
+`Dockerfile`, `DEPLOY_CHECKLIST.md` (разделы 1–9 по-прежнему про общий деплой;
+раздел «Выкатка этапа хранилища наблюдений» — по дням, 03.10.2026).
 
-> [!warning] TODO: `DEPLOY_CHECKLIST.md` в этой директории местами не
-> актуализирован под текущую версию (всё ещё называет директорию
-> `ip_plan_docker/` и утверждает «база данных/миграции не нужны» — оба
-> утверждения неверны для этой, React-версии). Даты/детали живого прод-стенда
-> (реальный `NETBOX_URL`, текущее состояние LDAP на проде) в коде не видны —
+> [!warning] TODO: проверить `DEPLOY_CHECKLIST.md` целиком. Устаревшие места
+> про `ip_plan_docker/` и «базу данных/миграции не нужны» в нём исправлены, но
+> реальные значения живого прод-стенда (настоящий `NETBOX_URL`, текущее
+> состояние LDAP, версия Docker/compose на хосте) в коде не видны —
 > проверять вручную на самом проде, не по репозиторию.
