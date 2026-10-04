@@ -297,6 +297,23 @@ a.sb-user-name:hover { color: var(--accent); }
 .shell-sync.is-failed .shell-sync-state { color: var(--danger); }
 .shell-sync.is-ok .shell-sync-state { color: var(--ok); }
 
+/* Сборщик заданий: индикатор «выполняется …» в шапке и баннер под ней
+   ($store.worker, app.js). Баннер виден только при беде (класс is-shown). */
+.shell-job {
+  height: 30px; display: inline-flex; align-items: center; gap: 8px; padding: 0 10px 0 9px;
+  border-radius: 8px; background: var(--accent-soft); color: var(--text-main);
+  font-size: 12.5px; white-space: nowrap; text-decoration: none; max-width: 340px; overflow: hidden; text-overflow: ellipsis;
+}
+.shell-job:hover { color: var(--text-main); filter: brightness(.97); }
+.shell-job-dot { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.shell-banner { display: none; align-items: center; gap: 8px; padding: 8px 24px; font-size: 13px; line-height: 18px; border-bottom: 1px solid var(--line); }
+.shell-banner.is-shown { display: flex; }
+.shell-banner.is-error { background: color-mix(in srgb, var(--danger) 10%, var(--bg-surface)); color: var(--text-main); }
+.shell-banner.is-warn { background: color-mix(in srgb, var(--warn) 14%, var(--bg-surface)); color: var(--text-main); }
+.shell-banner-label { font-weight: 600; }
+.shell-banner.is-error .shell-banner-label { color: var(--danger); }
+.shell-banner-link { margin-left: auto; font-weight: 600; color: inherit; text-decoration: underline; white-space: nowrap; }
+
 .shell-body {
   flex: 1 1 auto;
   min-height: 0;

@@ -308,6 +308,32 @@ SYNC_LOG_TZ = config("SYNC_LOG_TZ", default="Europe/Moscow")
 # только вид «M H * * *»; иное — «Следующий прогон» не показывается.
 SYNC_SCHEDULE = config("SYNC_SCHEDULE", default="0 3 * * *")
 
+
+# --- Сборщик заданий синка (сервис worker, профиль "worker") ---
+# Баннер состояния и раздел «Задания» (ip_plan/services/worker_health.py).
+# /health сборщика доступен только внутри compose. Адрес по умолчанию —
+# http://worker:<SYNC_WORKER_HEALTH_PORT>/health, если в COMPOSE_PROFILES
+# (.env целиком уходит в web) есть worker; иначе пусто = сборщик не включён:
+# ни баннера, ни раздела. Явное SYNC_WORKER_HEALTH_URL перекрывает это
+# правило (пустое значение — выключить). На SQLite раздел не показывается
+# никогда: сборщику нужна база ip_plan в PostgreSQL.
+def _worker_health_url():
+    explicit = config("SYNC_WORKER_HEALTH_URL", default=None)
+    if explicit is not None:
+        return explicit.strip()
+    profiles = {p.strip() for p in config("COMPOSE_PROFILES", default="").split(",")}
+    if "worker" not in profiles:
+        return ""
+    port = config("SYNC_WORKER_HEALTH_PORT", default="") or "8090"
+    return f"http://worker:{port}/health"
+
+
+SYNC_WORKER_HEALTH_URL = _worker_health_url()
+# Таймаут запроса к /health (страница не должна ждать молчащий сборщик) и
+# сколько секунд держать ответ в кэше воркера gunicorn.
+SYNC_WORKER_HEALTH_TIMEOUT = config("SYNC_WORKER_HEALTH_TIMEOUT", default=1.5, cast=float)
+SYNC_WORKER_HEALTH_CACHE_SECONDS = config("SYNC_WORKER_HEALTH_CACHE_SECONDS", default=20, cast=int)
+
 # --- Блокировки регулятора — снимок объектов блокировки firewall ---
 # Тот же принцип и тот же NETBOX_SYNC_DIR, что и у ACL_CONFIG_BACKUPS_DIR/
 # SYNC_LOGS_DIR выше — подпапка firewall_blocklists (пишет

@@ -1,0 +1,172 @@
+{% extends "ip_plan/base.html" %}
+{% load static %}
+
+{% comment %}
+  Раздел «Задания» (views_jobs.jobs): состояние сборщика, расписания,
+  запуск отдельного шага, история заданий с фильтром по статусу.
+  Запускать и править может только staff; у остальных кнопки отключены с
+  подсказкой. Кнопки шлют hx-post и получают 204 + HX-Redirect на задание
+  (повторный запуск того же вида — переход на уже стоящее задание с
+  уведомлением); ошибка — партиал в модалку.
+{% endcomment %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'ip_plan/css/settings.css' %}">
+  <link rel="stylesheet" href="{% static 'ip_plan/css/jobs.css' %}">
+{% endblock %}
+{% block extra_scripts %}
+  <script src="{% static 'ip_plan/js/settings.js' %}"></script>
+{% endblock %}
+
+{% block body_class %} st{% endblock %}
+
+{% block content %}
+{% with no_rights="Нужна группа netbox-admins" %}
+<div class="st-screen is-gap22 jb-screen">
+
+  <div class="st-screen-head">
+    <div>
+      <h2 class="st-h2">Задания синхронизации</h2>
+      <p class="st-lead is-680">Шаги синка (кроме сканирования nmap) выполняет сборщик netbox-sync — по расписанию или по кнопке «Запустить». Время — в поясе <span class="mono">{{ tz|default:"Europe/Moscow" }}</span>.</p>
+    </div>
+  </div>
+
+  {# ── Сборщик ── #}
+  {% if health_down %}
+    <div class="st-banner is-danger" role="alert">
+      <span class="st-banner-text"><b>Сборщик не отвечает.</b> Задания ставятся в очередь, но выполнятся, только когда он поднимется. Причина: <code>{{ health_reason }}</code></span>
+    </div>
+  {% else %}
+    <div class="jb-health" aria-label="Состояние сборщика">
+      <div class="jb-kv">Сборщик<b>{{ health.worker_id|default:"—" }}</b></div>
+      <div class="jb-kv">Состояние<b>{{ health.state|default:"—" }} · env={{ health.env|default:"—" }}</b></div>
+      <div class="jb-kv">База ip_plan / netobs<b>{{ health.db|default:"—" }} / {{ health.netobs|default:"—" }}</b></div>
+      <div class="jb-kv">Версия кода · миграции<b>v{{ health.version|default:"—" }} · {{ health.migrations|default:"—" }}</b></div>
+    </div>
+    {% if banner.level %}
+      <div class="st-banner {% if banner.level == 'error' %}is-danger{% else %}is-warn{% endif %}" role="status">
+        <span class="st-banner-text">{{ banner.text }}</span>
+      </div>
+    {% endif %}
+  {% endif %}
+
+  {% if edit_lock %}
+    <div class="st-banner is-neutral" role="status">
+      <span class="st-banner-text">{{ edit_lock.text }}{% if edit_lock.job_id %} <a href="{% url 'ip_plan:job_detail' edit_lock.job_id %}">Открыть задание</a>{% endif %}</span>
+    </div>
+  {% endif %}
+
+  {# ── Расписания ── #}
+  <section class="jb-section">
+    <div class="jb-section-head">
+      <span class="jb-section-title">Расписания</span>
+      <button type="button" class="st-btn st-btn-primary is-sm"
+              {% if can_edit %}hx-get="{% url 'ip_plan:jobs_schedule_add' %}" hx-target="#modal-content" hx-indicator="#modal-spinner"
+              @click="$store.modal.dirty = false; $dispatch('open-modal')"{% else %}disabled title="{{ no_rights }}"{% endif %}>Добавить расписание</button>
+    </div>
+    <div class="st-tbl">
+      <div class="st-tbl-in jb-tbl-in">
+        <div class="st-thead jb-cols-sched">
+          <span class="st-cell is-first">Расписание</span><span class="st-cell">Когда</span><span class="st-cell">Следующий</span><span class="st-cell">Последний запуск</span><span></span>
+        </div>
+        {% for s in schedules %}
+          <div class="st-tr jb-cols-sched{% if forloop.counter|divisibleby:2 %} is-even{% endif %}">
+            <span class="st-cell is-first">
+              {{ s.title }} {% if not s.enabled %}<span class="st-pill is-none">выключено</span>{% endif %}
+              <span class="jb-sub" title="{{ s.steps|join:' → ' }}">{% if s.single %}один шаг{% else %}цепочка{% endif %}: {{ s.steps|join:" → " }}</span>
+            </span>
+            <span class="st-cell">{{ s.trigger }}<span class="jb-sub mono">{{ s.kind }}</span></span>
+            <span class="st-cell">{{ s.next_run|default:"—" }}</span>
+            <span class="st-cell">
+              {% if s.last %}
+                <a href="{% url 'ip_plan:job_detail' s.last.id %}" class="st-pill is-{{ s.last.status_class }}" title="Задание #{{ s.last.id }}">{{ s.last.status_label }}</a>
+                <span class="jb-sub">{{ s.last.created }}</span>
+              {% else %}<span class="jb-sub">ещё не запускалось</span>{% endif %}
+            </span>
+            <span class="st-cell is-end jb-actions">
+              {% if s.active_job %}
+                <a class="st-btn st-btn-outline" href="{% url 'ip_plan:job_detail' s.active_job %}">Идёт #{{ s.active_job }}</a>
+              {% else %}
+                <button type="button" class="st-btn st-btn-outline"
+                        {% if can_edit %}hx-post="{% url 'ip_plan:jobs_run' %}" hx-vals='{"schedule": "{{ s.id }}"}' hx-target="#modal-content"
+                        hx-on::after-request="if (event.detail.xhr.status >= 400) window.dispatchEvent(new CustomEvent('open-modal'))"{% else %}disabled title="{{ no_rights }}"{% endif %}>Запустить</button>
+              {% endif %}
+              <button type="button" class="st-btn st-btn-ghost"
+                      {% if can_edit %}hx-get="{% url 'ip_plan:jobs_schedule_edit' s.id %}" hx-target="#modal-content" hx-indicator="#modal-spinner"
+                      @click="$store.modal.dirty = false; $dispatch('open-modal')"{% else %}disabled title="{{ no_rights }}"{% endif %}>Изменить</button>
+            </span>
+          </div>
+        {% empty %}
+          <div class="jb-empty">Расписаний нет — шаги запускаются только вручную.{% if can_edit %} Добавьте расписание кнопкой выше.{% endif %}</div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  {# ── Один шаг ── #}
+  <section class="jb-section">
+    <div class="jb-section-head"><span class="jb-section-title">Запустить один шаг</span></div>
+    <div class="st-tbl">
+      <div class="st-tbl-in jb-tbl-in">
+        <div class="st-thead jb-cols-steps"><span class="st-cell is-first">Шаг</span><span class="st-cell">Что делает</span><span></span></div>
+        {% for st in steps %}
+          <div class="st-tr is-44 jb-cols-steps{% if forloop.counter|divisibleby:2 %} is-even{% endif %}">
+            <span class="st-cell is-first">{{ st.label }} <span class="jb-sub mono">{{ st.name }}</span></span>
+            <span class="st-cell" title="{{ st.desc }}">{{ st.desc }}</span>
+            <span class="st-cell is-end">
+              {% if st.active_job %}
+                <a class="st-btn st-btn-outline" href="{% url 'ip_plan:job_detail' st.active_job %}">Идёт #{{ st.active_job }}</a>
+              {% else %}
+                <button type="button" class="st-btn st-btn-outline"
+                        {% if can_edit %}hx-post="{% url 'ip_plan:jobs_run' %}" hx-vals='{"step": "{{ st.name }}"}' hx-target="#modal-content"
+                        hx-on::after-request="if (event.detail.xhr.status >= 400) window.dispatchEvent(new CustomEvent('open-modal'))"{% else %}disabled title="{{ no_rights }}"{% endif %}>Запустить</button>
+              {% endif %}
+            </span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  {# ── История ── #}
+  <section class="jb-section">
+    <div class="jb-section-head">
+      <span class="jb-section-title">История</span>
+      <nav class="jb-filters" aria-label="Фильтр по статусу">
+        <a class="jb-chip{% if not status %} is-active{% endif %}" href="?">Все</a>
+        {% for value, label in statuses %}
+          <a class="jb-chip{% if status == value %} is-active{% endif %}" href="?status={{ value }}">{{ label }}</a>
+        {% endfor %}
+      </nav>
+    </div>
+    <div class="st-tbl">
+      <div class="st-tbl-in jb-tbl-in">
+        <div class="st-thead jb-cols-hist">
+          <span class="st-cell is-first">№</span><span class="st-cell">Вид</span><span class="st-cell">Состояние</span><span class="st-cell">Поставлено</span><span class="st-cell">Кем</span><span class="st-cell">Длилось</span><span class="st-cell">Итог</span>
+        </div>
+        {% for j in history %}
+          <a class="st-tr is-44 is-hover jb-cols-hist{% if forloop.counter|divisibleby:2 %} is-even{% endif %}" href="{% url 'ip_plan:job_detail' j.id %}" style="color:inherit;text-decoration:none">
+            <span class="st-cell is-first mono">#{{ j.id }}</span>
+            <span class="st-cell">{{ j.label }}</span>
+            <span class="st-cell"><span class="st-pill is-{{ j.status_class }}">{{ j.status_label }}</span></span>
+            <span class="st-cell">{{ j.created }}</span>
+            <span class="st-cell">{{ j.requested_by|default:j.source_label }}</span>
+            <span class="st-cell">{{ j.duration|default:"—" }}</span>
+            <span class="st-cell" title="{{ j.wait_reason|default:j.summary }}">{{ j.wait_reason|default:j.summary }}</span>
+          </a>
+        {% empty %}
+          <div class="jb-empty">{% if status %}Нет заданий с этим состоянием.{% else %}Заданий ещё не было.{% endif %}</div>
+        {% endfor %}
+      </div>
+    </div>
+    {% if page.paginator.num_pages > 1 %}
+      <div class="jb-pager">
+        {% if page.has_previous %}<a href="?{% if status %}status={{ status }}&{% endif %}page={{ page.previous_page_number }}">← новее</a>{% endif %}
+        <span>страница {{ page.number }} из {{ page.paginator.num_pages }}</span>
+        {% if page.has_next %}<a href="?{% if status %}status={{ status }}&{% endif %}page={{ page.next_page_number }}">старее →</a>{% endif %}
+      </div>
+    {% endif %}
+  </section>
+</div>
+{% endwith %}
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "ip_plan/base.html" %}
+{% load static %}
+
+{% comment %}
+  Страница задания (views_jobs.job_detail). Тело — _job_body.html: пока
+  задание в очереди или выполняется, оно само перерисовывается опросом
+  job_body каждые 3 с; ответ по завершённому заданию атрибутов опроса не
+  несёт — опрос прекращается. Прокрутку вывода сохраняет app.js
+  ([data-keep-scroll]).
+{% endcomment %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'ip_plan/css/settings.css' %}">
+  <link rel="stylesheet" href="{% static 'ip_plan/css/jobs.css' %}">
+{% endblock %}
+
+{% block body_class %} st{% endblock %}
+
+{% block content %}
+  {% include "ip_plan/_job_body.html" %}
+{% endblock %}

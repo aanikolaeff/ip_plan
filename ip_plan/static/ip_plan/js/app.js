@@ -140,11 +140,79 @@
     // сервер всё корректно возвращает, но пользователь этого не видит.
     // Разрешаем подстановку явно для 400 — именно так view возвращает
     // переотрисованную форму с ошибками.
+    // 409 — правки конфигурации синка заблокированы, пока идёт задание или
+    // nmap (KTD18): ответ — партиал ошибки с причиной, его тоже показываем.
+    // Форма, которая сама стоит в модалке, при 409 не заменяется ответом:
+    // она остаётся заполненной, причина — тостом (иначе ответ стёр бы всё
+    // введённое). Формы на странице получают ответ в модалку, как раньше.
     document.body.addEventListener('htmx:beforeSwap', function (evt) {
-      if (evt.detail.xhr && evt.detail.xhr.status === 400) {
+      const status = evt.detail.xhr && evt.detail.xhr.status;
+      if (status === 409) {
+        const elt = evt.detail.requestConfig && evt.detail.requestConfig.elt;
+        const modal = document.getElementById('modal-content');
+        if (elt && modal && modal.contains(elt)) {
+          evt.detail.shouldSwap = false;
+          evt.detail.isError = false;
+          const doc = new DOMParser().parseFromString(evt.detail.serverResponse || '', 'text/html');
+          const text = (doc.querySelector('.alert-modal-error') || doc.body).textContent.trim();
+          window.dispatchEvent(new CustomEvent('show-toast', {
+            detail: { message: text || 'Сохранение отклонено (409)', kind: 'error' },
+          }));
+          return;
+        }
+      }
+      if (status === 400 || status === 409) {
         evt.detail.shouldSwap = true;
         evt.detail.isError = false;
       }
+    });
+
+    // Блокировка правок conf (KTD18): на страницах «Настроек» с плашкой
+    // ([data-conf-locked] в settings_base.html) кнопки сохранения и удаления
+    // форм, пишущих в conf, отключаются — и на странице, и в модалке,
+    // которую htmx подгружает позже. Проверка на сервере (409) остаётся
+    // главной; это — чтобы человек не заполнял форму впустую.
+    const CONF_WRITE_URL = /\/settings\/.*(\/save\/|\/delete\/|\/import\/(preview|apply)\/)$/;
+    function lockConfForms(root) {
+      if (!document.querySelector('[data-conf-locked]')) return;
+      (root || document).querySelectorAll('form').forEach(function (form) {
+        const url = form.getAttribute('hx-post') || form.getAttribute('action') || '';
+        if (!CONF_WRITE_URL.test(url) || /\/settings\/(ldap|users)\//.test(url)) return;
+        form.querySelectorAll('button[type="submit"], button:not([type])').forEach(function (btn) {
+          btn.disabled = true;
+          btn.title = 'Правки конфигурации синка заблокированы: идёт задание или nmap';
+        });
+        document.querySelectorAll('button[form="' + form.id + '"]').forEach(function (btn) {
+          if (form.id) { btn.disabled = true; }
+        });
+      });
+    }
+    document.addEventListener('DOMContentLoaded', function () { lockConfForms(document); });
+    document.body.addEventListener('htmx:afterSettle', function (evt) { lockConfForms(evt.target); });
+
+    // Опрос страницы задания (job_detail): тело заменяется целиком, а
+    // прокрутка вывода ([data-keep-scroll]) сохраняется — у низа остаётся у
+    // низа (следим за хвостом), иначе остаётся на месте.
+    const keptScroll = {};
+    document.body.addEventListener('htmx:beforeSwap', function () {
+      document.querySelectorAll('[data-keep-scroll]').forEach(function (el) {
+        keptScroll[el.dataset.keepScroll] = {
+          top: el.scrollTop,
+          atBottom: el.scrollTop + el.clientHeight >= el.scrollHeight - 4,
+        };
+      });
+    });
+    document.addEventListener('DOMContentLoaded', function () {
+      document.querySelectorAll('[data-keep-scroll][data-start-bottom]').forEach(function (el) {
+        el.scrollTop = el.scrollHeight;
+      });
+    });
+    document.body.addEventListener('htmx:afterSwap', function () {
+      document.querySelectorAll('[data-keep-scroll]').forEach(function (el) {
+        const saved = keptScroll[el.dataset.keepScroll];
+        if (!saved) return;
+        el.scrollTop = saved.atBottom ? el.scrollHeight : saved.top;
+      });
     });
 
     // "2026-09-10 03:00:01" (см. sync_log.py: header.started, формат
@@ -329,6 +397,37 @@
         },
       });
       Alpine.store('sync').refresh();
+
+      // Состояние сборщика заданий netbox-sync (worker_health.banner через
+      // /worker/health.json): баннер под шапкой и индикатор «выполняется …».
+      // Сервер сам кэширует /health (15–30 с) и ходит к сборщику с таймаутом,
+      // так что опрос раз в 30 с не нагружает ни web, ни сборщик. Страница
+      // от этого запроса не ждёт ничего: баннер дорисовывается сам.
+      Alpine.store('worker', {
+        level: '',
+        text: '',
+        link: '',
+        linkText: '',
+        running: [],
+        async refresh() {
+          try {
+            const resp = await fetch((window.URL_PREFIX || '') + '/worker/health.json', { credentials: 'same-origin' });
+            if (!resp.ok) return;
+            const data = await resp.json();
+            this.level = data.level || '';
+            this.text = data.text || '';
+            this.link = data.link || '';
+            this.linkText = data.link_text || '';
+            this.running = data.running || [];
+          } catch (e) {
+            // Сеть до самого ip_plan пропала — баннер сборщика тут ни при чём.
+          }
+        },
+      });
+      if (window.IP_PLAN_WORKER) {
+        Alpine.store('worker').refresh();
+        setInterval(() => Alpine.store('worker').refresh(), 30000);
+      }
 
       // Dropdown "Настройки" в шапке — тема + сводка netbox-sync (сводка —
       // через $store.sync выше, здесь только open/close и переключатель

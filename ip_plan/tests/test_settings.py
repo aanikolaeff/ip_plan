@@ -309,10 +309,16 @@ class AuditAndSyncTests(_ConfMixin, TestCase):
         rows = vs._tab_context(mock.Mock(GET={}), "audit")["audit_rows"]
         self.assertEqual({r["action_kind"] for r in rows}, {"change", "import"})
 
-    def test_sync_run_is_a_stub(self):
+    @override_settings(SYNC_WORKER_HEALTH_URL="")
+    def test_sync_run_is_a_stub_without_worker(self):
+        # Сборщик не включён (без профиля worker или на SQLite) — запуск
+        # по-прежнему только на хосте. С ним кнопки ставят задания —
+        # test_jobs.SettingsSyncButtonsTests.
         r = self.client.post("/settings/sync/run/")
         self.assertEqual(r.status_code, 204)
         self.assertIn("пока не подключён", json.loads(r["HX-Trigger"])["show-toast"]["message"])
+        from ip_plan.models import SyncJob
+        self.assertFalse(SyncJob.objects.exists())
 
     def test_changed_devices_banner(self):
         started = sync_overview.now() - timedelta(hours=1)

@@ -1,0 +1,61 @@
+{% comment %}
+  Тело страницы задания: шапка с состоянием, шаги, вывод. Контекст —
+  views_jobs._job_ctx. Пока active — опрос job_body раз в 3 с (outerHTML).
+{% endcomment %}
+<div class="st-screen is-gap20 jb-screen" id="jb-job"
+     {% if active %}hx-get="{% url 'ip_plan:job_body' job.pk %}" hx-trigger="every 3s" hx-target="this" hx-swap="outerHTML"{% endif %}>
+
+  <div class="st-screen-head">
+    <div>
+      <nav class="st-crumbs" aria-label="Путь">
+        <a href="{% url 'ip_plan:jobs' %}">Задания</a>
+        <span class="st-crumbs-sep">/</span>
+        <span>#{{ job.pk }}</span>
+      </nav>
+      <h2 class="st-h2">{{ row.label }} <span class="st-pill is-{{ row.status_class }}">{% if job.status == 'running' %}<svg class="st-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>{% endif %}{{ row.status_label }}</span></h2>
+      <p class="st-lead">
+        Вид <span class="mono">{{ job.kind }}</span> · {{ row.source_label|lower }}{% if job.requested_by %} ({{ job.requested_by }}){% endif %}
+        · поставлено {{ row.created }}{% if row.started %} · начато {{ row.started }}{% endif %}{% if row.finished %} · завершено {{ row.finished }}{% endif %}{% if row.duration %} · {{ row.duration }}{% endif %}
+      </p>
+    </div>
+    {% if not active and can_rerun %}
+      <button type="button" class="st-btn st-btn-outline is-36"
+              {% if can_run %}hx-post="{% url 'ip_plan:jobs_run' %}" hx-vals='{% if job.schedule_id %}{"schedule": "{{ job.schedule_id }}"}{% else %}{"step": "{{ job.kind|escapejs }}"}{% endif %}' hx-target="#modal-content"
+              hx-on::after-request="if (event.detail.xhr.status >= 400) window.dispatchEvent(new CustomEvent('open-modal'))"{% else %}disabled title="Нужна группа netbox-admins"{% endif %}>Запустить ещё раз</button>
+    {% endif %}
+  </div>
+
+  {% if job.status == 'queued' %}
+    <div class="st-banner is-neutral" role="status"><span class="st-banner-text">В очереди — сборщик возьмёт задание в течение нескольких секунд, если он запущен и не занят заданием, которое пишет в NetBox.</span></div>
+  {% elif job.wait_reason %}
+    <div class="st-banner is-warn" role="status"><span class="st-banner-text">Ждёт: {{ job.wait_reason }}</span></div>
+  {% elif current %}
+    <div class="st-banner is-neutral" role="status"><span class="st-banner-text">Выполняется шаг {{ current.index }} из {{ steps|length }} — {{ current.label }}</span></div>
+  {% endif %}
+  {% if job.summary %}
+    <div class="st-banner {% if job.status == 'done' %}is-ok{% elif job.status == 'done_with_errors' %}is-warn{% else %}is-danger{% endif %}"><span class="st-banner-text">{{ job.summary }}</span></div>
+  {% endif %}
+
+  <section class="jb-section">
+    <div class="jb-section-head"><span class="jb-section-title">Шаги</span></div>
+    <div class="st-tbl">
+      <div class="st-tbl-in jb-tbl-in">
+        <div class="st-thead jb-cols-jobsteps"><span class="st-cell is-first">№</span><span class="st-cell">Шаг</span><span class="st-cell">Результат</span><span class="st-cell">Время</span><span class="st-cell">Код</span></div>
+        {% for s in steps %}
+          <div class="st-tr is-44 jb-cols-jobsteps{% if forloop.counter|divisibleby:2 %} is-even{% endif %}">
+            <span class="st-cell is-first mono">{{ s.index }}</span>
+            <span class="st-cell">{{ s.label }} <span class="jb-sub mono">{{ s.name }}</span></span>
+            <span class="st-cell"><span class="st-pill is-{{ s.status_class }}">{{ s.status_label }}</span>{% if s.errors %} <span class="jb-sub">ERROR: {{ s.errors }}</span>{% endif %}</span>
+            <span class="st-cell">{{ s.duration|default:"—" }}</span>
+            <span class="st-cell mono">{% if s.exit_code is not None %}{{ s.exit_code }}{% else %}—{% endif %}</span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="st-console">
+    <div class="st-console-head"><b>Вывод</b><span>{% if active %}обновляется автоматически{% elif log_path %}полный лог: {{ log_path }}{% endif %}</span></div>
+    <div class="st-console-body jb-out" data-keep-scroll="job-{{ job.pk }}"{% if active %} data-start-bottom{% endif %}>{% if has_output %}{{ output_head }}{% if truncated %}<div class="jb-out-gap">… вывод обрезан, полный лог: {{ log_path|default:"в каталоге sync_logs/worker" }} …</div>{% endif %}{{ output_tail }}{% elif active %}<div class="st-console-line is-meta">Вывода пока нет.</div>{% else %}<div class="st-console-line is-meta">Задание ничего не вывело.</div>{% endif %}</div>
+  </section>
+</div>

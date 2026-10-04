@@ -30,7 +30,7 @@ from django.core.exceptions import ValidationError
 from .context_processors import SITE_COOKIE, site_options_cached
 from .models import LdapConfig, LocalAccount, SettingsAudit
 from .services import connection_test, ldap_check, remote_gateway, settings_bundle, ssh_access
-from .services import sync_overview
+from .services import sync_jobs, sync_overview, worker_health
 from .services import sync_config as sc
 
 logger = logging.getLogger(__name__)
@@ -78,6 +78,24 @@ staff_required = _require(lambda u: u.is_active and u.is_staff, "доступ а
 superuser_required = _require(lambda u: u.is_active and u.is_superuser, "доступ суперпользователя")
 
 
+def conf_write(view):
+    """Блокировка правок conf netbox-sync (KTD18, R15): пока выполняется
+    задание сборщика (running с живой арендой) или идёт nmap (занята общая
+    блокировка синка в netobs), сохранение отвечает 409 с причиной —
+    шаги читают конфиги каждый в момент своего старта, и правка посреди
+    прогона дала бы смесь старых и новых настроек. Только POST: открыть
+    форму и посмотреть можно. LDAP и пользователи (база ip_plan) сюда не
+    входят."""
+    @wraps(view)
+    def wrapper(request, *args, **kwargs):
+        if request.method == "POST":
+            lock = sync_jobs.edit_lock()
+            if lock is not None:
+                return _error_modal(request, lock["text"], status=409)
+        return view(request, *args, **kwargs)
+    return wrapper
+
+
 def _audit(request, scope, target, action, details=""):
     SettingsAudit.objects.create(
         username=request.user.username, scope=scope,
@@ -122,13 +140,18 @@ def _rail(user, active):
 
 def _page_ctx(request, active):
     """Общее для всех страниц раздела: рейка и состояние каталога conf."""
+    lock = sync_jobs.edit_lock()
     return {
         "tabs": _visible_tabs(request.user),
         "rail": _rail(request.user, active),
         "active_tab": active,
         "conf_available": sc.available(),
         "conf_dir": sc.conf_dir(),
-        "sync_running": sc.sync_running(),
+        "sync_running": lock is not None,
+        # Почему правки conf сейчас заблокированы (плашка в settings_base.html);
+        # conf_tab — страница правит conf (LDAP, пользователи, журнал — нет).
+        "conf_lock": lock,
+        "conf_tab": active not in _DB_TABS and active != "sync",
     }
 
 
@@ -296,7 +319,7 @@ def _audit_row(entry):
         kind, action = "import", "импорт"
     elif entry.scope == "export":
         kind, action = "export", "экспорт"
-    elif entry.scope == "sync":
+    elif entry.scope == "sync" and not entry.target.startswith("расписание"):
         kind, action = "run", "запуск"
     else:
         kind, action = _AUDIT_ACTIONS.get(entry.action, ("change", entry.action))
@@ -499,10 +522,11 @@ def _tab_context(request, tab):
 
 
 # ── Запуск и расписание ────────────────────────────────────────────────────
-# Запуск синка из интерфейса — заглушка (решение 01.10.2026): ip_plan живёт в
-# контейнере, full_sync.sh — на хосте, канала между ними нет. Экран честно
-# показывает последний и идущий прогон по логу и lock-файлу, а кнопки
-# запуска/остановки отвечают, что запуск пока делается на хосте.
+# Кнопки экрана ставят задания сборщику netbox-sync (U11 плана этапа 2): ip_plan
+# пишет строку в sync_job, выполняет её сборщик в своём контейнере. Пока
+# сборщик не включён (SQLite или без профиля worker) — прежняя заглушка:
+# запуск делается на хосте (full_sync.sh). Сводку экрана по-прежнему строит
+# лог full_sync.sh (переход на задания — U12).
 
 @staff_required
 def sync_state(request):
@@ -511,16 +535,42 @@ def sync_state(request):
                   {"sync": sync_overview.overview()})
 
 
+def _toast(message, kind="info", status=204):
+    response = HttpResponse(status=status)
+    response["HX-Trigger"] = json.dumps({"show-toast": {"message": message, "kind": kind}})
+    return response
+
+
 @staff_required
 def sync_run(request):
+    """action=run (steps=<имена через запятую> — выбранные шаги, без steps —
+    все шаги белого списка сборщика) → задание; повторный запуск того же
+    вида — переход на уже стоящее задание. action=stop — остановки задания
+    из интерфейса нет."""
     if request.method != "POST":
         return _error_modal(request, "Ожидался POST", status=405)
-    response = HttpResponse(status=204)
-    response["HX-Trigger"] = json.dumps({"show-toast": {
-        "message": "Запуск из интерфейса пока не подключён: синхронизация запускается на хосте "
-                   "(full_sync.sh) по расписанию или вручную.",
-        "kind": "info"}})
-    return response
+    if not worker_health.enabled():
+        return _toast("Запуск из интерфейса пока не подключён: сборщик заданий не включён, "
+                      "синхронизация запускается на хосте (full_sync.sh) по расписанию или вручную.")
+    if request.POST.get("action") == "stop":
+        return _toast("Остановить задание из интерфейса нельзя: шаг доработает до конца или до "
+                      "своего таймаута.")
+    names = [n.strip() for n in (request.POST.get("steps") or "").split(",") if n.strip()]
+    if not names:
+        steps, kind = [s.name for s in sync_jobs.STEPS_LIST], sync_jobs.KIND_ALL_STEPS
+    else:
+        resolved = {n: sync_jobs.resolve_step(n) for n in names}
+        unknown = [n for n, step in resolved.items() if step is None]
+        if unknown:
+            return _toast("Эти шаги сборщик не запускает: " + ", ".join(unknown)
+                          + " (сканирование nmap — только cron на хосте, миграции — сам сборщик).",
+                          kind="error")
+        picked = set(resolved.values())
+        steps = [s.name for s in sync_jobs.STEPS_LIST if s.name in picked]
+        kind = steps[0] if len(steps) == 1 else sync_jobs.KIND_SELECTED
+    from .views_jobs import start_job  # views_jobs импортирует отсюда staff_required
+
+    return start_job(request, kind, steps)
 
 
 # ── Оборудование ───────────────────────────────────────────────────────────
@@ -570,31 +620,20 @@ def export_download(request):
 # Импорт дополняет конфигурацию, существующие записи и пароли не затирает без
 # явного выбора.
 
-def _import_blocked():
-    """Импорт меняет несколько файлов сразу, а шаги синка читают конфиги
-    каждый в момент своего старта: правка посреди прогона дала бы прогон на
-    смеси старых и новых настроек."""
-    return sc.sync_running()
-
-
 @staff_required
 def import_form(request):
+    # Импорт меняет несколько файлов сразу — блокируется, как и остальные
+    # правки conf (conf_write на preview/apply).
     return render(request, "ip_plan/_settings_import_form.html", {
-        "sync_running": _import_blocked(),
+        "sync_running": sc.sync_running(),
     })
 
 
 @staff_required
+@conf_write
 def import_preview(request):
     if request.method != "POST":
         return _error_modal(request, "Ожидался POST", status=405)
-    if _import_blocked():
-        return _error_modal(
-            request,
-            "Идёт синхронизация. Импорт изменил бы конфигурацию посреди прогона — "
-            "дождитесь окончания и повторите.",
-        )
-
     files = request.FILES.getlist("files")
     if not files:
         return _error_modal(request, "Не выбран ни один файл")
@@ -627,12 +666,10 @@ def import_preview(request):
 
 
 @staff_required
+@conf_write
 def import_apply(request):
     if request.method != "POST":
         return _error_modal(request, "Ожидался POST", status=405)
-    if _import_blocked():
-        return _error_modal(request, "Идёт синхронизация — импорт отменён.")
-
     uploaded = request.session.get("import_payload")
     if not uploaded:
         return _error_modal(
@@ -838,6 +875,7 @@ def _device_form(request, name):
 
 
 @staff_required
+@conf_write
 def device_save(request, name=None):
     if request.method != "POST":
         return _error_modal(request, "Ожидался POST", status=405)
@@ -1048,6 +1086,7 @@ def device_save(request, name=None):
 
 
 @staff_required
+@conf_write
 def device_delete(request, name):
     if request.method != "POST":
         return _error_modal(request, "Ожидался POST", status=405)
@@ -1220,6 +1259,7 @@ def _device_type_form(request, name):
 
 
 @staff_required
+@conf_write
 def device_type_save(request, name=None):
     if request.method != "POST":
         return _error_modal(request, "Ожидался POST", status=405)
@@ -1321,6 +1361,7 @@ def device_type_save(request, name=None):
 
 
 @staff_required
+@conf_write
 def device_type_delete(request, name):
     if request.method != "POST":
         return _error_modal(request, "Ожидался POST", status=405)
@@ -1393,6 +1434,7 @@ def source_form(request, kind, index=None):
 
 
 @staff_required
+@conf_write
 def source_save(request, kind, index=None):
     if request.method != "POST":
         return _error_modal(request, "Ожидался POST", status=405)
@@ -1431,6 +1473,7 @@ def source_save(request, kind, index=None):
 
 
 @staff_required
+@conf_write
 def source_delete(request, kind, index):
     if request.method != "POST":
         return _error_modal(request, "Ожидался POST", status=405)
@@ -1451,6 +1494,7 @@ def source_delete(request, kind, index):
 # ── Скан и DNS (config.json) ───────────────────────────────────────────────
 
 @staff_required
+@conf_write
 def scan_save(request):
     """Списки приходят как многострочные textarea — по значению в строке.
     Так проще всего и вводить, и валидировать построчно с понятной ошибкой."""
@@ -1502,6 +1546,7 @@ def scan_save(request):
 # Ключ в браузер не возвращается: пустое поле ключа = «оставить прежний».
 
 @staff_required
+@conf_write
 def ssh_access_save(request):
     if request.method != "POST":
         return _error_modal(request, "Ожидался POST", status=405)
@@ -1536,6 +1581,7 @@ def ssh_access_save(request):
 
 
 @staff_required
+@conf_write
 def ssh_access_delete(request):
     if request.method != "POST":
         return _error_modal(request, "Ожидался POST", status=405)
@@ -1565,6 +1611,7 @@ def ssh_access_test(request):
 
 
 @superuser_required
+@conf_write
 def environment_save(request, env):
     """URL и токен NetBox. Отдельно от остального config.json и только для
     суперпользователя: ошибка здесь останавливает синк целиком."""

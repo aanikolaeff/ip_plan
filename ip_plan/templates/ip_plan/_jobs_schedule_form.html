@@ -1,0 +1,142 @@
+{% comment %}
+  Расписание — модалка (views_jobs.schedule_form / schedule_save).
+  Режим: один шаг или цепочка (упорядоченный выбор из белого списка
+  сборщика; порядок уходит скрытыми полями steps). Запуск: интервал, время
+  суток или «после ночного nmap» с запасным временем (время — в поясе
+  SYNC_LOG_TZ). Вид и режим после создания не меняются: по виду ищутся
+  задания расписания. Ошибки — рядом с полем (ответ 400 с этой же формой).
+{% endcomment %}
+<div class="st st-modal"
+     x-data="{
+       all: {{ steps_json }},
+       picked: {{ picked_json }},
+       mode: '{{ values.mode|escapejs }}',
+       trigger: '{{ values.trigger|escapejs }}',
+       label(name) { const s = this.all.find((x) => x.name === name); return s ? s.label : name; },
+       add(name) { if (name && !this.picked.includes(name)) this.picked.push(name); },
+       remove(i) { this.picked.splice(i, 1); },
+       move(i, d) { const j = i + d; if (j < 0 || j >= this.picked.length) return; const t = this.picked[i]; this.picked[i] = this.picked[j]; this.picked[j] = t; },
+     }">
+  <div class="modal-title-bar">
+    <div>
+      <h5>{% if schedule %}{{ schedule.title|default:schedule.kind }}{% else %}Новое расписание{% endif %}</h5>
+      <div class="st-modal-sub">Время суток — в поясе {{ tz }}</div>
+    </div>
+    <button type="button" class="modal-close-btn" @click="$store.modal.requestClose()" aria-label="Закрыть"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>
+
+  <form hx-post="{% if schedule %}{% url 'ip_plan:jobs_schedule_save' schedule.pk %}{% else %}{% url 'ip_plan:jobs_schedule_add_save' %}{% endif %}"
+        hx-target="#modal-content" hx-indicator="#modal-spinner">
+    {% csrf_token %}
+    <div class="modal-body-pad">
+      <div class="st-grid2">
+        <label class="st-field st-span">
+          <span class="st-label">Название</span>
+          <input class="st-input" name="title" value="{{ values.title }}" autocomplete="off" placeholder="например, «После nmap»">
+        </label>
+
+        <fieldset class="st-field st-span">
+          <span class="st-label">Что запускать</span>
+          {% if schedule %}
+            <input type="hidden" name="mode" value="{{ values.mode }}">
+            <span class="st-hint">{% if values.mode == "step" %}Один шаг{% else %}Цепочка{% endif %} · вид <span class="mono">{{ values.kind }}</span> — после создания не меняется.</span>
+          {% else %}
+            <span style="display:flex;gap:16px;font-size:13px">
+              <label><input type="radio" name="mode" value="step" x-model="mode"> Один шаг</label>
+              <label><input type="radio" name="mode" value="chain" x-model="mode"> Цепочка шагов</label>
+            </span>
+          {% endif %}
+        </fieldset>
+
+        <label class="st-field st-span" x-show="mode === 'step'">
+          <span class="st-label">Шаг</span>
+          <span class="st-select">
+            <select class="st-input" name="step"{% if schedule %} disabled{% endif %}>
+              <option value="">— выберите —</option>
+              {% for s in all_steps %}<option value="{{ s.name }}"{% if values.step == s.name %} selected{% endif %}>{{ s.label }} ({{ s.name }})</option>{% endfor %}
+            </select>
+          </span>
+          {% if errors.step %}<span class="st-field-error">{{ errors.step }}</span>{% endif %}
+        </label>
+
+        <template x-if="mode === 'chain'"><div class="st-span st-grid2">
+          {% if not schedule %}
+            <label class="st-field st-span">
+              <span class="st-label">Вид (идентификатор)</span>
+              <input class="st-input is-mono" name="kind" value="{{ values.kind }}" autocomplete="off" spellcheck="false" placeholder="night_after_nmap">
+              <span class="st-hint">Латиница, цифры и «_». По виду сборщик не ставит второе задание, пока первое не закончилось.</span>
+              {% if errors.kind %}<span class="st-field-error">{{ errors.kind }}</span>{% endif %}
+            </label>
+          {% endif %}
+          <div class="st-field st-span">
+            <span class="st-label">Шаги по порядку</span>
+            <div class="jb-steps-pick">
+              <template x-for="(name, i) in picked" :key="name">
+                <div class="jb-pick-row">
+                  <input type="hidden" name="steps" :value="name">
+                  <span class="jb-pick-n" x-text="i + 1"></span>
+                  <span class="jb-pick-name" x-text="label(name)"></span>
+                  <button type="button" class="jb-pick-btn" @click="move(i, -1)" :disabled="i === 0" aria-label="Выше">↑</button>
+                  <button type="button" class="jb-pick-btn" @click="move(i, 1)" :disabled="i === picked.length - 1" aria-label="Ниже">↓</button>
+                  <button type="button" class="jb-pick-btn" @click="remove(i)" aria-label="Убрать">✕</button>
+                </div>
+              </template>
+              <span class="st-hint" x-show="picked.length === 0">Шагов пока нет — добавьте из списка ниже.</span>
+              <span class="st-select">
+                <select class="st-input" @change="add($event.target.value); $event.target.value = ''" aria-label="Добавить шаг">
+                  <option value="">+ добавить шаг…</option>
+                  <template x-for="s in all.filter((x) => !picked.includes(x.name))" :key="s.name">
+                    <option :value="s.name" x-text="s.label + ' (' + s.name + ')'"></option>
+                  </template>
+                </select>
+              </span>
+            </div>
+            {% if errors.steps %}<span class="st-field-error">{{ errors.steps }}</span>{% endif %}
+          </div>
+        </div></template>
+
+        <label class="st-field">
+          <span class="st-label">Когда запускать</span>
+          <span class="st-select">
+            <select class="st-input" name="trigger" x-model="trigger">
+              {% for value, label in triggers %}<option value="{{ value }}"{% if values.trigger == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+          </span>
+          {% if errors.trigger %}<span class="st-field-error">{{ errors.trigger }}</span>{% endif %}
+        </label>
+        <label class="st-field" x-show="trigger === 'interval'">
+          <span class="st-label">Интервал, минут</span>
+          <input class="st-input is-mono" name="interval_minutes" type="number" min="1" step="1" value="{{ values.interval_minutes }}">
+          {% if errors.interval_minutes %}<span class="st-field-error">{{ errors.interval_minutes }}</span>{% endif %}
+        </label>
+        <label class="st-field" x-show="trigger === 'daily'">
+          <span class="st-label">Время суток ({{ tz }})</span>
+          <input class="st-input is-mono" name="daily_at" type="time" value="{{ values.daily_at }}">
+          {% if errors.daily_at %}<span class="st-field-error">{{ errors.daily_at }}</span>{% endif %}
+        </label>
+        <label class="st-field" x-show="trigger === 'after_nmap'">
+          <span class="st-label">Запасное время ({{ tz }})</span>
+          <input class="st-input is-mono" name="fallback_at" type="time" value="{{ values.fallback_at }}">
+          <span class="st-hint">Стартует, когда ночной nmap завершился; не завершился к этому времени — всё равно, с баннером «ночной nmap не прошёл».</span>
+          {% if errors.fallback_at %}<span class="st-field-error">{{ errors.fallback_at }}</span>{% endif %}
+        </label>
+
+        <label class="st-field st-span" style="flex-direction:row;align-items:center;gap:8px">
+          <input type="checkbox" name="enabled" value="1"{% if values.enabled %} checked{% endif %}>
+          <span>Включено</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="modal-footer-bar">
+      {% if schedule %}
+        <button type="button" class="st-btn st-btn-ghost is-danger"
+                hx-post="{% url 'ip_plan:jobs_schedule_delete' schedule.pk %}" hx-target="#modal-content"
+                hx-confirm="Удалить расписание «{{ schedule.title|default:schedule.kind }}»? История его заданий останется.">Удалить</button>
+      {% endif %}
+      <span style="flex:1"></span>
+      <button type="button" class="st-btn st-btn-ghost" @click="$store.modal.requestClose()">Отмена</button>
+      <button type="submit" class="st-btn st-btn-primary is-md">Сохранить</button>
+    </div>
+  </form>
+</div>

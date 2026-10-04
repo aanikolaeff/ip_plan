@@ -40,7 +40,20 @@
 
 {% block content %}
   {% include "ip_plan/_settings_rail.html" %}
-  <div class="st-main" id="st-main">
+  <div class="st-main" id="st-main"{% if conf_lock and conf_tab %} data-conf-locked{% endif %}>
+    {% if conf_lock and conf_tab %}
+      {% comment %}
+        Правки conf заблокированы (KTD18): идёт задание сборщика или nmap.
+        Смотреть можно, кнопки сохранения и удаления отключает app.js
+        (lockConfForms), сервер всё равно ответит 409.
+      {% endcomment %}
+      <div class="st-screen" style="padding-bottom:0">
+        <div class="st-banner is-warn" role="status">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+          <span class="st-banner-text">{{ conf_lock.text }}{% if conf_lock.job_id %} <a href="{% url 'ip_plan:job_detail' conf_lock.job_id %}">Открыть задание #{{ conf_lock.job_id }}</a>{% endif %}</span>
+        </div>
+      </div>
+    {% endif %}
     {% block settings_main %}{% endblock %}
   </div>
 {% endblock %}

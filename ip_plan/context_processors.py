@@ -8,7 +8,7 @@
 from django.conf import settings
 from django.core.cache import cache
 
-from .services import remote_gateway, ssh_access
+from .services import remote_gateway, ssh_access, worker_health
 
 
 def app_version(request):
@@ -34,6 +34,7 @@ _SECTION_TITLES = (
     ("regulator_", "Блокировки"),
     ("map_", "Карта сети"),
     ("obs_", "Поиск MAC/IP"),
+    ("job", "Задания"),
     ("settings", "Настройки"),
     ("password_change", "Смена пароля"),
 )
@@ -99,4 +100,8 @@ def shell(request):
         "shell_gateway": gateway,
         # …и пункт «SSH по ключу», если ключ задан в «Настройках».
         "shell_gateway_key": gateway and ssh_access.configured(),
+        # Сборщик заданий включён (PostgreSQL и профиль worker): пункт меню
+        # «Задания» и баннер состояния. Без сетевых запросов — баннер
+        # грузится отдельно (worker_health, $store.worker в app.js).
+        "shell_worker": worker_health.enabled(),
     }

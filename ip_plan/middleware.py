@@ -18,7 +18,10 @@ from django.urls import reverse
 # Куда пускаем даже с невыполненным требованием: сама страница смены
 # пароля (иначе редирект на неё же — цикл), вход/выход (человек должен
 # иметь возможность просто уйти) и служебный csrf-эндпоинт фронтенда.
-_ALLOWED_URL_NAMES = {"password_change", "login", "logout", "csrf_refresh"}
+# worker_health — JSON баннера оболочки: его запрашивает fetch на любой
+# странице, в том числе на странице смены пароля; редирект на HTML он не
+# разобрал бы. Секретов в ответе нет (только состояние сборщика).
+_ALLOWED_URL_NAMES = {"password_change", "login", "logout", "csrf_refresh", "worker_health"}
 
 
 class ForcePasswordChangeMiddleware:

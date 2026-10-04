@@ -142,6 +142,12 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><circle cx="11.5" cy="11.5" r="3.5"></circle><path d="m16 16-1.9-1.9"></path></svg>
             <span class="sb-label">Поиск MAC/IP</span>
           </a>
+          {% if shell_worker %}
+            <a class="sb-item{% if url_name|slice:':3' == 'job' %} active{% endif %}" href="{% url 'ip_plan:jobs' %}" title="Задания"{% if url_name|slice:':3' == 'job' %} aria-current="page"{% endif %}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              <span class="sb-label">Задания</span>
+            </a>
+          {% endif %}
 
           <div class="sb-group sb-label">Справочники</div>
           <div class="sb-rule sb-collapsed-only"></div>
@@ -202,6 +208,16 @@
           </div>
           <div class="shell-head-right">
             {% block head_actions %}{% endblock %}
+            {% if shell_worker %}
+              {# Идёт задание сборщика — индикатор вместо баннера ($store.worker, app.js). #}
+              <template x-if="$store.worker.running.length">
+                <a class="shell-job" :href="'{% url 'ip_plan:jobs' %}' + $store.worker.running[0].id + '/'"
+                   :title="'Открыть задание #' + $store.worker.running[0].id">
+                  <span class="shell-job-dot" aria-hidden="true"></span>
+                  <span x-text="'выполняется ' + $store.worker.running[0].label + ($store.worker.running[0].step ? ' · ' + $store.worker.running[0].step : '') + ($store.worker.running.length > 1 ? ' +' + ($store.worker.running.length - 1) : '')"></span>
+                </a>
+              </template>
+            {% endif %}
             {% comment %}
               Индикатор последнего прогона netbox-sync: данные из $store.sync
               (app.js, /sync-log/summary.json). Клик — полный лог в модалке.
@@ -216,6 +232,20 @@
             </button>
           </div>
         </header>
+        {% if shell_worker %}
+          {% comment %}
+            Баннер состояния сборщика заданий (KTD17): только при беде —
+            сборщик молчит, без базы, плановое задание упало, nmap не прошёл,
+            нужна пересборка образа. Норма — без баннера. role="status" —
+            экранный диктор прочитает смену текста.
+          {% endcomment %}
+          <div class="shell-banner" role="status" x-cloak
+               :class="{ 'is-shown': $store.worker.level, 'is-error': $store.worker.level === 'error', 'is-warn': $store.worker.level === 'warn' }">
+            <span class="shell-banner-label" x-text="$store.worker.level === 'error' ? 'Ошибка:' : 'Внимание:'"></span>
+            <span class="shell-banner-text" x-text="$store.worker.text"></span>
+            <template x-if="$store.worker.link"><a class="shell-banner-link" :href="$store.worker.link" x-text="$store.worker.linkText">Задания</a></template>
+          </div>
+        {% endif %}
         <div class="shell-body{% block body_class %}{% endblock %}" id="shell-body">
           {% block content %}{% endblock %}
         </div>
@@ -305,6 +335,8 @@
        строки адресов появляется раздел «В браузере». */
     window.IP_PLAN_GATEWAY = {{ shell_gateway|yesno:"true,false" }};
     window.IP_PLAN_GATEWAY_KEY = {{ shell_gateway_key|yesno:"true,false" }};
+    /* Сборщик заданий включён — $store.worker опрашивает баннер. */
+    window.IP_PLAN_WORKER = {{ shell_worker|yesno:"true,false" }};
   </script>
   <script src="{% static 'ip_plan/js/app.js' %}"></script>
   {% block extra_scripts %}{% endblock %}

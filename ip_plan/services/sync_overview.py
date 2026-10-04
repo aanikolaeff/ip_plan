@@ -1,7 +1,7 @@
 """Данные экрана «Настройки → Запуск и расписание».
 
 Всё, что интерфейс знает о прогонах netbox-sync, он берёт из двух мест:
-лог full_sync.sh (sync_log.parse) и lock-файл (sync_config.sync_running).
+лог full_sync.sh (sync_log.parse) и lock-файл (sync_config.nmap_pid_file_present).
 Здесь из них собирается то, что рисует экран: строки шагов с русскими
 подписями и временем, карточки последнего прогона, прогресс идущего прогона
 с оценкой «осталось» по прошлым логам и раскрашенный хвост журнала.
@@ -141,7 +141,7 @@ def overview():
     ok; none — логов нет вовсе.
     """
     summary = sync_log.get_summary()
-    lock = sc.sync_running()
+    lock = sc.nmap_pid_file_present()
     if not summary.get("available"):
         return {"available": False, "state": "running" if lock else "none",
                 "steps": _rows(None, {}, False), "schedule": settings.SYNC_SCHEDULE,
