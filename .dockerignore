@@ -11,3 +11,5 @@ data/
 .venv
 staticfiles/
 tokens.txt
+# Пароль роли sync_worker (сервис worker) — в образ web не нужен.
+.env.worker

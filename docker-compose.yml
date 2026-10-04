@@ -148,6 +148,96 @@ services:
       - "127.0.0.1:8091:8080"
     restart: unless-stopped
 
+  # --- Сборщик заданий синка (netbox-sync/worker.py) ---
+  # Берёт задания из базы ip_plan (таблицы sync_job/sync_schedule, роль
+  # sync_worker) и выполняет шаги белого списка netbox-sync/worker_steps.py;
+  # nmap остаётся в cron хоста. Профиль "worker": обычный `docker compose up -d`
+  # (и деплой из .gitlab-ci.yml) его не поднимает. Работает только при
+  # IP_PLAN_DB_ENGINE=postgres — заданиям нужна база ip_plan в PostgreSQL.
+  # Включить — COMPOSE_PROFILES=worker в .env (через запятую с gateway) либо
+  # `docker compose --profile worker up -d worker`.
+  worker:
+    # Образ — только Python и зависимости из netbox-sync/requirements.txt;
+    # Dockerfile лежит в netbox-sync. Пересобирать при смене requirements.txt
+    # (`docker compose --profile worker build worker`), смена кода пересборки
+    # не требует: код смонтирован ниже.
+    build:
+      context: ${NETBOX_SYNC_DIR:-../netbox-sync}
+      dockerfile: docker/worker.Dockerfile
+    profiles: ["worker"]
+    # worker.py — главный процесс под tini: SIGTERM от stop доходит до него,
+    # он гасит группу процессов текущего шага (SIGTERM, 15 с, SIGKILL) и
+    # помечает задание interrupted. Ждём дольше этой паузы, иначе docker
+    # убьёт сборщик раньше, чем тот допишет итог в базу.
+    init: true
+    stop_grace_period: 40s
+    # Выход 3 — сменилась VERSION кода (деплой netbox-sync): перезапуск
+    # поднимает сборщик уже на новом коде.
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Только свой пароль: .env.worker содержит одну строку
+    # SYNC_WORKER_DB_PASSWORD (то же значение, что в .env.db). Ни .env
+    # (секреты web), ни .env.db (суперпользователь и владельцы баз) сюда не
+    # подключаются. Пароль netobs (роль netbox_sync) сборщик и шаги берут из
+    # conf/netobs.json, токен NetBox и учётки устройств — из conf/ же.
+    # required: false — без файла compose не падает для остальных сервисов,
+    # а сам сборщик при старте скажет, что пароля нет.
+    env_file:
+      - path: .env.worker
+        required: false
+    environment:
+      # local | prod — с каким --env сборщик запускает шаги. Обязательна,
+      # пусто — сборщик не стартует.
+      NETBOX_SYNC_ENV: ${NETBOX_SYNC_ENV:-}
+      # Адреса изнутри compose (KTD16): netobs — сервис postgres, а не
+      # 127.0.0.1:5433 из conf/netobs.json; NetBox — адрес, по которому его
+      # видно из контейнера (локально http://host.docker.internal:8000).
+      # Пусто — netbox_url из conf/config.json как есть.
+      NETOBS_HOST: postgres
+      NETOBS_PORT: "5432"
+      NETBOX_SYNC_NETBOX_URL: ${NETBOX_SYNC_NETBOX_URL:-}
+      # Отчёты vCenter/RedVirt: корень кода смонтирован только на чтение.
+      NETBOX_SYNC_REPORTS_DIR: /opt/scan/reports
+      # Пояс суточных расписаний и время в логах шагов — как у cron хоста.
+      SYNC_LOG_TZ: ${SYNC_LOG_TZ:-Europe/Moscow}
+      TZ: ${SYNC_LOG_TZ:-Europe/Moscow}
+      PYTHONDONTWRITEBYTECODE: "1"
+    # /health (порт 8090) — только внутри compose, на хост не публикуется.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=5)"]
+      start_period: 30s
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    # host.docker.internal — NetBox на хосте (как у web); mdc-ipa-* — LDAP
+    # для шага DNS enrich, статически по той же причине, что у web.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "mdc-ipa-1.sicmt.local:10.1.113.1"
+      - "mdc-ipa-2.sicmt.local:10.1.113.2"
+    # Без IPv6 в контейнере: корпоративный DNS не отвечает на AAAA-запросы
+    # (см. extra_hosts у web), и каждое разрешение имени ждёт таймаут ~4 с.
+    # Шаги ходят к гипервизорам по именам и без пула соединений — RedVirt
+    # вместо ~7 минут шёл больше часа (дымовой прогон 04.10.2026). С
+    # выключенным IPv6 urllib3 (requests) спрашивает только A-записи.
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: 1
+    # Код netbox-sync — только на чтение (KTD2), вместе с conf/ (сборщик и
+    # шаги конфигурацию только читают; правит её web через свой mount).
+    # Поверх — каталоги вывода на запись: туда же, куда пишет ручной запуск
+    # на хосте, поэтому ip_plan видит результат заданий там же, где раньше.
+    # SSH-ключей не монтируется: шаги ходят на устройства по паролям из
+    # conf/devices.json, conf/ssh_access.json синк пока не читает.
+    volumes:
+      - ${NETBOX_SYNC_DIR:-../netbox-sync}:/opt/scan:ro
+      - ${NETBOX_SYNC_DIR:-../netbox-sync}/config_backups:/opt/scan/config_backups
+      - ${NETBOX_SYNC_DIR:-../netbox-sync}/lldp_snapshots:/opt/scan/lldp_snapshots
+      - ${NETBOX_SYNC_DIR:-../netbox-sync}/firewall_blocklists:/opt/scan/firewall_blocklists
+      - ${NETBOX_SYNC_DIR:-../netbox-sync}/sync_logs:/opt/scan/sync_logs
+      - ${NETBOX_SYNC_DIR:-../netbox-sync}/reports:/opt/scan/reports
+
 volumes:
   # sqlite_data остаётся и после перехода на PostgreSQL: из него переносятся
   # данные (dumpdata), и на него же откатываются сменой IP_PLAN_DB_ENGINE.

@@ -22,3 +22,6 @@ ip_plan/static/ip_plan/dist/
 # docs/plans/2026-09-07-ioc-parser-fstec-corpus-audit.md), не файл проекта.
 # Не должна попасть в git ни при каком случайном `git add -A`.
 FSTEC/
+
+# Пароль роли sync_worker для контейнера worker (docker-compose.yml) — только он.
+.env.worker
