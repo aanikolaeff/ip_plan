@@ -12,7 +12,13 @@
 #                 таблицы, которые netbox_sync создаст будущими миграциями,
 #                 тоже оставались читаемыми без повторного запуска скрипта.
 #                 default_transaction_read_only — вторая защита на случай,
-#                 если кто-то когда-нибудь выдаст ей лишнее право.
+#                 если кто-то когда-нибудь выдаст ей лишнее право;
+#   sync_worker — сборщик netbox-sync (план 2026-10-04-0248, KTD3): в базе
+#                 ip_plan только CONNECT и таблицы sync_job/sync_schedule
+#                 (SELECT/INSERT/UPDATE на заданиях, SELECT и UPDATE одной
+#                 колонки next_run на расписаниях). Табличные права выдаёт и
+#                 миграция Django 0012, и этот скрипт — одним и тем же блоком
+#                 SQL, поэтому итог не зависит от того, что запущено раньше.
 #
 # Скрипт идемпотентный и запускается двумя путями:
 #   1) init-скриптом образа (db/initdb/10-ip-plan-bootstrap.sh) — ТОЛЬКО на
@@ -38,6 +44,7 @@ set -euo pipefail
 : "${IP_PLAN_DB_PASSWORD:?IP_PLAN_DB_PASSWORD не задан (см. .env.db.example)}"
 : "${NETBOX_SYNC_DB_PASSWORD:?NETBOX_SYNC_DB_PASSWORD не задан (см. .env.db.example)}"
 : "${NETOBS_RO_PASSWORD:?NETOBS_RO_PASSWORD не задан (см. .env.db.example)}"
+: "${SYNC_WORKER_DB_PASSWORD:?SYNC_WORKER_DB_PASSWORD не задан (см. .env.db.example)}"
 
 # Подключение суперпользователем через unix-сокет внутри контейнера: в
 # официальном образе локальные подключения — trust, пароль не нужен. Во время
@@ -59,7 +66,7 @@ run_psql() {
 # запрос возвращает текст команды только когда объекта ещё нет.
 run_psql postgres <<'SQL'
 SELECT format('CREATE ROLE %I LOGIN', r)
-  FROM unnest(ARRAY['ip_plan', 'netbox_sync', 'ip_plan_ro']) AS r
+  FROM unnest(ARRAY['ip_plan', 'netbox_sync', 'ip_plan_ro', 'sync_worker']) AS r
  WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r)
 \gexec
 
@@ -68,13 +75,16 @@ SELECT format('CREATE ROLE %I LOGIN', r)
 ALTER ROLE ip_plan     LOGIN CREATEDB   NOSUPERUSER NOCREATEROLE;
 ALTER ROLE netbox_sync LOGIN NOCREATEDB NOSUPERUSER NOCREATEROLE;
 ALTER ROLE ip_plan_ro  LOGIN NOCREATEDB NOSUPERUSER NOCREATEROLE;
+ALTER ROLE sync_worker LOGIN NOCREATEDB NOSUPERUSER NOCREATEROLE;
 
 \getenv ip_plan_pw IP_PLAN_DB_PASSWORD
 \getenv netbox_sync_pw NETBOX_SYNC_DB_PASSWORD
 \getenv netobs_ro_pw NETOBS_RO_PASSWORD
+\getenv sync_worker_pw SYNC_WORKER_DB_PASSWORD
 SELECT format('ALTER ROLE ip_plan PASSWORD %L', :'ip_plan_pw') \gexec
 SELECT format('ALTER ROLE netbox_sync PASSWORD %L', :'netbox_sync_pw') \gexec
 SELECT format('ALTER ROLE ip_plan_ro PASSWORD %L', :'netobs_ro_pw') \gexec
+SELECT format('ALTER ROLE sync_worker PASSWORD %L', :'sync_worker_pw') \gexec
 
 -- Вторая защита ip_plan_ro: даже если права на запись появятся по ошибке,
 -- каждая транзакция этой роли по умолчанию только читающая.
@@ -93,10 +103,44 @@ ALTER DATABASE netobs  OWNER TO netbox_sync;
 
 -- По умолчанию PUBLIC (то есть любая роль) имеет CONNECT и TEMP на каждую
 -- базу. Убираем: в netobs подключаются только владелец и ip_plan_ro, в
--- ip_plan — только сам ip_plan (ни netbox_sync, ни ip_plan_ro туда не ходят).
+-- ip_plan — сам ip_plan и сборщик sync_worker (ни netbox_sync, ни ip_plan_ro
+-- туда не ходят).
 REVOKE ALL ON DATABASE netobs  FROM PUBLIC;
 REVOKE ALL ON DATABASE ip_plan FROM PUBLIC;
 GRANT CONNECT ON DATABASE netobs TO ip_plan_ro;
+GRANT CONNECT ON DATABASE ip_plan TO sync_worker;
+SQL
+
+# --- Права sync_worker внутри ip_plan --------------------------------------
+# Таблицы sync_job/sync_schedule создаёт миграция Django 0012. Если её ещё не
+# было (пустой том: bootstrap идёт до первого migrate), блок ничего не делает,
+# и права выдаст сама миграция — роль к тому моменту уже есть. Если миграция
+# прошла раньше роли — права выдаёт этот запуск. Блок ДОСЛОВНО совпадает с
+# SYNC_WORKER_GRANTS_SQL в ip_plan/migrations/0012_sync_jobs.py (это
+# проверяет тест test_sync_jobs_models): менять только вместе. Выполняется
+# суперпользователем, но права записываются от имени владельца таблиц
+# (ip_plan) — как и у миграции, так что повторы не плодят дублей.
+# К прочим таблицам ip_plan роль доступа не имеет: на таблицы Django у PUBLIC
+# прав нет, а USAGE на схему public у PUBLIC есть по умолчанию.
+run_psql ip_plan <<'SQL'
+DO $grant$
+BEGIN
+    IF to_regrole('sync_worker') IS NOT NULL
+       AND to_regclass('sync_job') IS NOT NULL
+       AND to_regclass('sync_schedule') IS NOT NULL THEN
+        REVOKE ALL ON TABLE sync_job, sync_schedule FROM sync_worker;
+        GRANT SELECT, INSERT, UPDATE ON TABLE sync_job TO sync_worker;
+        GRANT SELECT ON TABLE sync_schedule TO sync_worker;
+        GRANT UPDATE (next_run) ON TABLE sync_schedule TO sync_worker;
+        EXECUTE format('REVOKE ALL ON SEQUENCE %s, %s FROM sync_worker',
+                       pg_get_serial_sequence('sync_job', 'id'),
+                       pg_get_serial_sequence('sync_schedule', 'id'));
+        EXECUTE format('GRANT USAGE ON SEQUENCE %s, %s TO sync_worker',
+                       pg_get_serial_sequence('sync_job', 'id'),
+                       pg_get_serial_sequence('sync_schedule', 'id'));
+    END IF;
+END
+$grant$;
 SQL
 
 # --- Права внутри netobs (уровень схемы — нужно подключение к самой базе) ---
@@ -114,4 +158,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE netbox_sync IN SCHEMA public
     GRANT SELECT ON TABLES TO ip_plan_ro;
 SQL
 
-echo "bootstrap: роли ip_plan, netbox_sync, ip_plan_ro и базы ip_plan, netobs приведены к ожидаемому виду"
+echo "bootstrap: роли ip_plan, netbox_sync, ip_plan_ro, sync_worker и базы ip_plan, netobs приведены к ожидаемому виду"

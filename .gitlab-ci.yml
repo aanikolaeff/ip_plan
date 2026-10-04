@@ -58,7 +58,7 @@ deploy:
     # umask в подшелле: файл получает 0600, а остальные шаги скрипта
     # (одна сессия shell на весь job) — прежнюю маску.
     - |
-      for var in POSTGRES_PASSWORD IP_PLAN_DB_PASSWORD NETBOX_SYNC_DB_PASSWORD NETOBS_RO_PASSWORD; do
+      for var in POSTGRES_PASSWORD IP_PLAN_DB_PASSWORD NETBOX_SYNC_DB_PASSWORD NETOBS_RO_PASSWORD SYNC_WORKER_DB_PASSWORD; do
         if [ -z "$(printenv "$var")" ]; then
           echo "CI-переменная $var не задана — деплой остановлен до запуска PostgreSQL"
           exit 1
@@ -70,6 +70,7 @@ deploy:
       IP_PLAN_DB_PASSWORD=$IP_PLAN_DB_PASSWORD
       NETBOX_SYNC_DB_PASSWORD=$NETBOX_SYNC_DB_PASSWORD
       NETOBS_RO_PASSWORD=$NETOBS_RO_PASSWORD
+      SYNC_WORKER_DB_PASSWORD=$SYNC_WORKER_DB_PASSWORD
       EOF
       )
     - docker compose up -d --build

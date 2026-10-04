@@ -26,11 +26,16 @@ from django.utils.dateparse import parse_date, parse_datetime, parse_time
 # ключам; их числа в двух базах законно расходятся (в старой базе остаются
 # типы удалённых моделей). Сессии не переносятся намеренно — пользователи
 # входят заново. admin.LogEntry — на случай, если админку подключат: сейчас
-# django.contrib.admin в INSTALLED_APPS нет.
+# django.contrib.admin в INSTALLED_APPS нет. Задания сборщика (SyncJob) —
+# журнал работы, который бывает только на PostgreSQL (сборщик на SQLite не
+# работает, KTD1 плана 2026-10-04-0248): в SQLite их не переносим, а в
+# обратную сторону им взяться неоткуда. Расписания — настройка, переносятся.
 EXCLUDED_MODELS = frozenset({
     "contenttypes.contenttype", "auth.permission", "sessions.session", "admin.logentry",
+    "ip_plan.syncjob",
 })
-_DUMP_EXCLUDES = ("contenttypes", "auth.permission", "sessions", "admin.logentry")
+_DUMP_EXCLUDES = ("contenttypes", "auth.permission", "sessions", "admin.logentry",
+                  "ip_plan.syncjob")
 
 # Что засевают миграции и что поэтому может лежать в «пустой» целевой базе
 # сразу после migrate: 0003 — имена объектов xFW, 0008 — синглтон LDAP.

@@ -80,7 +80,8 @@ class EnvExamplesTests(unittest.TestCase):
     def test_db_env_example_lists_all_bootstrap_passwords(self):
         env = _read(".env.db.example")
         for key in ("POSTGRES_PASSWORD", "IP_PLAN_DB_PASSWORD",
-                    "NETBOX_SYNC_DB_PASSWORD", "NETOBS_RO_PASSWORD"):
+                    "NETBOX_SYNC_DB_PASSWORD", "NETOBS_RO_PASSWORD",
+                    "SYNC_WORKER_DB_PASSWORD"):
             self.assertRegex(env, rf"(?m)^{key}=")
 
     def test_ci_writes_both_env_files(self):
@@ -98,11 +99,22 @@ class EnvExamplesTests(unittest.TestCase):
 
     def test_ci_refuses_empty_db_passwords_before_writing_env_db(self):
         ci = _read(".gitlab-ci.yml")
-        guard = ci.index("NETOBS_RO_PASSWORD; do")
+        guard = ci.index("SYNC_WORKER_DB_PASSWORD; do")
         self.assertLess(guard, ci.index("cat > .env.db <<EOF"))
+        line_start = ci.rindex("for var in", 0, guard)
         for key in ("POSTGRES_PASSWORD", "IP_PLAN_DB_PASSWORD",
-                    "NETBOX_SYNC_DB_PASSWORD", "NETOBS_RO_PASSWORD"):
-            self.assertIn(key, ci[guard - 120:guard + 20])
+                    "NETBOX_SYNC_DB_PASSWORD", "NETOBS_RO_PASSWORD",
+                    "SYNC_WORKER_DB_PASSWORD"):
+            self.assertIn(key, ci[line_start:guard + 30])
+
+    def test_ci_writes_sync_worker_password_to_env_db_only(self):
+        # Пароль сборщика нужен bootstrap.sh (контейнер postgres); в .env,
+        # который целиком уходит в web, его нет.
+        ci = _read(".gitlab-ci.yml")
+        env_db_part = ci.split("cat > .env.db <<EOF", 1)[1].split("EOF", 1)[0]
+        self.assertIn("SYNC_WORKER_DB_PASSWORD=$SYNC_WORKER_DB_PASSWORD", env_db_part)
+        env_part = ci.split("cat > .env <<EOF", 1)[1].split("EOF", 1)[0]
+        self.assertNotIn("SYNC_WORKER_DB_PASSWORD", env_part)
 
     def test_env_db_never_committed_or_baked_into_image(self):
         self.assertRegex(_read(".gitignore"), r"(?m)^\.env\.db$")
@@ -124,6 +136,14 @@ class BootstrapScriptTests(unittest.TestCase):
         self.assertRegex(self.sh, r"ALTER DEFAULT PRIVILEGES FOR ROLE netbox_sync IN SCHEMA public\s+"
                                   r"GRANT SELECT ON TABLES TO ip_plan_ro")
         self.assertIn("ALTER ROLE ip_plan_ro SET default_transaction_read_only = on", self.sh)
+
+    def test_sync_worker_role(self):
+        # Роль сборщика: вход и CONNECT только в базу ip_plan; права на
+        # таблицы заданий — блок, общий с миграцией 0012 (test_sync_jobs_models).
+        self.assertIn(': "${SYNC_WORKER_DB_PASSWORD:?', self.sh)
+        self.assertIn("GRANT CONNECT ON DATABASE ip_plan TO sync_worker", self.sh)
+        self.assertIn("GRANT SELECT, INSERT, UPDATE ON TABLE sync_job TO sync_worker", self.sh)
+        self.assertIn("GRANT UPDATE (next_run) ON TABLE sync_schedule TO sync_worker", self.sh)
 
     def test_passwords_not_passed_on_command_line(self):
         # Пароли — через \getenv внутри psql, не через -v в argv (видно в ps).

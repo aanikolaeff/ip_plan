@@ -13,6 +13,7 @@ import re
 from urllib.parse import urlsplit
 
 from django.db import models
+from django.db.models.functions import Now
 
 
 class RegulatorDocument(models.Model):
@@ -372,3 +373,184 @@ class MapLayout(models.Model):
 
     def __str__(self):
         return f"{self.user} · {self.site} · {self.layer}"
+
+
+# --- Расписания и задания сборщика netbox-sync -----------------------------
+# U8 плана docs/plans/2026-10-04-0248-feat-observations-stage2-worker-plan.md
+# (KTD3, KTD4, KTD14, KTD15). Таблицы — контракт между репозиториями: сборщик
+# netbox-sync читает и пишет их SQL-запросами ролью sync_worker, без Django.
+# Поэтому db_table заданы явно, а всё, что сборщик может не указать при
+# INSERT, имеет умолчание в самой базе (db_default), а не только в Python.
+# Имена таблиц и колонок закреплены тестом test_sync_jobs_models — менять
+# только вместе со сборщиком.
+#
+# Чего здесь нет намеренно: группы блокировки («пишет в NetBox» / «только
+# netobs») — свойство шага в белом списке сборщика (KTD14), путь к скрипту и
+# --env — тоже из его конфигурации (KTD5). Строка задания называет шаги
+# только по имени.
+
+
+class SyncSchedule(models.Model):
+    """Расписание: один шаг или цепочка шагов и правило запуска (KTD15).
+
+    Запуск — по интервалу, по времени суток или по событию «ночной nmap
+    завершился» с запасным временем, если он к нему не завершился.
+    Пропущенные такты не догоняются: после простоя сборщик создаёт одно
+    задание и сдвигает next_run (единственная колонка, которую ему можно
+    менять). Время суток — в часовом поясе SYNC_LOG_TZ.
+    """
+
+    TRIGGER_INTERVAL = "interval"
+    TRIGGER_DAILY = "daily"
+    TRIGGER_AFTER_NMAP = "after_nmap"
+    TRIGGER_CHOICES = [
+        (TRIGGER_INTERVAL, "По интервалу"),
+        (TRIGGER_DAILY, "По времени суток"),
+        (TRIGGER_AFTER_NMAP, "После nmap"),
+    ]
+
+    # Вид: имя шага или цепочки (например, «night_after_nmap»). Им же
+    # помечаются задания этого расписания — по виду работает «один
+    # queued/running на вид».
+    kind = models.CharField("Вид", max_length=100, unique=True)
+    title = models.CharField("Название", max_length=200, blank=True, db_default="")
+    # ["netbox_devices_sync", "netbox_config_backup", ...] — имена шагов
+    # белого списка сборщика, по порядку выполнения.
+    steps = models.JSONField("Шаги", default=list)
+    trigger = models.CharField("Запуск", max_length=20, choices=TRIGGER_CHOICES)
+    interval_minutes = models.PositiveIntegerField("Интервал, мин", null=True, blank=True)
+    daily_at = models.TimeField("Время суток", null=True, blank=True)
+    # Для «после nmap»: если nmap к этому времени не завершился, цепочка
+    # стартует всё равно, а баннер пишет «ночной nmap не прошёл».
+    fallback_at = models.TimeField("Запасное время", null=True, blank=True)
+    enabled = models.BooleanField("Включено", default=True, db_default=True)
+    next_run = models.DateTimeField("Следующий запуск", null=True, blank=True)
+    updated_at = models.DateTimeField("Изменено", auto_now=True, db_default=Now())
+    updated_by = models.CharField("Кем изменено", max_length=150, blank=True, db_default="")
+
+    class Meta:
+        db_table = "sync_schedule"
+        ordering = ["kind"]
+        verbose_name = "Расписание синка"
+        verbose_name_plural = "Расписания синка"
+        constraints = [
+            # Сборщик разбирает строку сам: строка без поля своего вида
+            # остановила бы его цикл, поэтому несогласованность отсекает база.
+            # isnull=False явно: NULL > 0 даёт NULL, и CHECK его пропустил бы.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(trigger="interval", interval_minutes__isnull=False,
+                             interval_minutes__gt=0)
+                    | models.Q(trigger="daily", daily_at__isnull=False)
+                    | models.Q(trigger="after_nmap", fallback_at__isnull=False)
+                ),
+                name="sync_schedule_trigger_fields",
+            ),
+        ]
+
+    def __str__(self):
+        return self.title or self.kind
+
+
+class SyncJob(models.Model):
+    """Задание сборщика: снимок шагов на момент постановки, кто поставил,
+    состояние и итог по шагам (KTD4, KTD5).
+
+    Захват — короткая транзакция `UPDATE … WHERE id = (SELECT … FOR UPDATE
+    SKIP LOCKED) RETURNING` с арендой lease_until, которую продлевает
+    heartbeat; задание с истёкшей арендой любой живой сборщик переводит в
+    interrupted — «выполняется» после падения не остаётся (R12).
+    """
+
+    STATUS_QUEUED = "queued"
+    STATUS_RUNNING = "running"
+    STATUS_DONE = "done"
+    STATUS_DONE_WITH_ERRORS = "done_with_errors"
+    STATUS_FAILED = "failed"
+    STATUS_TIMEOUT = "timeout"
+    STATUS_INTERRUPTED = "interrupted"
+    STATUS_CHOICES = [
+        (STATUS_QUEUED, "В очереди"),
+        (STATUS_RUNNING, "Выполняется"),
+        (STATUS_DONE, "Выполнено"),
+        (STATUS_DONE_WITH_ERRORS, "Выполнено с ошибками"),
+        (STATUS_FAILED, "Ошибка"),
+        (STATUS_TIMEOUT, "Прервано по таймауту"),
+        (STATUS_INTERRUPTED, "Прервано"),
+    ]
+    ACTIVE_STATUSES = (STATUS_QUEUED, STATUS_RUNNING)
+
+    SOURCE_SCHEDULE = "schedule"
+    SOURCE_USER = "user"
+    SOURCE_CHOICES = [
+        (SOURCE_SCHEDULE, "Расписание"),
+        (SOURCE_USER, "Пользователь"),
+    ]
+
+    # Вид: kind расписания или имя одного шага («запустить сейчас»).
+    kind = models.CharField("Вид", max_length=100)
+    # Снимок шагов на момент постановки: правка расписания не меняет уже
+    # поставленное задание.
+    steps = models.JSONField("Шаги", default=list)
+    # SET_NULL: история заданий переживает удаление расписания.
+    schedule = models.ForeignKey(SyncSchedule, on_delete=models.SET_NULL, null=True, blank=True,
+                                 related_name="jobs")
+    # Такт расписания, ради которого создано задание; у ручного — пусто.
+    scheduled_for = models.DateTimeField("Такт расписания", null=True, blank=True)
+    source = models.CharField("Источник", max_length=20, choices=SOURCE_CHOICES,
+                              default=SOURCE_USER, db_default=SOURCE_USER)
+    requested_by = models.CharField("Кем запущено", max_length=150, blank=True, db_default="")
+    status = models.CharField("Состояние", max_length=20, choices=STATUS_CHOICES,
+                              default=STATUS_QUEUED, db_default=STATUS_QUEUED)
+    # Чего ждёт задание в running, пока шаг не начался, — например, «ждёт
+    # nmap» при занятой общей блокировке KTD13. Пусто — не ждёт.
+    wait_reason = models.CharField("Ожидание", max_length=200, blank=True, db_default="")
+    worker_id = models.CharField("Сборщик", max_length=100, blank=True, db_default="")
+    lease_until = models.DateTimeField("Аренда до", null=True, blank=True)
+    created_at = models.DateTimeField("Поставлено", auto_now_add=True, db_default=Now())
+    started_at = models.DateTimeField("Начато", null=True, blank=True)
+    finished_at = models.DateTimeField("Завершено", null=True, blank=True)
+    # [{"step": "...", "status": "done|done_with_errors|failed|timeout|interrupted|skipped",
+    #   "started_at": "...", "duration": 12.3, "exit_code": 0}]
+    step_results = models.JSONField("Итог по шагам", default=list, db_default=[])
+    # Голова и хвост вывода (вместе до ~256 КБ); полный вывод — в файле
+    # sync_logs/worker/<id>.log, путь — log_path.
+    output_head = models.TextField("Начало вывода", blank=True, db_default="")
+    output_tail = models.TextField("Конец вывода", blank=True, db_default="")
+    log_path = models.CharField("Полный лог", max_length=500, blank=True, db_default="")
+    # Хеш netbox-sync/conf на старте задания (KTD18) и VERSION кода синка.
+    conf_hash = models.CharField("Хеш conf", max_length=64, blank=True, db_default="")
+    code_version = models.CharField("Версия кода", max_length=100, blank=True, db_default="")
+    # Короткая причина итога: «шаг вне белого списка», «аренда истекла» и т.п.
+    summary = models.CharField("Итог", max_length=500, blank=True, db_default="")
+
+    class Meta:
+        db_table = "sync_job"
+        ordering = ["-created_at", "-id"]
+        verbose_name = "Задание синка"
+        verbose_name_plural = "Задания синка"
+        constraints = [
+            # Один queued/running на вид: повторный «запустить сейчас»
+            # возвращает уже стоящее задание (KTD14).
+            models.UniqueConstraint(
+                fields=["kind"], condition=models.Q(status__in=["queued", "running"]),
+                name="sync_job_one_active_per_kind",
+            ),
+            # Один такт расписания — одно задание, даже при двух сборщиках.
+            models.UniqueConstraint(fields=["schedule", "scheduled_for"],
+                                    name="sync_job_schedule_tick"),
+            models.CheckConstraint(
+                condition=models.Q(status__in=[
+                    "queued", "running", "done", "done_with_errors", "failed",
+                    "timeout", "interrupted",
+                ]),
+                name="sync_job_status_valid",
+            ),
+        ]
+        indexes = [
+            # Захват из очереди и поиск истёкших аренд.
+            models.Index(fields=["status", "created_at"], name="sync_job_status_created"),
+        ]
+
+    def __str__(self):
+        return f"{self.kind} #{self.pk} ({self.status})"
