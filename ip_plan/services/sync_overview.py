@@ -17,7 +17,6 @@ full_sync.sh на хосте выполняет только nmap. Поэтом�
 """
 import re
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.utils.dateparse import parse_datetime
@@ -41,30 +40,20 @@ STATUS_LABELS = {
     "wait": "в очереди", "none": NEVER,
 }
 _LOG_STATUS = {"OK": "ok", "FAILED": "fail", "TIMEOUT": "timeout"}
-# Итог шага/задания сборщика → (класс строки, подпись).
-_JOB_STATUS = {
-    SyncJob.STATUS_DONE: "ok", SyncJob.STATUS_DONE_WITH_ERRORS: "warn",
-    SyncJob.STATUS_FAILED: "fail", SyncJob.STATUS_TIMEOUT: "timeout",
-    SyncJob.STATUS_INTERRUPTED: "fail", SyncJob.STATUS_RUNNING: "run",
-    SyncJob.STATUS_QUEUED: "wait",
-}
+# Итог шага/задания сборщика → класс строки — sync_jobs.STATUS_CLASS.
 _JOB_LABELS = dict(SyncJob.STATUS_CHOICES)
 _BAD = ("fail", "timeout", "warn")
 
 
-def tz():
-    return ZoneInfo(settings.SYNC_LOG_TZ)
-
-
 def now():
-    return datetime.now(tz())
+    return datetime.now(sync_jobs.tz())
 
 
 def parse_log_time(value):
     if not value:
         return None
     try:
-        return datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz())
+        return datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=sync_jobs.tz())
     except ValueError:
         return None
 
@@ -74,7 +63,7 @@ def human_when(dt):
     «03.02.2025, 11:30». Принимает aware datetime (любой зоны)."""
     if dt is None:
         return ""
-    local = dt.astimezone(tz())
+    local = dt.astimezone(sync_jobs.tz())
     today = now().date()
     delta = (local.date() - today).days
     hm = local.strftime("%H:%M")
@@ -99,6 +88,14 @@ def duration(seconds):
     if seconds < 3600:
         return f"{seconds // 60} мин {seconds % 60:02d} с"
     return f"{seconds // 3600} ч {seconds % 3600 // 60:02d} мин"
+
+
+def job_duration(job):
+    """Длительность задания: завершённого — до конца, идущего — до сейчас."""
+    end = job.finished_at or (now() if job.status == SyncJob.STATUS_RUNNING else None)
+    if not job.started_at or not end:
+        return ""
+    return duration((end - job.started_at).total_seconds())
 
 
 _CRON_DAILY_RE = re.compile(r"^\s*(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+\*\s*$")
@@ -193,7 +190,7 @@ def _current_started(job):
 
 def _step_state(result, job):
     status = result.get("status") or ""
-    cls = _JOB_STATUS.get(status, "none")
+    cls = sync_jobs.STATUS_CLASS.get(status, "none")
     label = _JOB_LABELS.get(status) or STATUS_LABELS.get(cls, status)
     if cls == "ok":
         label = STATUS_LABELS["ok"]
@@ -316,22 +313,22 @@ def _rows(states, nmap):
 def _job_card(job):
     if job is None:
         return None
-    cls = _JOB_STATUS.get(job.status, "none")
-    end = job.finished_at or (now() if job.status == SyncJob.STATUS_RUNNING else None)
+    cls = sync_jobs.STATUS_CLASS.get(job.status, "none")
     return {"id": job.pk, "status": cls, "status_label": job.get_status_display(),
             "when": human_when(job.started_at or job.created_at),
-            "duration": duration((end - job.started_at).total_seconds()) if end and job.started_at else "",
+            "duration": job_duration(job),
             "summary": job.summary, "code_version": job.code_version}
 
 
 def _chains():
-    schedules = {s.kind: s for s in SyncSchedule.objects.filter(kind__in=NIGHT_CHAINS)}
+    found, last_jobs = sync_jobs.with_last_job(SyncSchedule.objects.filter(kind__in=NIGHT_CHAINS))
+    schedules = {s.kind: s for s in found}
     result = []
     for kind in NIGHT_CHAINS:
         s = schedules.get(kind)
         if s is None:
             continue
-        last = SyncJob.objects.filter(schedule=s).order_by("-created_at", "-id").first()
+        last = last_jobs.get(s.pk)
         result.append({"kind": kind, "title": s.title or kind, "enabled": s.enabled,
                        "trigger": sync_jobs.describe_trigger(s),
                        "next_run": human_when(s.next_run) if s.enabled and s.next_run else "",
@@ -392,19 +389,17 @@ def _progress_nmap(nmap):
             "elapsed": nmap["duration"], "step_elapsed": nmap["duration"], "remaining": "", "pct": 50}
 
 
-def overview():
-    """Всё для экрана синхронизации и точки в рейке.
-
-    state: running — идёт задание или nmap; failed — у какого-то шага
-    последний итог с ошибкой; aborted — лог nmap не дописан, а PID-файла нет
-    (скан оборвали); ok; none — ни заданий, ни логов nmap.
-    """
+def _collect():
+    """Идущие задания, итог по шагам, nmap и строки экрана — общее для
+    overview() и state()."""
     active = _active_jobs()
     states = _step_states(active)
     nmap = _nmap(sync_log.get_summary(), sc.nmap_pid_file_present())
-    rows = _rows(states, nmap)
-    chains = _chains()
+    return active, states, nmap, _rows(states, nmap)
 
+
+def _state(active, rows, nmap):
+    """(state, идущее задание, строки с ошибкой, available) — см. overview()."""
     running_job = next((j for j in active if j.status == SyncJob.STATUS_RUNNING), None)
     running = running_job is not None or nmap["running"]
     # Оборванный nmap — отдельное состояние «aborted», не «ошибка шага».
@@ -421,6 +416,27 @@ def overview():
         state = "aborted"
     else:
         state = "ok"
+    return state, running_job, failed, available
+
+
+def state():
+    """Только state из overview() — для точки в рейке «Настроек» на каждой
+    странице раздела: без цепочек ночи, карточек, прогресса и хвоста лога."""
+    active, _, nmap, rows = _collect()
+    return _state(active, rows, nmap)[0]
+
+
+def overview():
+    """Всё для экрана синхронизации и точки в рейке.
+
+    state: running — идёт задание или nmap; failed — у какого-то шага
+    последний итог с ошибкой; aborted — лог nmap не дописан, а PID-файла нет
+    (скан оборвали); ok; none — ни заданий, ни логов nmap.
+    """
+    active, states, nmap, rows = _collect()
+    chains = _chains()
+    state, running_job, failed, available = _state(active, rows, nmap)
+    running = state == "running"
 
     last_versions = [c["last"]["code_version"] for c in chains if c["last"] and c["last"]["code_version"]]
     result = {
@@ -459,10 +475,19 @@ def step_info(name):
     RedVirt / vCenter). name — имя шага сборщика, подпись сводки («RedVirt»)
     или скрипт. None — такого шага у сборщика нет или заданий не было ни
     одного."""
-    step = sync_jobs.resolve_step(name)
-    if step is None or not SyncJob.objects.exists():
-        return None
-    state = _step_states(_active_jobs()).get(step)
+    return steps_info([name])[name]
+
+
+def steps_info(names):
+    """{name: step_info(name)} — итог по шагам считается один раз на все."""
+    resolved = {name: sync_jobs.resolve_step(name) for name in names}
+    if all(step is None for step in resolved.values()) or not SyncJob.objects.exists():
+        return dict.fromkeys(resolved)
+    states = _step_states(_active_jobs())
+    return {name: None if step is None else _info(states.get(step)) for name, step in resolved.items()}
+
+
+def _info(state):
     if state is None:
         return {"status": "none", "status_label": NEVER, "when": "", "duration": ""}
     if state["status"] == "run":

@@ -452,6 +452,20 @@ class SyncSchedule(models.Model):
         return self.title or self.kind
 
 
+# Состояния задания — на уровне модуля: на них же стоят ограничения таблицы,
+# а Meta внутри класса атрибутов самого класса не видит.
+_SYNC_JOB_STATUS_CHOICES = [
+    ("queued", "В очереди"),
+    ("running", "Выполняется"),
+    ("done", "Выполнено"),
+    ("done_with_errors", "Выполнено с ошибками"),
+    ("failed", "Ошибка"),
+    ("timeout", "Прервано по таймауту"),
+    ("interrupted", "Прервано"),
+]
+_SYNC_JOB_ACTIVE_STATUSES = ("queued", "running")
+
+
 class SyncJob(models.Model):
     """Задание сборщика: снимок шагов на момент постановки, кто поставил,
     состояние и итог по шагам (KTD4, KTD5).
@@ -469,16 +483,8 @@ class SyncJob(models.Model):
     STATUS_FAILED = "failed"
     STATUS_TIMEOUT = "timeout"
     STATUS_INTERRUPTED = "interrupted"
-    STATUS_CHOICES = [
-        (STATUS_QUEUED, "В очереди"),
-        (STATUS_RUNNING, "Выполняется"),
-        (STATUS_DONE, "Выполнено"),
-        (STATUS_DONE_WITH_ERRORS, "Выполнено с ошибками"),
-        (STATUS_FAILED, "Ошибка"),
-        (STATUS_TIMEOUT, "Прервано по таймауту"),
-        (STATUS_INTERRUPTED, "Прервано"),
-    ]
-    ACTIVE_STATUSES = (STATUS_QUEUED, STATUS_RUNNING)
+    STATUS_CHOICES = _SYNC_JOB_STATUS_CHOICES
+    ACTIVE_STATUSES = _SYNC_JOB_ACTIVE_STATUSES
 
     SOURCE_SCHEDULE = "schedule"
     SOURCE_USER = "user"
@@ -533,17 +539,14 @@ class SyncJob(models.Model):
             # Один queued/running на вид: повторный «запустить сейчас»
             # возвращает уже стоящее задание (KTD14).
             models.UniqueConstraint(
-                fields=["kind"], condition=models.Q(status__in=["queued", "running"]),
+                fields=["kind"], condition=models.Q(status__in=list(_SYNC_JOB_ACTIVE_STATUSES)),
                 name="sync_job_one_active_per_kind",
             ),
             # Один такт расписания — одно задание, даже при двух сборщиках.
             models.UniqueConstraint(fields=["schedule", "scheduled_for"],
                                     name="sync_job_schedule_tick"),
             models.CheckConstraint(
-                condition=models.Q(status__in=[
-                    "queued", "running", "done", "done_with_errors", "failed",
-                    "timeout", "interrupted",
-                ]),
+                condition=models.Q(status__in=[k for k, _ in _SYNC_JOB_STATUS_CHOICES]),
                 name="sync_job_status_valid",
             ),
         ]

@@ -26,6 +26,7 @@ import json
 import logging
 import re
 import shutil
+from collections import namedtuple
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -99,6 +100,11 @@ def _registry_error(path, why):
     return SyncConfigError(f"Реестр платформ netbox-sync {path}: {why}")
 
 
+# Платформа, у которой MAC/ARP снимается только в режиме кластера: какой
+# cluster нужен и что снимается (kind: "arp" — ARP-таблица, иначе MAC).
+MacCluster = namedtuple("MacCluster", "cluster kind")
+
+
 def _parse_registry(path, raw):
     try:
         data = json.loads(raw.decode("utf-8"))
@@ -123,7 +129,7 @@ def _parse_registry(path, raw):
         if mac.get("supported") is True:
             view["mac"].add(name)
             if mac.get("requires_cluster"):
-                view["mac_cluster"][name] = (mac["requires_cluster"], mac.get("kind"))
+                view["mac_cluster"][name] = MacCluster(mac["requires_cluster"], mac.get("kind"))
         if spec.get("lldp") is True:
             view["lldp"].add(name)
     return view
@@ -185,7 +191,11 @@ def snmp_version(cfg):
 
 def transport(parser):
     """«snmp» или «ssh» — чем синк ходит на устройства с этим парсером."""
-    return "snmp" if parser in _registry()["snmp"] else "ssh"
+    return _transport(parser, _registry())
+
+
+def _transport(parser, reg):
+    return "snmp" if parser in reg["snmp"] else "ssh"
 
 
 # Справочник парсеров для карточки модели: транспорт и что каждый умеет
@@ -193,7 +203,7 @@ def transport(parser):
 # пишутся второй раз — иначе карточки разъедутся с проверками.
 def parser_catalog():
     reg = _registry()
-    return [{"key": p, "transport": "snmp" if p in reg["snmp"] else "ssh",
+    return [{"key": p, "transport": _transport(p, reg),
              "caps": ["интерфейсы"]
                      + (["MAC"] if p in reg["mac"] else [])
                      + (["LLDP"] if p in reg["lldp"] else [])}
@@ -519,13 +529,16 @@ def validate_device(cfg, device_types):
         raise SyncConfigError(
             "Префиксы сетей импортируются только с ядра сети: отметьте «Ядро сети» "
             "или снимите шаг «Префиксы сетей» (адреса на L3-коммутаторах служебные).")
+    # Реестр читается, только когда он нужен проверке: без MAC и LLDP
+    # устройство сохраняется и при недоступном реестре.
+    reg = _registry() if eff.get("sync_macs") or eff.get("sync_lldp") else None
     # sync_macs имеет смысл только для парсеров, у которых он вообще
     # реализован (_mac_dispatch в netbox_devices_sync.py) — иначе шаг
     # молча пропустится, а человек будет думать, что включил.
-    if eff.get("sync_macs") and parser not in _registry()["mac"]:
+    if eff.get("sync_macs") and parser not in reg["mac"]:
         raise SyncConfigError(
             f"Сбор MAC-таблицы не поддержан для парсера «{parser}» "
-            f"(есть только для {', '.join(sorted(_registry()['mac']))}).")
+            f"(есть только для {', '.join(sorted(reg['mac']))}).")
     # MAC снимается хвостом шага интерфейсов (ранний return при выключенном
     # sync_interfaces стоит ДО блока MAC), так что одно без другого — молча
     # несобираемая таблица.
@@ -536,17 +549,17 @@ def validate_device(cfg, device_types):
     # У xfw MAC/ARP снимается не общим диспетчером, а внутри обхода кластера
     # ViPNet, и только при cluster=vipnet_failover (mac.requires_cluster в
     # реестре).
-    need_cluster = _registry()["mac_cluster"].get(parser) if eff.get("sync_macs") else None
-    if need_cluster and eff.get("cluster") != need_cluster[0]:
-        table = "ARP-таблица" if need_cluster[1] == "arp" else "MAC-таблица"
+    need = reg["mac_cluster"].get(parser) if eff.get("sync_macs") else None
+    if need and eff.get("cluster") != need.cluster:
+        table = "ARP-таблица" if need.kind == "arp" else "MAC-таблица"
         raise SyncConfigError(
             f"Для парсера «{parser}» {table} снимается только в режиме кластера: "
-            f"у модели должно быть задано cluster={need_cluster[0]}.")
+            f"у модели должно быть задано cluster={need.cluster}.")
     if eff.get("sync_lldp"):
-        if parser not in _registry()["lldp"]:
+        if parser not in reg["lldp"]:
             raise SyncConfigError(
                 f"Сбор LLDP-соседей не поддержан для парсера «{parser}» "
-                f"(есть только для {', '.join(sorted(_registry()['lldp']))}).")
+                f"(есть только для {', '.join(sorted(reg['lldp']))}).")
         if not type_cfg.get("lldp_command"):
             raise SyncConfigError(
                 f"Сбор LLDP-соседей включён, но у модели «{model}» не задана "

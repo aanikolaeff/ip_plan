@@ -280,6 +280,51 @@ class OverviewTests(_Logs):
         self.write_log(_nmap_log(running=True, finished=False))
         self.assertEqual(sync_overview.overview()["state"], "aborted")
 
+    def test_light_state_matches_overview(self):
+        """Точка в рейке «Настроек» (sync_overview.state и _rail) — то же
+        состояние, что overview()["state"], во всех пяти состояниях."""
+        from django.contrib.auth.models import User
+        from ip_plan.views_settings import _rail
+
+        user = User(username="u", is_staff=True, is_active=True)
+        seen = []
+
+        def check():
+            state = sync_overview.state()
+            self.assertEqual(state, sync_overview.overview()["state"])
+            dot = next(i["dot"] for g in _rail(user, "devices") for i in g["items"] if i["key"] == "sync")
+            self.assertEqual(dot, {"failed": "warn", "aborted": "warn", "running": "accent"}.get(state, ""))
+            seen.append(state)
+
+        check()
+        SyncJob.objects.create(kind="netbox_dns_enrich", steps=["netbox_dns_enrich"], status="done",
+                               step_results=[_result("netbox_dns_enrich")])
+        check()
+        self.write_log(_nmap_log(running=True, finished=False))
+        check()
+        self.lock.write_text("123")
+        check()
+        self.lock.unlink()
+        SyncJob.objects.create(kind="netbox_reachability", steps=["netbox_reachability"], status="failed",
+                               step_results=[_result("netbox_reachability", "failed")])
+        check()
+        SyncJob.objects.create(kind="night_after_nmap", steps=self.after.steps, status="running",
+                               started_at=timezone.now(), lease_until=timezone.now() + timedelta(minutes=1))
+        check()
+        self.assertEqual(seen, ["none", "ok", "aborted", "running", "failed", "running"])
+
+    def test_steps_info_matches_step_info(self):
+        names = ("RedVirt", "vCenter", "Nmap scan", "netbox_dns_enrich")
+        self.assertEqual(sync_overview.steps_info(names), dict.fromkeys(names))
+        SyncJob.objects.create(kind="night_after_nmap", steps=self.after.steps, status="done",
+                               step_results=[_result("netbox_redvirt_sync", "timeout", minutes_ago=50)])
+        SyncJob.objects.create(kind="netbox_dns_enrich", steps=["netbox_dns_enrich"], status="running",
+                               started_at=timezone.now(), lease_until=timezone.now() + timedelta(minutes=1))
+        many = sync_overview.steps_info(names)
+        self.assertEqual(many, {n: sync_overview.step_info(n) for n in names})
+        self.assertEqual((many["RedVirt"]["status"], many["vCenter"]["status"], many["Nmap scan"],
+                          many["netbox_dns_enrich"]["status"]), ("timeout", "none", None, "run"))
+
     def test_step_info_and_devices_step_started_from_jobs(self):
         self.assertIsNone(sync_overview.step_info("RedVirt"))
         self.assertIsNone(sync_overview.devices_step_started())

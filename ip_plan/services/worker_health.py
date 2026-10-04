@@ -15,7 +15,6 @@ docs/plans/2026-10-04-0248-feat-observations-stage2-worker-plan.md, KTD17).
 * ответил — баннер по таблице состояний плана (норма — без баннера).
 """
 import json
-import urllib.error
 import urllib.request
 
 from django.conf import settings
@@ -52,7 +51,7 @@ def fetch(use_cache=True):
             data = json.loads(resp.read().decode("utf-8"))
         if not isinstance(data, dict):
             raise ValueError("ответ /health — не объект JSON")
-    except (OSError, ValueError, urllib.error.URLError) as e:
+    except (OSError, ValueError) as e:  # URLError и HTTPError — подклассы OSError
         data = {"_down": str(getattr(e, "reason", e)) or e.__class__.__name__}
     cache.set(_CACHE_KEY, data, settings.SYNC_WORKER_HEALTH_CACHE_SECONDS)
     return data
@@ -62,10 +61,11 @@ def _failed_schedule_job():
     """Последнее завершённое плановое задание каждого включённого расписания;
     первое из них со статусом failed/timeout/interrupted — или None."""
     bad = (SyncJob.STATUS_FAILED, SyncJob.STATUS_TIMEOUT, SyncJob.STATUS_INTERRUPTED)
-    for schedule in SyncSchedule.objects.filter(enabled=True):
-        last = (SyncJob.objects.filter(schedule=schedule, source=SyncJob.SOURCE_SCHEDULE)
-                .exclude(status__in=SyncJob.ACTIVE_STATUSES)
-                .order_by("-created_at", "-id").first())
+    finished = (SyncJob.objects.filter(source=SyncJob.SOURCE_SCHEDULE)
+                .exclude(status__in=SyncJob.ACTIVE_STATUSES))
+    schedules, last_jobs = sync_jobs.with_last_job(SyncSchedule.objects.filter(enabled=True), finished)
+    for schedule in schedules:
+        last = last_jobs.get(schedule.pk)
         if last is not None and last.status in bad:
             return schedule, last
     return None

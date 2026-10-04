@@ -32,6 +32,8 @@ from .models import LdapConfig, LocalAccount, SettingsAudit
 from .services import connection_test, ldap_check, remote_gateway, settings_bundle, ssh_access
 from .services import sync_jobs, sync_overview, worker_health
 from .services import sync_config as sc
+from .views_common import audit as _audit, error_modal as _error_modal, start_job, toast as _toast
+from .views_common import toast_redirect
 
 logger = logging.getLogger(__name__)
 
@@ -96,24 +98,10 @@ def conf_write(view):
     return wrapper
 
 
-def _audit(request, scope, target, action, details=""):
-    SettingsAudit.objects.create(
-        username=request.user.username, scope=scope,
-        target=target, action=action, details=details,
-    )
-
-
 def _redirect_to(tab, message):
     """Успешное сохранение: закрыть модалку и перезагрузить вкладку.
     HX-Redirect, а не частичный swap — см. докстринг модуля."""
-    response = HttpResponse(status=204)
-    response["HX-Redirect"] = reverse("ip_plan:settings_tab", args=[tab])
-    response["HX-Trigger"] = json.dumps({"show-toast": {"message": message, "kind": "success"}})
-    return response
-
-
-def _error_modal(request, message, status=400):
-    return render(request, "ip_plan/_modal_error.html", {"error": message}, status=status)
+    return toast_redirect(reverse("ip_plan:settings_tab", args=[tab]), message)
 
 
 # ── Страница ───────────────────────────────────────────────────────────────
@@ -126,7 +114,7 @@ def _rail(user, active):
     """Группы рейки: [{title, items: [tab + dot]}]. Точка у «Запуск и
     расписание» — состояние последнего прогона (warn — ошибка или оборван,
     accent — идёт)."""
-    state = sync_overview.overview()["state"] if active != "sync" else None
+    state = sync_overview.state() if active != "sync" else None
     groups = []
     for tab in _visible_tabs(user):
         item = dict(tab, dot="")
@@ -445,17 +433,18 @@ def _tab_context(request, tab):
             s["site_label"] = site_names.get(slug, slug)
         rv_tests = connection_test.state_for("redvirt", [s.get("name") or s.get("url") for s in redvirt])
         vc_tests = connection_test.state_for("vcenter", [s.get("name") or s.get("url") for s in vcenter])
+        last = sync_overview.steps_info(("RedVirt", "vCenter"))
         # Индекс в файле передаётся как есть: источники адресуются им в URL
         # формы и удаления (source_save пересобирает объект по индексу).
         return {
             "redvirt": [(i, s, rv_tests.get(s.get("name") or s.get("url")))
                         for i, s in enumerate(redvirt)],
             "redvirt_hash": rv_hash,
-            "redvirt_last": sync_overview.step_info("RedVirt"),
+            "redvirt_last": last["RedVirt"],
             "vcenter": [(i, s, vc_tests.get(s.get("name") or s.get("url")))
                         for i, s in enumerate(vcenter)],
             "vcenter_hash": vc_hash,
-            "vcenter_last": sync_overview.step_info("vCenter"),
+            "vcenter_last": last["vCenter"],
         }
 
     if tab == "access":
@@ -535,12 +524,6 @@ def sync_state(request):
                   {"sync": sync_overview.overview()})
 
 
-def _toast(message, kind="info", status=204):
-    response = HttpResponse(status=status)
-    response["HX-Trigger"] = json.dumps({"show-toast": {"message": message, "kind": kind}})
-    return response
-
-
 @staff_required
 def sync_run(request):
     """action=run (steps=<имена через запятую> — выбранные шаги, без steps —
@@ -569,8 +552,6 @@ def sync_run(request):
         picked = set(resolved.values())
         steps = [s.name for s in sync_jobs.STEPS_LIST if s.name in picked]
         kind = steps[0] if len(steps) == 1 else sync_jobs.KIND_SELECTED
-    from .views_jobs import start_job  # views_jobs импортирует отсюда staff_required
-
     return start_job(request, kind, steps)
 
 

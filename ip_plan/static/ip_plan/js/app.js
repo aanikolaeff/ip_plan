@@ -402,7 +402,8 @@
       // /worker/health.json): баннер под шапкой и индикатор «выполняется …».
       // Сервер сам кэширует /health (15–30 с) и ходит к сборщику с таймаутом,
       // так что опрос раз в 30 с не нагружает ни web, ни сборщик. Страница
-      // от этого запроса не ждёт ничего: баннер дорисовывается сам.
+      // от этого запроса не ждёт ничего: баннер дорисовывается сам. Пока
+      // вкладка скрыта, опроса нет; вернулись на неё — сразу свежий ответ.
       Alpine.store('worker', {
         level: '',
         text: '',
@@ -414,19 +415,38 @@
             const resp = await fetch((window.URL_PREFIX || '') + '/worker/health.json', { credentials: 'same-origin' });
             if (!resp.ok) return;
             const data = await resp.json();
-            this.level = data.level || '';
-            this.text = data.text || '';
-            this.link = data.link || '';
-            this.linkText = data.link_text || '';
-            this.running = data.running || [];
+            // Присваивать только изменившееся: каждое присваивание
+            // перерисовывает баннер и индикатор, а ответ почти всегда прежний.
+            const next = {
+              level: data.level || '', text: data.text || '', link: data.link || '',
+              linkText: data.link_text || '',
+            };
+            for (const key in next) {
+              if (this[key] !== next[key]) this[key] = next[key];
+            }
+            const running = data.running || [];
+            if (JSON.stringify(running) !== JSON.stringify(this.running)) this.running = running;
           } catch (e) {
             // Сеть до самого ip_plan пропала — баннер сборщика тут ни при чём.
           }
         },
       });
       if (window.IP_PLAN_WORKER) {
-        Alpine.store('worker').refresh();
-        setInterval(() => Alpine.store('worker').refresh(), 30000);
+        let workerTimer = null;
+        const startWorkerPoll = () => {
+          if (workerTimer) return;
+          Alpine.store('worker').refresh();
+          workerTimer = setInterval(() => Alpine.store('worker').refresh(), 30000);
+        };
+        const stopWorkerPoll = () => {
+          clearInterval(workerTimer);
+          workerTimer = null;
+        };
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden) stopWorkerPoll();
+          else startWorkerPoll();
+        });
+        if (!document.hidden) startWorkerPoll();
       }
 
       // Dropdown "Настройки" в шапке — тема + сводка netbox-sync (сводка —

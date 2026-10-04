@@ -23,36 +23,20 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import SettingsAudit, SyncJob, SyncSchedule
-from .services import sync_jobs, worker_health
+from .models import SyncJob, SyncSchedule
+from .services import sync_jobs, sync_overview, worker_health
+from .views_common import audit, error_modal, start_job, toast_redirect
 from .views_settings import staff_required
 
 HISTORY_PAGE = 50
 _KIND_RE = re.compile(r"^[a-z][a-z0-9_]{1,62}$")
-_STATUS_CLASS = {
-    SyncJob.STATUS_QUEUED: "wait", SyncJob.STATUS_RUNNING: "run", SyncJob.STATUS_DONE: "ok",
-    SyncJob.STATUS_DONE_WITH_ERRORS: "warn", SyncJob.STATUS_FAILED: "fail",
-    SyncJob.STATUS_TIMEOUT: "timeout", SyncJob.STATUS_INTERRUPTED: "fail",
-}
 _STEP_STATUS_LABELS = dict(SyncJob.STATUS_CHOICES, skipped="Пропущен")
-_STEP_STATUS_CLASS = dict(_STATUS_CLASS, skipped="skip")
+_STEP_STATUS_CLASS = dict(sync_jobs.STATUS_CLASS, skipped="skip")
 
 
 def _require_enabled():
     if not worker_health.enabled():
         raise Http404("Сборщик заданий не включён")
-
-
-def _audit(request, target, action, details=""):
-    SettingsAudit.objects.create(username=request.user.username, scope="sync",
-                                 target=target[:200], action=action, details=details)
-
-
-def _toast_redirect(url, message, kind="success"):
-    response = HttpResponse(status=204)
-    response["HX-Redirect"] = url
-    response["HX-Trigger"] = json.dumps({"show-toast": {"message": message, "kind": kind}})
-    return response
 
 
 def _jobs_url():
@@ -66,22 +50,19 @@ def _when(value):
 
 
 def _duration(job):
-    start, end = job.started_at, job.finished_at or (timezone.now() if job.status == "running" else None)
-    if not start or not end:
+    end = job.finished_at or (timezone.now() if job.status == SyncJob.STATUS_RUNNING else None)
+    if not job.started_at or not end:
         return ""
-    sec = int((end - start).total_seconds())
-    if sec < 60:
-        return f"{sec} с"
-    if sec < 3600:
-        return f"{sec // 60} мин {sec % 60:02d} с"
-    return f"{sec // 3600} ч {sec % 3600 // 60:02d} мин"
+    return sync_overview.duration((end - job.started_at).total_seconds())
 
 
-def _job_row(job):
+def _job_row(job, titles=None):
+    """titles — {вид: название расписания} для подписи без запроса на строку
+    (см. sync_jobs.kind_label)."""
     return {
-        "id": job.pk, "kind": job.kind, "label": sync_jobs.kind_label(job.kind),
+        "id": job.pk, "kind": job.kind, "label": sync_jobs.kind_label(job.kind, titles),
         "status": job.status, "status_label": job.get_status_display(),
-        "status_class": _STATUS_CLASS.get(job.status, "none"),
+        "status_class": sync_jobs.STATUS_CLASS.get(job.status, "none"),
         "source_label": job.get_source_display(), "requested_by": job.requested_by,
         "created": _when(job.created_at), "started": _when(job.started_at),
         "finished": _when(job.finished_at), "duration": _duration(job),
@@ -90,16 +71,15 @@ def _job_row(job):
     }
 
 
-def _schedule_row(schedule, last_jobs, active):
-    single = schedule.kind in sync_jobs.STEPS and schedule.steps == [schedule.kind]
+def _schedule_row(schedule, last_jobs, active, titles):
     last = last_jobs.get(schedule.pk)
     return {
         "id": schedule.pk, "kind": schedule.kind, "title": schedule.title or schedule.kind,
-        "single": single, "enabled": schedule.enabled,
+        "single": sync_jobs.is_single_step(schedule), "enabled": schedule.enabled,
         "trigger": sync_jobs.describe_trigger(schedule),
         "next_run": _when(schedule.next_run) if schedule.enabled else "",
         "steps": [sync_jobs.step_label(s) for s in schedule.steps or []],
-        "last": _job_row(last) if last else None,
+        "last": _job_row(last, titles) if last else None,
         "active_job": active.get(schedule.kind),
     }
 
@@ -140,9 +120,10 @@ def _step_rows(job):
 def _job_ctx(job, user):
     head, tail = job.output_head or "", job.output_tail or ""
     truncated = "вывод обрезан" in head
-    current = next((r for r in _step_rows(job) if r["status"] in ("running", "wait")), None)
+    steps = _step_rows(job)
+    current = next((r for r in steps if r["status"] in ("running", "wait")), None)
     return {
-        "job": job, "row": _job_row(job), "steps": _step_rows(job), "current": current,
+        "job": job, "row": _job_row(job), "steps": steps, "current": current,
         "active": job.status in SyncJob.ACTIVE_STATUSES,
         "output_head": head, "output_tail": tail, "truncated": truncated,
         "has_output": bool(head or tail), "log_path": job.log_path,
@@ -166,20 +147,17 @@ def jobs(request):
         status = ""
     page = Paginator(qs.order_by("-created_at", "-id"), HISTORY_PAGE).get_page(request.GET.get("page"))
 
-    schedules = list(SyncSchedule.objects.all())
-    last_jobs = {}
-    for s in schedules:
-        last = SyncJob.objects.filter(schedule=s).order_by("-created_at", "-id").first()
-        if last is not None:
-            last_jobs[s.pk] = last
+    schedules, last_jobs = sync_jobs.with_last_job(SyncSchedule.objects.all())
+    # Все расписания уже загружены — подписи видов заданий берутся из них.
+    titles = {s.kind: s.title for s in schedules}
     active = {j.kind: j.pk for j in SyncJob.objects.filter(status__in=SyncJob.ACTIVE_STATUSES)}
 
     health = worker_health.fetch()
     return render(request, "ip_plan/jobs.html", {
         "health": health, "health_down": "_down" in health, "health_reason": health.get("_down", ""),
         "banner": worker_health.banner(health, _jobs_url()),
-        "schedules": [_schedule_row(s, last_jobs, active) for s in schedules],
-        "history": [_job_row(j) for j in page.object_list], "page": page,
+        "schedules": [_schedule_row(s, last_jobs, active, titles) for s in schedules],
+        "history": [_job_row(j, titles) for j in page.object_list], "page": page,
         "status": status, "statuses": SyncJob.STATUS_CHOICES,
         "steps": [{"name": s.name, "label": s.label, "desc": s.desc, "active_job": active.get(s.name)}
                   for s in sync_jobs.STEPS_LIST],
@@ -211,19 +189,6 @@ def health_json(request):
 
 # ── Запуск ─────────────────────────────────────────────────────────────────
 
-def start_job(request, kind, steps, schedule=None):
-    """Поставить задание и ответить переходом на него. Повторный запуск того
-    же вида — уведомление и переход на уже стоящее задание (KTD14)."""
-    job, created = sync_jobs.enqueue(kind, steps, user=request.user.username, schedule=schedule)
-    url = reverse("ip_plan:job_detail", args=[job.pk])
-    label = sync_jobs.kind_label(kind)
-    if not created:
-        return _toast_redirect(url, f"Задание этого вида уже выполняется: «{label}» (#{job.pk})", "info")
-    _audit(request, f"задание #{job.pk}", "create",
-           f"запуск «{label}»: " + ", ".join(sync_jobs.step_label(s) for s in steps))
-    return _toast_redirect(url, f"Задание «{label}» поставлено в очередь (#{job.pk})")
-
-
 @staff_required
 def job_run(request):
     """POST step=<имя шага> — один шаг белого списка; schedule=<id> — шаги
@@ -233,17 +198,13 @@ def job_run(request):
         return HttpResponse(status=405)
     if request.POST.get("schedule"):
         schedule = get_object_or_404(SyncSchedule, pk=request.POST["schedule"])
-        if not schedule.steps or any(s not in sync_jobs.STEPS for s in schedule.steps):
-            return _error(request, "В расписании шаги вне белого списка сборщика — запуск невозможен.")
+        if not sync_jobs.steps_allowed(schedule.steps):
+            return error_modal(request, "В расписании шаги вне белого списка сборщика — запуск невозможен.")
         return start_job(request, schedule.kind, list(schedule.steps), schedule=schedule)
     step = sync_jobs.resolve_step(request.POST.get("step") or "")
     if step is None:
-        return _error(request, "Такого шага нет в белом списке сборщика.")
+        return error_modal(request, "Такого шага нет в белом списке сборщика.")
     return start_job(request, step, [step])
-
-
-def _error(request, message, status=400):
-    return render(request, "ip_plan/_modal_error.html", {"error": message}, status=status)
 
 
 # ── Расписания ─────────────────────────────────────────────────────────────
@@ -257,7 +218,7 @@ def _parse_time(value):
 
 def _form_ctx(schedule, values=None, errors=None):
     if values is None:
-        single = bool(schedule and schedule.kind in sync_jobs.STEPS and schedule.steps == [schedule.kind])
+        single = bool(schedule and sync_jobs.is_single_step(schedule))
         values = {
             "title": schedule.title if schedule else "",
             "kind": schedule.kind if schedule else "",
@@ -297,7 +258,7 @@ def _validate(post, schedule):
     errors, cleaned = {}, {}
     if schedule is not None:
         # Вид и режим не меняются: по виду ищутся задания расписания.
-        single = schedule.kind in sync_jobs.STEPS and schedule.steps == [schedule.kind]
+        single = sync_jobs.is_single_step(schedule)
         values["mode"] = "step" if single else "chain"
         if single:
             values["step"] = schedule.kind
@@ -315,7 +276,7 @@ def _validate(post, schedule):
                 errors["kind"] = "Это имя шага — для расписания одного шага выберите режим «Один шаг»."
         if not steps:
             errors["steps"] = "Цепочка не может быть пустой."
-        elif any(s not in sync_jobs.STEPS for s in steps):
+        elif not sync_jobs.steps_allowed(steps):
             errors["steps"] = "В цепочке шаг вне белого списка сборщика."
         elif len(set(steps)) != len(steps):
             errors["steps"] = "Шаг повторяется в цепочке."
@@ -388,12 +349,12 @@ def schedule_save(request, schedule_id=None):
         obj.updated_by = request.user.username
         obj.save()
     after = _describe(obj)
-    _audit(request, f"расписание {obj.kind}", "update" if schedule else "create",
+    audit(request, "sync", f"расписание {obj.kind}", "update" if schedule else "create",
            f"{before} → {after}" if before else after)
     when = _when(obj.next_run)
     message = (f"Расписание сохранено. Следующий запуск: {when} ({sync_jobs.tz().key})" if when
                else "Расписание сохранено и выключено.")
-    return _toast_redirect(_jobs_url(), message)
+    return toast_redirect(_jobs_url(), message)
 
 
 @staff_required
@@ -405,5 +366,5 @@ def schedule_delete(request, schedule_id):
     details = _describe(schedule)
     kind = schedule.kind
     schedule.delete()
-    _audit(request, f"расписание {kind}", "delete", details)
-    return _toast_redirect(_jobs_url(), "Расписание удалено. История его заданий сохранена.")
+    audit(request, "sync", f"расписание {kind}", "delete", details)
+    return toast_redirect(_jobs_url(), "Расписание удалено. История его заданий сохранена.")

@@ -26,7 +26,8 @@ from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.core.cache import cache
-from django.db import DatabaseError, IntegrityError, connections, transaction
+from django.db import IntegrityError, connections, transaction
+from django.db.models import OuterRef, Subquery
 from django.utils import timezone
 
 from ..models import SyncJob, SyncSchedule
@@ -94,6 +95,16 @@ _NETOBS_DOWN_TTL = 30
 _NETOBS_DOWN_KEY = "sync_jobs_netobs_down"
 
 
+# Состояние задания (оно же итог шага в step_results) → класс значка и
+# строки в шаблонах «Заданий» и сводки «Синк». Одна таблица на оба раздела:
+# цвет одного и того же итога не должен расходиться.
+STATUS_CLASS = {
+    SyncJob.STATUS_QUEUED: "wait", SyncJob.STATUS_RUNNING: "run", SyncJob.STATUS_DONE: "ok",
+    SyncJob.STATUS_DONE_WITH_ERRORS: "warn", SyncJob.STATUS_FAILED: "fail",
+    SyncJob.STATUS_TIMEOUT: "timeout", SyncJob.STATUS_INTERRUPTED: "fail",
+}
+
+
 def step_label(name):
     step = STEPS.get(name)
     return step.label if step else name
@@ -107,6 +118,16 @@ def resolve_step(alias):
     return _BY_ALIAS.get(alias)
 
 
+def steps_allowed(steps):
+    """Непустой список и все шаги — из белого списка сборщика."""
+    return bool(steps) and all(s in STEPS for s in steps)
+
+
+def is_single_step(schedule):
+    """Расписание одного шага: вид — имя шага, и в нём только этот шаг."""
+    return schedule.kind in STEPS and schedule.steps == [schedule.kind]
+
+
 # Виды ручных заданий кнопок «Настройки → Запуск и расписание» (кроме одного
 # шага — у него вид = имя шага).
 KIND_ALL_STEPS = "manual_all"
@@ -114,14 +135,30 @@ KIND_SELECTED = "manual_selected"
 _MANUAL_KINDS = {KIND_ALL_STEPS: "Все шаги (вручную)", KIND_SELECTED: "Выбранные шаги (вручную)"}
 
 
-def kind_label(kind):
-    """Подпись вида задания: название расписания, подпись шага или сам вид."""
+def kind_label(kind, titles=None):
+    """Подпись вида задания: название расписания, подпись шага или сам вид.
+    titles — {вид: название} уже загруженных расписаний: в списках заданий
+    подпись берётся из него, без запроса на каждую строку."""
     if kind in STEPS:
         return STEPS[kind].label
     if kind in _MANUAL_KINDS:
         return _MANUAL_KINDS[kind]
+    if titles is not None:
+        return titles.get(kind) or kind
     title = SyncSchedule.objects.filter(kind=kind).values_list("title", flat=True).first()
     return title or kind
+
+
+def with_last_job(schedules, jobs=None):
+    """(расписания списком, {pk расписания: его последнее задание}) — два
+    запроса вместо запроса на каждое расписание. schedules — queryset
+    расписаний (порядок сохраняется); jobs — из каких заданий выбирать
+    последнее (по умолчанию из всех)."""
+    jobs = SyncJob.objects.all() if jobs is None else jobs
+    latest = jobs.filter(schedule=OuterRef("pk")).order_by("-created_at", "-id").values("pk")[:1]
+    schedules = list(schedules.annotate(last_job_id=Subquery(latest)))
+    found = SyncJob.objects.in_bulk([s.last_job_id for s in schedules if s.last_job_id is not None])
+    return schedules, {s.pk: found[s.last_job_id] for s in schedules if s.last_job_id in found}
 
 
 # ── «Запустить сейчас» ─────────────────────────────────────────────────────
@@ -130,8 +167,8 @@ def enqueue(kind, steps, user="", schedule=None):
     """Поставить задание; (задание, создано). Если задание того же вида уже
     в очереди или выполняется — возвращается оно, второе не создаётся
     (KTD14: частичный уникальный индекс sync_job_one_active_per_kind)."""
-    bad = [s for s in steps if s not in STEPS]
-    if not steps or bad:
+    if not steps_allowed(steps):
+        bad = [s for s in steps if s not in STEPS]
         raise ValueError("шаги вне белого списка сборщика: " + ", ".join(map(str, bad or ["(пусто)"])))
     existing = _active_job(kind)
     if existing is not None:
