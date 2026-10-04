@@ -2,10 +2,15 @@
 страницы «Поиск MAC/IP» (U11 плана хранилища наблюдений, R11, R12, KTD11).
 
 Где виден адрес — по истории наблюдений MAC-таблиц и ARP, которую пишет
-netbox-sync (схема netobs/migrations/0001_init.sql в netbox-sync): таблица
-observations — все строки, когда-либо виденные, представление
-current_observations — «текущее содержимое порта» (то же определение, что у
-топологии). Моделей Django у netobs нет: сырой SQL через алиас "netobs"
+netbox-sync. С netobs v2 (netbox-sync netobs/migrations/0002_intervals.sql,
+этап 2 U7, KTD7) наблюдения хранятся интервалами, и поиск читает
+представление совместимости observations_compat: колонки v1 без seen_count,
+одна строка на ключ (последний интервал; first_seen — самое раннее
+появление), плюс run_kind (вид опроса last_run_id) и is_current (строка есть
+в current_observations). «Последний раз» (last_seen) представление считает
+само по правилу v1. Представление current_observations — «текущее содержимое
+порта» (то же определение, что у топологии) — нужно только для числа адресов
+за портом. Моделей Django у netobs нет: сырой SQL через алиас "netobs"
 (роль ip_plan_ro, только SELECT), ввод — только параметрами.
 
 Ввод:
@@ -117,13 +122,9 @@ def like_contains(value: str) -> str:
 _ROWS_SQL = """
 WITH hits AS (
     SELECT o.id, o.nb_device, o.interface, o.vlan, o.mac, o.ip, o.source,
-           o.first_seen, o.last_seen, o.seen_count, o.last_run_id
-    FROM observations o
+           o.first_seen, o.last_seen, o.is_current, o.run_kind
+    FROM observations_compat o
     WHERE {where}
-),
-cur AS (
-    SELECT c.id FROM current_observations c
-    WHERE c.id IN (SELECT id FROM hits)
 ),
 ports AS (
     -- Сколько адресов за портом сейчас: только текущие строки того же
@@ -136,17 +137,14 @@ ports AS (
     GROUP BY c.nb_device, c.interface, c.source
 )
 SELECT h.mac::text, host(h.ip), h.nb_device, h.interface, h.vlan, h.source,
-       h.first_seen, h.last_seen, h.seen_count,
-       (cur.id IS NOT NULL) AS is_current,
+       h.first_seen, h.last_seen, h.is_current,
        coalesce(ports.n, 0) AS port_addrs,
-       r.kind,
+       h.run_kind,
        count(*) OVER () AS total
 FROM hits h
-LEFT JOIN cur ON cur.id = h.id
 LEFT JOIN ports ON ports.nb_device = h.nb_device AND ports.interface = h.interface
                AND ports.source = h.source
-LEFT JOIN poll_runs r ON r.id = h.last_run_id
-ORDER BY is_current DESC, port_addrs ASC, h.last_seen DESC, h.id
+ORDER BY h.is_current DESC, port_addrs ASC, h.last_seen DESC, h.id
 LIMIT %s
 """
 
@@ -157,7 +155,7 @@ _WHERE = {
     # (MAC-таблицы), не чужие IP того же MAC.
     "ip": (
         "o.ip = %s::inet OR (o.ip IS NULL AND o.mac IN ("
-        "SELECT a.mac FROM observations a WHERE a.ip = %s::inet"
+        "SELECT a.mac FROM observations_compat a WHERE a.ip = %s::inet"
         " AND a.source IN ('arp-table', 'arp-l3') AND a.mac IS NOT NULL))"
     ),
 }
@@ -170,7 +168,7 @@ FROM poll_runs
 """
 
 _ROW_KEYS = ("mac", "ip", "device", "interface", "vlan", "source", "first_seen",
-             "last_seen", "seen_count", "is_current", "port_addrs", "run_kind", "total")
+             "last_seen", "is_current", "port_addrs", "run_kind", "total")
 
 
 def configured() -> bool:

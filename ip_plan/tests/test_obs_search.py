@@ -25,7 +25,7 @@ def _row(mac="aa:bb:cc:dd:ee:ff", ip=None, device="sw1", interface="Gi0/1",
         "vlan": None, "source": source,
         "first_seen": first_seen if first_seen is not None else NOW - timedelta(days=5),
         "last_seen": last_seen or NOW - timedelta(hours=2),
-        "seen_count": 3, "is_current": current, "port_addrs": port_addrs,
+        "is_current": current, "port_addrs": port_addrs,
         "run_kind": run_kind, "total": total,
     }
 
@@ -106,6 +106,20 @@ class FakeCursor:
 
 
 class SqlTests(SimpleTestCase):
+    def test_reads_compat_view_not_v1_tables(self):
+        # netobs v2 (netbox-sync 0002): таблица observations — интервалы,
+        # seen_count нет. Поиск читает представление совместимости
+        # observations_compat (KTD7): колонки v1, одна строка на ключ,
+        # run_kind и is_current уже посчитаны.
+        for text in ("aabbccddeeff", "9054b7", "10.2.22.17"):
+            with self.subTest(text=text):
+                sql, _ = self._sql_for(text)
+                self.assertIn("FROM observations_compat o", sql)
+                self.assertNotIn("FROM observations o", sql)
+                self.assertNotIn("seen_count", sql)
+                self.assertNotIn("poll_runs", sql)
+                self.assertNotIn("FROM observations a", sql)
+
     def _sql_for(self, text):
         cur = FakeCursor()
         ns.SqlStore(cursor=cur).rows(ns.parse_query(text), 200)
@@ -134,6 +148,62 @@ class SqlTests(SimpleTestCase):
         self.assertIn("'arp-l3'", sql)
         self.assertEqual(params.count("10.2.22.17"), 2)
         self.assertNotIn("LIKE", sql)
+
+
+class V2CursorTests(SimpleTestCase):
+    """Подставной курсор с ответом в форме netobs v2: строки выдачи — как их
+    отдаёт _ROWS_SQL поверх observations_compat (без seen_count)."""
+
+    LAST = NOW - timedelta(minutes=7)
+
+    def _v2_rows(self):
+        # mac, ip, device, interface, vlan, source, first_seen, last_seen,
+        # is_current, port_addrs, run_kind, total
+        return [
+            ("aa:bb:cc:dd:ee:ff", None, "sw1", "Gi0/7", None, "mac-table",
+             NOW - timedelta(days=5), self.LAST, True, 1, "poll", 3),
+            ("aa:bb:cc:dd:ee:ff", "10.2.22.17", "core", "Vlan22", None, "arp-l3",
+             None, NOW - timedelta(hours=2), True, 30, "import", 3),
+            ("aa:bb:cc:dd:ee:ff", None, "sw1", "Gi0/1", None, "mac-table",
+             NOW - timedelta(days=9), NOW - timedelta(days=2), False, 0, "poll", 3),
+        ]
+
+    def _search(self, text):
+        cur = FakeCursor(self._v2_rows())
+        # status() читает тот же курсор: первая строка — (any_ok, last_poll).
+        cur.fetchone = lambda: (True, NOW - timedelta(minutes=7))
+        return ns.search(text, store=ns.SqlStore(cursor=cur), now=NOW)
+
+    def test_same_rows_for_mac_ip_and_partial_mac(self):
+        expected = [
+            ("sw1", "Gi0/7", "mac-table", "текущее", False),
+            ("core", "Vlan22", "arp-l3", "текущее", True),
+            ("sw1", "Gi0/1", "mac-table", "прежнее", False),
+        ]
+        for text in ("aa:bb:cc:dd:ee:ff", "10.2.22.17", "ccdd"):
+            with self.subTest(text=text):
+                result = self._search(text)
+                self.assertEqual(result.total, 3)
+                self.assertEqual(
+                    [(r["device"], r["interface"], r["source"], r["state"], r["imported"])
+                     for r in result.rows],
+                    expected)
+                self.assertNotIn("seen_count", result.rows[0])
+
+    def test_last_seen_comes_from_view(self):
+        # Открытый интервал без пропусков: last_seen в observations_compat —
+        # started_at последнего успешного опроса пары (правило KTD7), сервис
+        # берёт его как есть.
+        row = self._search("aabbccddeeff").rows[0]
+        self.assertEqual(row["last_seen"], self.LAST)
+        self.assertEqual(row["last_seen_age"], "7 мин назад")
+        self.assertEqual(row["first_seen_text"], "28.09.2026 15:00")
+
+    def test_database_error_from_cursor_becomes_unavailable(self):
+        cur = FakeCursor()
+        cur.execute = mock.Mock(side_effect=OperationalError("relation \"observations\" does not exist"))
+        with self.assertRaises(ns.Unavailable):
+            ns.search("aabbccddeeff", store=ns.SqlStore(cursor=cur), now=NOW)
 
 
 # ---------------------------------------------------------------- сервис
@@ -286,6 +356,16 @@ class ObsSearchViewTests(TestCase):
         self.assertContains(resp, "Хранилище наблюдений недоступно")
         self.assertEqual(start.status_code, 200)
         self.assertContains(start, "Хранилище наблюдений недоступно")
+
+    def test_unavailable_v2_cursor_is_200_with_message(self):
+        self.client.force_login(self.user)
+        cur = FakeCursor()
+        cur.execute = mock.Mock(side_effect=OperationalError("connection refused"))
+        with mock.patch.object(ns, "configured", return_value=True), \
+             self._patch_store(ns.SqlStore(cursor=cur)):
+            resp = self._get("10.2.22.17")
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Хранилище наблюдений недоступно")
 
     def test_not_configured_message(self):
         self.client.force_login(self.user)
