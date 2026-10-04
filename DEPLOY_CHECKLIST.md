@@ -409,10 +409,12 @@ nmap (без сборщика ночь останется без остальн�
    совпадает с миграцией). Проверить: `\dp sync_job` в базе `ip_plan`.
 5. **netbox-sync** — пуш в `main` (автодеплой rsync в `/opt/scan`): с этого
    момента `full_sync.sh` выполняет только nmap, `scan_all.py` берёт общую
-   блокировку. Сразу после — `docker compose --profile worker up -d --build
-   worker` в ip_plan. Сборщик при старте применяет миграцию `netobs` 0002 под
-   общей блокировкой; проверить `/health` (баннер в ip_plan пуст,
-   `migrations: ok`) и что у расписаний появился `next_run`.
+   блокировку. Сразу после — `worker` в `COMPOSE_PROFILES` в `.env` ip_plan,
+   `docker compose up -d --build worker` и `docker compose up -d web` (web
+   узнаёт о сборщике только из `.env` и перечитывает его при пересоздании;
+   `--profile worker` из командной строки он не видит). Сборщик при старте
+   применяет миграцию `netobs` 0002 под общей блокировкой; проверить
+   `/health` (баннер в ip_plan пуст, `migrations: ok`) и что у расписаний появился `next_run`.
 6. **cron nmap остаётся**: `0 3 * * * /opt/scan/full_sync.sh prod >> … 2>&1`
    под root (nmap нужен root и сеть хоста — в контейнер он не переезжает).
    `SYNC_SCHEDULE` в ip_plan — то же время.

@@ -151,11 +151,14 @@ services:
   # --- Сборщик заданий синка (netbox-sync/worker.py) ---
   # Берёт задания из базы ip_plan (таблицы sync_job/sync_schedule, роль
   # sync_worker) и выполняет шаги белого списка netbox-sync/worker_steps.py;
-  # nmap остаётся в cron хоста. Профиль "worker": обычный `docker compose up -d`
-  # (и деплой из .gitlab-ci.yml) его не поднимает. Работает только при
+  # nmap остаётся в cron хоста. Профиль "worker": пока его нет в COMPOSE_PROFILES,
+  # `docker compose up -d` (и деплой из .gitlab-ci.yml) сборщик не поднимает. Работает только при
   # IP_PLAN_DB_ENGINE=postgres — заданиям нужна база ip_plan в PostgreSQL.
-  # Включить — COMPOSE_PROFILES=worker в .env (через запятую с gateway) либо
-  # `docker compose --profile worker up -d worker`.
+  # Включить — только добавить worker в COMPOSE_PROFILES в .env (через запятую
+  # с gateway) и `docker compose up -d`: по этой же строке web включает
+  # баннер и раздел «Задания» (config/settings.py). `--profile worker` из
+  # командной строки web не видит — сборщик работал бы, а раздела не было бы.
+  # Если /health сборщика не по адресу по умолчанию — SYNC_WORKER_HEALTH_URL.
   worker:
     # Образ — только Python и зависимости из netbox-sync/requirements.txt;
     # Dockerfile лежит в netbox-sync. Пересобирать при смене requirements.txt

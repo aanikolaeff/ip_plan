@@ -7,9 +7,11 @@ KTD14, KTD17, KTD18).
 запрос к pg_locks проверяется на PostgreSQL через алиас default.
 """
 import ast
+import http.client
 import json
 import socket
 import time
+import urllib.error
 from datetime import time as dtime, timedelta, datetime, timezone as dt_timezone
 from pathlib import Path
 from unittest import mock
@@ -289,6 +291,14 @@ class ScheduleFormTests(_Enabled):
                       steps=["netbox_devices_sync"])
         self.assertContains(r, "Латиница", status_code=400)
         self.assertContains(r, "ЧЧ:ММ", status_code=400)
+        r = self.post(mode="chain", kind="night", trigger="daily", daily_at="02:30",
+                      steps=["netbox_devices_sync", "netbox_dns_enrich", "netbox_devices_sync"])
+        self.assertContains(r, "Шаг повторяется в цепочке", status_code=400)
+        # Вид цепочки, совпадающий с именем шага, перепутался бы с
+        # расписанием одного шага (is_single_step, kind_label).
+        r = self.post(mode="chain", kind="netbox_devices_sync", trigger="daily", daily_at="02:30",
+                      steps=["netbox_devices_sync", "netbox_dns_enrich"])
+        self.assertContains(r, "Это имя шага", status_code=400)
         self.assertFalse(SyncSchedule.objects.exists())
 
     def test_create_chain_computes_next_run_and_audits(self):
@@ -367,13 +377,78 @@ class BannerTests(_Enabled):
             self.banner()
         self.assertEqual(urlopen.call_count, 1)
 
+    def test_bad_answers_count_as_not_answering(self):
+        """Любой негодный ответ /health — «не отвечает», а не 500 на каждой
+        странице (баннер грузится на всех)."""
+        def answer(body=b"", read_error=None):
+            resp = mock.MagicMock()
+            resp.__enter__.return_value = resp
+            resp.read.side_effect = read_error
+            resp.read.return_value = body
+            return mock.patch("urllib.request.urlopen", return_value=resp)
+        cases = [
+            ("не JSON", answer(b"<html>502 Bad Gateway</html>")),
+            ("JSON-список", answer(b'["db", "up"]')),
+            ("не UTF-8", answer(b"\xff\xfe")),
+            ("HTTP-ошибка", mock.patch("urllib.request.urlopen", side_effect=urllib.error.HTTPError(
+                self.url, 500, "Internal Server Error", {}, None))),
+            ("оборванный ответ", answer(read_error=http.client.IncompleteRead(b'{"db": "u', 40))),
+            ("соединение сброшено", mock.patch("urllib.request.urlopen",
+                                               side_effect=http.client.RemoteDisconnected("closed"))),
+            ("битая строка статуса", mock.patch("urllib.request.urlopen",
+                                                side_effect=http.client.BadStatusLine("HTTP/9"))),
+        ]
+        for name, patcher in cases:
+            with self.subTest(name), patcher:
+                health = worker_health.fetch(use_cache=False)
+                self.assertIn("_down", health)
+                self.assertTrue(health["_down"])
+                self.assertEqual(worker_health.banner(health)["text"], "Сборщик не отвечает")
+        self.client.force_login(self.user)
+        cache.clear()
+        with answer(read_error=http.client.IncompleteRead(b"", 10)):
+            r = self.client.get("/worker/health.json")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["text"], "Сборщик не отвечает")
+
+    def test_failed_and_timed_out_scheduled_jobs_warn(self):
+        self.client.force_login(self.user)
+        for status, label in (("failed", "ошибка"), ("timeout", "прервано по таймауту")):
+            with self.subTest(status=status):
+                SyncJob.objects.all().delete()
+                SyncSchedule.objects.all().delete()
+                s = SyncSchedule.objects.create(kind="night", title="Ночь", steps=["netbox_devices_sync"],
+                                                trigger="daily", daily_at=dtime(2, 30))
+                job = SyncJob.objects.create(kind="night", steps=s.steps, schedule=s, source="schedule",
+                                             scheduled_for=timezone.now(), status=status)
+                self.assertEqual(worker_health._failed_schedule_job(), (s, job))
+                with mock.patch.object(worker_health, "fetch", return_value=HEALTH_OK):
+                    data = self.banner()
+                self.assertEqual((data["level"], data["text"], data["link"]),
+                                 ("warn", f"Ночь: {label}", f"/jobs/{job.pk}/"))
+                # Выключенное расписание не тревожит.
+                s.enabled = False
+                s.save()
+                self.assertIsNone(worker_health._failed_schedule_job())
+
     def test_states_in_priority_order(self):
         self.client.force_login(self.user)
         cases = [
             (dict(HEALTH_OK, db="down"), "error", "Сборщик не достаёт базу"),
             (dict(HEALTH_OK, nmap_missed=[{"schedule": "after"}]), "warn", "Ночной nmap не прошёл"),
+            (dict(HEALTH_OK, migrations="error"), "warn", "Сборщик не применил миграции netobs"),
+            # nmap важнее миграций: без него ночь осталась без данных.
+            (dict(HEALTH_OK, migrations="error", nmap_missed=[{"schedule": "after"}]), "warn",
+             "Ночной nmap не прошёл"),
+            (dict(HEALTH_OK, spool_bad=["a.json", "b.json"]), "warn",
+             "Сборщик отложил повреждённые результаты: 2"),
+            (dict(HEALTH_OK, spool_bad=["a.json"], migrations="error"), "warn",
+             "Сборщик не применил миграции netobs"),
+            (dict(HEALTH_OK, spool_bad=["a.json"], package_warnings=["psycopg: установлен 3.1"]), "warn",
+             "Сборщик отложил повреждённые результаты: 1"),
             (dict(HEALTH_OK, package_warnings=["psycopg: установлен 3.1"]), "warn",
              "Сборщику нужна пересборка образа"),
+            (dict(HEALTH_OK, spool_bad=[]), "", ""),
             (HEALTH_OK, "", ""),
         ]
         for health, level, text in cases:
@@ -463,11 +538,37 @@ class EditLockTests(_ConfMixin, TestCase):
         self.assertEqual((self.conf / "devices.json").read_text(), before)
         r = self.client.post("/settings/ldap/save/", {"enabled": "", "servers": ""})
         self.assertNotEqual(r.status_code, 409)
-        # Просмотр доступен: плашка с причиной и ссылкой, формы помечены.
+        # Просмотр доступен: плашка с причиной, формы помечены.
         page = self.client.get("/settings/tab/devices/").content.decode()
         self.assertIn("data-conf-locked", page)
-        self.assertIn(f"Открыть задание #{job.pk}", page)
         self.assertNotIn("data-conf-locked", self.client.get("/settings/tab/ldap/").content.decode())
+
+    def test_lock_links_the_job_only_when_jobs_section_exists(self):
+        """Противоречие «сборщик не включён в web, а задание идёт» (адрес
+        /health не задан, сборщик поднят руками): причина видна, но без
+        ссылки на страницу задания — раздела «Задания» нет, ссылка дала бы 404."""
+        job = self.running(timedelta(minutes=2))
+        with mock.patch.object(worker_health, "enabled", return_value=False):
+            page = self.client.get("/settings/tab/devices/").content.decode()
+            self.assertIn("data-conf-locked", page)
+            self.assertIn(f"(#{job.pk})", page)
+            self.assertNotIn(f"/jobs/{job.pk}/", page)
+            r = self.client.post("/settings/devices/sw-1/save/", _device_post(file_hash=self.hash()))
+            self.assertEqual(r.status_code, 409)
+            self.assertIn(f"#{job.pk}", r.content.decode())
+            self.assertNotIn("/jobs/", r.content.decode())
+        with mock.patch.object(worker_health, "enabled", return_value=True), \
+                mock.patch.object(worker_health, "fetch", return_value=HEALTH_OK):
+            page = self.client.get("/settings/tab/devices/").content.decode()
+            self.assertIn(f'href="/jobs/{job.pk}/">Открыть задание #{job.pk}', page)
+
+    def test_import_form_is_closed_while_locked(self):
+        self.running(timedelta(minutes=2))
+        self.assertContains(self.client.get("/settings/import/"), "Идёт синхронизация")
+        SyncJob.objects.update(lease_until=timezone.now() - timedelta(seconds=1))
+        page = self.client.get("/settings/import/")
+        self.assertNotContains(page, "Идёт синхронизация")
+        self.assertContains(page, "Посмотреть, что изменится")
 
     def test_expired_lease_does_not_block(self):
         self.running(-timedelta(seconds=1))
@@ -485,7 +586,7 @@ class EditLockTests(_ConfMixin, TestCase):
         self.assertIn("nmap", page)
         r = self.client.post("/settings/devices/sw-1/save/", _device_post(file_hash=self.hash()))
         self.assertEqual(r.status_code, 409)
-        self.assertTrue(sc.sync_running())
+        self.assertIsNotNone(sync_jobs.edit_lock())
         self.nmap.return_value = False
         self.assertNotIn("data-conf-locked", self.client.get("/settings/tab/devices/").content.decode())
         r = self.client.post("/settings/devices/sw-1/save/", _device_post(file_hash=self.hash()))
@@ -495,7 +596,7 @@ class EditLockTests(_ConfMixin, TestCase):
         Path(self.tmp.name, "logs", ".lock").write_text("12345")
         self.assertTrue(sc.nmap_pid_file_present())
         self.assertIsNone(sync_jobs.edit_lock())
-        self.assertFalse(sc.sync_running())
+        self.assertIsNone(sync_jobs.edit_lock())
         r = self.client.post("/settings/devices/sw-1/save/", _device_post(file_hash=self.hash()))
         self.assertEqual(r.status_code, 204)
 
@@ -557,6 +658,38 @@ class SettingsSyncButtonsTests(_ConfMixin, _Enabled):
         self.run_sync(steps="Config backup")
         self.assertTrue(SyncJob.objects.filter(kind="netbox_config_backup").exists())
         self.assertEqual(SettingsAudit.objects.filter(scope="sync").count(), 3)
+
+    def test_other_selection_while_selected_job_is_active(self):
+        """Вид manual_selected один на любые выбранные шаги: при другом
+        наборе нельзя молча увести на чужое задание — пользователь решил бы,
+        что его шаги стоят в очереди."""
+        self.run_sync(steps="LLDP topology,Devices")
+        job = SyncJob.objects.get(kind=sync_jobs.KIND_SELECTED)
+        r = self.run_sync(steps="DNS enrich,Reachability")
+        self.assertEqual(r.status_code, 204)
+        self.assertNotIn("HX-Redirect", r)
+        toast = json.loads(r["HX-Trigger"])["show-toast"]
+        self.assertEqual(toast["kind"], "error")
+        self.assertIn(f"Уже стоит задание #{job.pk} с другим набором шагов", toast["message"])
+        self.assertIn("Устройства, Связи между устройствами", toast["message"])
+        self.assertIn("дождитесь его окончания", toast["message"])
+        self.assertEqual(SyncJob.objects.count(), 1)
+        self.assertEqual(SettingsAudit.objects.filter(scope="sync").count(), 1)
+        # Тот же набор (в любом порядке) — как раньше: переход на стоящее.
+        r = self.run_sync(steps="Devices,LLDP topology")
+        self.assertEqual(r["HX-Redirect"], f"/jobs/{job.pk}/")
+        self.assertEqual(json.loads(r["HX-Trigger"])["show-toast"]["kind"], "info")
+        self.assertEqual(SyncJob.objects.count(), 1)
+
+    def test_plan_manual_run(self):
+        all_steps = [s.name for s in sync_jobs.STEPS_LIST]
+        self.assertEqual(sync_jobs.plan_manual_run([]), (sync_jobs.KIND_ALL_STEPS, all_steps, []))
+        self.assertEqual(sync_jobs.plan_manual_run(["LLDP topology", "netbox_devices_sync", "Devices"]),
+                         (sync_jobs.KIND_SELECTED, ["netbox_devices_sync", "netbox_lldp_topology"], []))
+        self.assertEqual(sync_jobs.plan_manual_run(["netbox_dns_enrich.py"]),
+                         ("netbox_dns_enrich", ["netbox_dns_enrich"], []))
+        self.assertEqual(sync_jobs.plan_manual_run(["Nmap scan", "Devices", "Netobs migrate"]),
+                         (None, [], ["Nmap scan", "Netobs migrate"]))
 
     def test_nmap_and_migrations_are_not_jobs(self):
         r = self.run_sync(steps="Nmap scan")

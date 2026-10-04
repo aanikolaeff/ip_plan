@@ -135,7 +135,6 @@ def _page_ctx(request, active):
         "active_tab": active,
         "conf_available": sc.available(),
         "conf_dir": sc.conf_dir(),
-        "sync_running": lock is not None,
         # Почему правки conf сейчас заблокированы (плашка в settings_base.html);
         # conf_tab — страница правит conf (LDAP, пользователи, журнал — нет).
         "conf_lock": lock,
@@ -540,18 +539,11 @@ def sync_run(request):
         return _toast("Остановить задание из интерфейса нельзя: шаг доработает до конца или до "
                       "своего таймаута.")
     names = [n.strip() for n in (request.POST.get("steps") or "").split(",") if n.strip()]
-    if not names:
-        steps, kind = [s.name for s in sync_jobs.STEPS_LIST], sync_jobs.KIND_ALL_STEPS
-    else:
-        resolved = {n: sync_jobs.resolve_step(n) for n in names}
-        unknown = [n for n, step in resolved.items() if step is None]
-        if unknown:
-            return _toast("Эти шаги сборщик не запускает: " + ", ".join(unknown)
-                          + " (сканирование nmap — только cron на хосте, миграции — сам сборщик).",
-                          kind="error")
-        picked = set(resolved.values())
-        steps = [s.name for s in sync_jobs.STEPS_LIST if s.name in picked]
-        kind = steps[0] if len(steps) == 1 else sync_jobs.KIND_SELECTED
+    kind, steps, unknown = sync_jobs.plan_manual_run(names)
+    if unknown:
+        return _toast("Эти шаги сборщик не запускает: " + ", ".join(unknown)
+                      + " (сканирование nmap — только cron на хосте, миграции — сам сборщик).",
+                      kind="error")
     return start_job(request, kind, steps)
 
 
@@ -607,7 +599,7 @@ def import_form(request):
     # Импорт меняет несколько файлов сразу — блокируется, как и остальные
     # правки conf (conf_write на preview/apply).
     return render(request, "ip_plan/_settings_import_form.html", {
-        "sync_running": sc.sync_running(),
+        "conf_locked": sync_jobs.edit_lock() is not None,
     })
 
 
@@ -800,15 +792,23 @@ def _load_error_page(request, active, error):
     return render(request, "ip_plan/settings.html", ctx)
 
 
+def _load_errors_as_page(active):
+    """Карточка, которую нечем построить (SyncConfigError при загрузке) —
+    страница с плашкой вкладки active (_load_error_page), а не 500."""
+    def decorator(view):
+        @wraps(view)
+        def wrapper(request, *args, **kwargs):
+            try:
+                return view(request, *args, **kwargs)
+            except sc.SyncConfigError as e:
+                return _load_error_page(request, active, e)
+        return wrapper
+    return decorator
+
+
 @staff_required
+@_load_errors_as_page("devices")
 def device_form(request, name=None):
-    try:
-        return _device_form(request, name)
-    except sc.SyncConfigError as e:
-        return _load_error_page(request, "devices", e)
-
-
-def _device_form(request, name):
     data, digest = sc.load("devices")
     devices = data.get("devices") or {}
     if name is not None and name not in devices:
@@ -1181,14 +1181,8 @@ def _with_counts(names, used):
 
 
 @staff_required
+@_load_errors_as_page("models")
 def device_type_form(request, name=None):
-    try:
-        return _device_type_form(request, name)
-    except sc.SyncConfigError as e:
-        return _load_error_page(request, "models", e)
-
-
-def _device_type_form(request, name):
     data, digest = sc.load("devices")
     types = data.get("device_types") or {}
     if name is not None and name not in types:

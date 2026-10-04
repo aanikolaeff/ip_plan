@@ -41,11 +41,18 @@ def audit(request, scope, target, action, details=""):
 
 def start_job(request, kind, steps, schedule=None):
     """Поставить задание и ответить переходом на него. Повторный запуск того
-    же вида — уведомление и переход на уже стоящее задание (KTD14)."""
+    же вида — уведомление и переход на уже стоящее задание (KTD14). Если у
+    стоящего задания другой набор шагов (вид manual_selected один на любую
+    выборку) — ошибка без перехода: иначе казалось бы, что выбранные шаги
+    поставлены."""
     job, created = sync_jobs.enqueue(kind, steps, user=request.user.username, schedule=schedule)
     url = reverse("ip_plan:job_detail", args=[job.pk])
     label = sync_jobs.kind_label(kind)
     if not created:
+        if list(job.steps or []) != list(steps):
+            return toast(f"Уже стоит задание #{job.pk} с другим набором шагов ("
+                         + ", ".join(sync_jobs.step_label(s) for s in job.steps or [])
+                         + "), дождитесь его окончания", "error")
         return toast_redirect(url, f"Задание этого вида уже выполняется: «{label}» (#{job.pk})", "info")
     audit(request, "sync", f"задание #{job.pk}", "create",
           f"запуск «{label}»: " + ", ".join(sync_jobs.step_label(s) for s in steps))

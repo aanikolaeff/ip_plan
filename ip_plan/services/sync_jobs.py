@@ -187,6 +187,24 @@ def enqueue(kind, steps, user="", schedule=None):
         return existing, False
 
 
+def plan_manual_run(names):
+    """Что ставить по кнопке «Запуск и расписание»: (вид, шаги, неизвестные).
+
+    names — имена шагов, подписи сводки или скрипты; пусто — все шаги белого
+    списка (KIND_ALL_STEPS). Один шаг — вид = имя шага, несколько —
+    KIND_SELECTED; шаги — в порядке белого списка, без повторов. Есть
+    неизвестные (nmap, миграции netobs) — (None, [], неизвестные)."""
+    if not names:
+        return KIND_ALL_STEPS, [s.name for s in STEPS_LIST], []
+    resolved = {n: resolve_step(n) for n in names}
+    unknown = [n for n, step in resolved.items() if step is None]
+    if unknown:
+        return None, [], unknown
+    picked = set(resolved.values())
+    steps = [s.name for s in STEPS_LIST if s.name in picked]
+    return (steps[0] if len(steps) == 1 else KIND_SELECTED), steps, []
+
+
 def _active_job(kind):
     return SyncJob.objects.filter(kind=kind, status__in=SyncJob.ACTIVE_STATUSES).first()
 

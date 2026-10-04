@@ -21,7 +21,6 @@ from django.db import transaction
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
-from django.utils import timezone
 
 from .models import SyncJob, SyncSchedule
 from .services import sync_jobs, sync_overview, worker_health
@@ -49,13 +48,6 @@ def _when(value):
     return sync_jobs.local_time(value)
 
 
-def _duration(job):
-    end = job.finished_at or (timezone.now() if job.status == SyncJob.STATUS_RUNNING else None)
-    if not job.started_at or not end:
-        return ""
-    return sync_overview.duration((end - job.started_at).total_seconds())
-
-
 def _job_row(job, titles=None):
     """titles — {вид: название расписания} для подписи без запроса на строку
     (см. sync_jobs.kind_label)."""
@@ -65,7 +57,7 @@ def _job_row(job, titles=None):
         "status_class": sync_jobs.STATUS_CLASS.get(job.status, "none"),
         "source_label": job.get_source_display(), "requested_by": job.requested_by,
         "created": _when(job.created_at), "started": _when(job.started_at),
-        "finished": _when(job.finished_at), "duration": _duration(job),
+        "finished": _when(job.finished_at), "duration": sync_overview.job_duration(job),
         "summary": job.summary, "wait_reason": job.wait_reason,
         "steps_count": len(job.steps or []),
     }

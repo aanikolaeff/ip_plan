@@ -3,7 +3,8 @@ docs/plans/2026-10-04-0248-feat-observations-stage2-worker-plan.md, KTD17).
 
 Сборщик отдаёт /health по HTTP только внутри compose (http://worker:8090/health
 по умолчанию): JSON с кэшем состояния его цикла — db up/down, netobs,
-миграции, текущие задания, предупреждения о пакетах, nmap_missed. ip_plan
+миграции, текущие задания, предупреждения о пакетах, nmap_missed,
+spool_bad (отложенные битые файлы спула). ip_plan
 ходит к нему со стороны сервера (браузер этот адрес не видит), с коротким
 таймаутом и кэшем на воркер gunicorn (CACHES не настроен → LocMemCache,
 расхождение между воркерами — не дольше CACHE_SECONDS).
@@ -14,6 +15,7 @@ docs/plans/2026-10-04-0248-feat-observations-stage2-worker-plan.md, KTD17).
 * «не отвечает» — включён, но /health не ответил: баннер-ошибка;
 * ответил — баннер по таблице состояний плана (норма — без баннера).
 """
+import http.client
 import json
 import urllib.request
 
@@ -51,7 +53,11 @@ def fetch(use_cache=True):
             data = json.loads(resp.read().decode("utf-8"))
         if not isinstance(data, dict):
             raise ValueError("ответ /health — не объект JSON")
-    except (OSError, ValueError) as e:  # URLError и HTTPError — подклассы OSError
+    # URLError, HTTPError и обрыв соединения — подклассы OSError; не JSON и
+    # не UTF-8 — ValueError; оборванный ответ (IncompleteRead) и битая строка
+    # статуса — HTTPException. Всё это — «не отвечает», а не 500 на каждой
+    # странице.
+    except (OSError, ValueError, http.client.HTTPException) as e:
         data = {"_down": str(getattr(e, "reason", e)) or e.__class__.__name__}
     cache.set(_CACHE_KEY, data, settings.SYNC_WORKER_HEALTH_CACHE_SECONDS)
     return data
@@ -88,7 +94,8 @@ def banner(health=None, jobs_url=""):
 
     level: error | warn | "" (норма — баннера нет, только индикатор идущих
     заданий). Порядок — от самого важного: сборщик молчит, без базы, затем
-    итог расписаний, nmap, миграции, пакеты."""
+    итог расписаний, nmap, миграции, отложенные битые результаты спула,
+    пакеты."""
     if not enabled():
         return {"enabled": False, "level": "", "text": "", "link": "", "link_text": "", "running": []}
     health = fetch() if health is None else health
@@ -112,6 +119,11 @@ def banner(health=None, jobs_url=""):
         return out
     if health.get("migrations") == "error":
         out.update(level="warn", text="Сборщик не применил миграции netobs", link=jobs_url)
+        return out
+    spool_bad = health.get("spool_bad")
+    if isinstance(spool_bad, list) and spool_bad:
+        out.update(level="warn", text=f"Сборщик отложил повреждённые результаты: {len(spool_bad)}",
+                   link=jobs_url)
         return out
     if health.get("package_warnings"):
         out.update(level="warn", text="Сборщику нужна пересборка образа", link=jobs_url)

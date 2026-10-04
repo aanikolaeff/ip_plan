@@ -398,17 +398,6 @@ def history(key):
     return items
 
 
-def sync_running():
-    """Заблокированы ли сейчас правки conf (KTD18): выполняется задание
-    сборщика с живой арендой или идёт nmap (занята общая блокировка синка
-    в netobs). Подробности и текст причины — sync_jobs.edit_lock(). Каждый
-    шаг читает конфиг в момент своего старта, поэтому правка посреди
-    прогона дала бы смесь старых и новых настроек."""
-    from . import sync_jobs  # sync_jobs тянет модели — импорт по месту
-
-    return sync_jobs.edit_lock() is not None
-
-
 def nmap_pid_file_present():
     """Есть ли PID-файл full_sync.sh (sync_logs/.full_sync.lock) — только для
     сводки «Синк»: блокировать по нему правки нельзя, после SIGKILL он

@@ -16,7 +16,7 @@
         hx-encoding="multipart/form-data">
     {% csrf_token %}
     <div class="modal-body-pad">
-      {% if sync_running %}
+      {% if conf_locked %}
         <div class="st-banner is-danger" role="alert">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
           <span class="st-banner-text"><b>Идёт синхронизация.</b> Импорт меняет несколько файлов сразу, а шаги прогона читают конфигурацию каждый в момент своего старта — правка сейчас дала бы прогон на смеси старых и новых настроек. Дождитесь окончания и повторите.</span>
@@ -36,7 +36,7 @@
 
     <div class="modal-footer-bar">
       <button type="button" class="st-btn st-btn-ghost" @click="$store.modal.requestClose()">Отмена</button>
-      {% if not sync_running %}
+      {% if not conf_locked %}
         <button type="submit" class="st-btn st-btn-primary is-md">Посмотреть, что изменится</button>
       {% endif %}
     </div>
