@@ -1,0 +1,191 @@
+{
+  "registry_version": 1,
+  "about": "Возможности платформ (interfaces_parser моделей devices.json) так, как их сейчас реализуют диспетчеры синка. Код синка этот файл не исполняет: он описывает существующее поведение, а tests/test_platforms.py сверяет его с диспетчерами. ip_plan строит из него списки парсеров и возможностей. Порядок платформ — порядок в выпадающем списке ip_plan. Поля commands — справочные (типовые команды моделей), код их отсюда не читает.",
+  "platforms": {
+    "xfw": {
+      "title": "ViPNet xFW / HW",
+      "transport": "ssh",
+      "interfaces": {"handlers": ["sync_xfw_interfaces"]},
+      "cluster_modes": ["vipnet_failover"],
+      "mac": {"supported": true, "kind": "arp", "path": "vipnet_cluster", "requires_cluster": "vipnet_failover"},
+      "arp_l3": false,
+      "lldp": false,
+      "lldp_details": false,
+      "lacp": false,
+      "vlan": {"parser": "parse_eltex_vlans", "fallback_to_ros": true},
+      "config_end_marker": null,
+      "commands": {
+        "no_pager": "terminal length 0",
+        "interfaces_command": "inet show interface",
+        "mac_command": "inet show mac-address-table"
+      },
+      "port_names": "Linux: ethN, bondN, VLAN bondN.VID; bondN.VID:K — IP-алиасы, не интерфейсы.",
+      "notes": [
+        "С cluster=vipnet_failover у модели интерфейсы и ARP обеих нод снимает sync_vipnet_cluster одним логином; без кластера — sync_xfw_interfaces, а sync_macs ничего не даёт.",
+        "MAC-таблица ViPNet — на деле ARP (вывод arp -n).",
+        "Снимки политики (policy_commands) в кодировке koi8-r, маркера конца конфигурации нет — режется по приглашению."
+      ],
+      "known_issues": [
+        {
+          "key": "iface_command",
+          "where": "netbox_devices_sync.py: sync_xfw_interfaces",
+          "issue": "Без кластера команда интерфейсов читается из ключа iface_command, которого нет ни в одном конфиге и в формах ip_plan (там interfaces_command); работает на дефолте «inet show interface». Не исправлено намеренно — реестр описывает текущее поведение."
+        }
+      ]
+    },
+    "eltex_status": {
+      "title": "Eltex ROS (MES5410, MES2300B, MES2324, MES5316A)",
+      "transport": "ssh",
+      "interfaces": {"handlers": ["sync_eltex_interfaces"]},
+      "cluster_modes": [],
+      "mac": {"supported": true, "kind": "fdb", "path": "mac_dispatch", "handler": "sync_eltex_macs"},
+      "arp_l3": true,
+      "lldp": true,
+      "lldp_details": true,
+      "lacp": true,
+      "vlan": {"parser": "parse_eltex_vlans", "fallback_to_ros": true},
+      "config_end_marker": "(?m)^end\\s*$",
+      "commands": {
+        "no_pager": "terminal datadump",
+        "interfaces_command": "sh int status",
+        "description_command": "sh int desc",
+        "mac_command": "sh mac address-table",
+        "lldp_command": "sh lldp neighbors",
+        "vlan_command": "show vlan",
+        "config_command": "show running-config",
+        "arp_command": "show arp"
+      },
+      "port_names": "gi1/0/1, te1/0/1, twe1/0/45, hu1/0/1, Po1 — совпадают с ifName.",
+      "notes": [
+        "Детали LLDP — show lldp neighbors <порт> (management IP соседа), LACP — show lacp <порт> parameters.",
+        "ARP L3 (arp_command) снимается в шаге топологии вместе с LLDP — только при sync_lldp.",
+        "VLAN разбирается общим путём «всё, чего нет в _VLAN_PARSERS, — формат ROS»; для этой платформы он и есть родной."
+      ],
+      "known_issues": []
+    },
+    "eltex_mes24": {
+      "title": "Eltex ISS (MES2424P, MES2420B, MES2448P)",
+      "transport": "ssh",
+      "interfaces": {"handlers": ["sync_eltex24_interfaces"]},
+      "cluster_modes": [],
+      "mac": {"supported": true, "kind": "fdb", "path": "mac_dispatch", "handler": "sync_eltex24_macs"},
+      "arp_l3": false,
+      "lldp": true,
+      "lldp_details": true,
+      "lacp": true,
+      "vlan": {"parser": "parse_eltex24_vlans", "fallback_to_ros": false},
+      "config_end_marker": "(?m)^end\\s*$",
+      "commands": {
+        "no_pager": "set cli pagination off",
+        "interfaces_command": "show interfaces status",
+        "description_command": "show interfaces description",
+        "mac_command": "show mac-address-table",
+        "lag_command": "show etherchannel summary",
+        "lldp_command": "show lldp neighbors",
+        "vlan_command": "show vlan",
+        "config_command": "show running-config",
+        "serial_command": "show system information"
+      },
+      "port_names": "Имена с пробелом (gi 0/13, po 1) — нормализуются eltex24_ifname() в gi0/13, Po1.",
+      "notes": [
+        "LACP даёт только систему партнёра (номера порта нет), поэтому lacp обычно пуст."
+      ],
+      "known_issues": []
+    },
+    "cisco_ios": {
+      "title": "Cisco IOS (ASR1006-X)",
+      "transport": "ssh",
+      "interfaces": {"handlers": ["sync_cisco_interfaces", "sync_cisco_vrrp"]},
+      "cluster_modes": [],
+      "mac": {"supported": false},
+      "arp_l3": false,
+      "lldp": true,
+      "lldp_details": false,
+      "lacp": false,
+      "vlan": {"parser": "parse_eltex_vlans", "fallback_to_ros": true},
+      "config_end_marker": "(?m)^end\\s*$",
+      "commands": {
+        "no_pager": "terminal length 0",
+        "interfaces_command": "sh int description",
+        "ip_command": "sh run | include interface|ip address",
+        "vrrp_command": "show vrrp",
+        "lldp_command": "sh lldp neighbors detail",
+        "config_command": "show running-config"
+      },
+      "port_names": "Te0/1/0, Gi0/0/0 и сабинтерфейсы с точкой.",
+      "notes": [
+        "Вместе с интерфейсами снимается VRRP (vrrp_command)."
+      ],
+      "known_issues": []
+    },
+    "maipu": {
+      "title": "Maipu (MS5800V2)",
+      "transport": "ssh",
+      "interfaces": {"handlers": ["sync_maipu_interfaces"]},
+      "cluster_modes": [],
+      "mac": {"supported": true, "kind": "fdb", "path": "mac_dispatch", "handler": "sync_maipu_macs"},
+      "arp_l3": false,
+      "lldp": true,
+      "lldp_details": false,
+      "lacp": true,
+      "vlan": {"parser": "parse_eltex_vlans", "fallback_to_ros": true},
+      "config_end_marker": "(?m)^!?end\\s*$",
+      "commands": {
+        "no_pager": "terminal length 0",
+        "interfaces_command": "show interface all brief",
+        "lag_command": "show link-aggregation interface",
+        "mac_command": "show mac-address all",
+        "lldp_command": "sh lldp neighbors",
+        "config_command": "show running-config"
+      },
+      "port_names": "LLDP называет портом агрегат (link-aggN) вместо физического; ifName link-aggregationN ↔ NetBox link-aggN.",
+      "notes": [
+        "LACP — состав агрегатов из lag_command (система и свои номера портов)."
+      ],
+      "known_issues": []
+    },
+    "huawei_vrp": {
+      "title": "Huawei VRP (CX912)",
+      "transport": "ssh",
+      "interfaces": {"handlers": ["sync_huawei_interfaces"]},
+      "cluster_modes": [],
+      "mac": {"supported": true, "kind": "fdb", "path": "mac_dispatch", "handler": "sync_huawei_macs"},
+      "arp_l3": false,
+      "lldp": true,
+      "lldp_details": false,
+      "lacp": false,
+      "vlan": {"parser": "parse_eltex_vlans", "fallback_to_ros": true},
+      "config_end_marker": "(?m)^return\\s*$",
+      "commands": {
+        "no_pager": "screen-length 0 temporary",
+        "interfaces_command": "display interface brief",
+        "mac_command": "display mac-address",
+        "lldp_command": "display lldp neighbor brief",
+        "config_command": "display current-configuration"
+      },
+      "port_names": "10GE1/17/1, Eth-Trunk N.",
+      "notes": [],
+      "known_issues": []
+    },
+    "continent_snmp": {
+      "title": "Код Безопасности по SNMPv3 (Континент IPC-R800/R10, Jinn, Continent TLS)",
+      "transport": "snmp",
+      "interfaces": {"handlers": ["sync_continent"]},
+      "cluster_modes": [],
+      "mac": {"supported": true, "kind": "arp", "path": "interfaces_snmp"},
+      "arp_l3": false,
+      "lldp": false,
+      "lldp_details": false,
+      "lacp": false,
+      "vlan": {"parser": "parse_eltex_vlans", "fallback_to_ros": true},
+      "config_end_marker": null,
+      "commands": {},
+      "port_names": "Имена из ifName (igbN, laggN); член одночленного lagg — его физический порт.",
+      "notes": [
+        "ARP (ipNetToMediaTable) снимается тем же SNMP-опросом, что и интерфейсы; отдельного интерфейса Management не создаётся.",
+        "Проверка доступности — SNMP GET вместо SSH."
+      ],
+      "known_issues": []
+    }
+  }
+}

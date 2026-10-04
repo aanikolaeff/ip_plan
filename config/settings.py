@@ -271,6 +271,14 @@ ACL_WIDE_PREFIX = int(config("ACL_WIDE_PREFIX", default="") or 16)
 # netbox-sync и docs/plans/2026-09-07-netbox-sync-settings-editor-design.md).
 NETBOX_SYNC_CONF_DIR = config("NETBOX_SYNC_CONF_DIR", default="") or str(BASE_DIR / "netbox_sync_conf")
 
+# Реестр платформ netbox-sync (registry/platforms.json, KTD9 этапа 2): из него
+# sync_config строит списки парсеров и их возможностей (MAC, LLDP, транспорт).
+# docker-compose.yml монтирует каталог ${NETBOX_SYNC_DIR:-../netbox-sync}/registry
+# только на чтение — каталог, а не файл: смонтированный файл держит старый inode
+# после git checkout/rsync, а отсутствующий Docker превращает в каталог.
+# Нет файла — раздел «Настройки» показывает плашку, тихого запасного списка нет.
+NETBOX_SYNC_REGISTRY_DIR = config("NETBOX_SYNC_REGISTRY_DIR", default="") or str(BASE_DIR / "netbox_sync_registry")
+
 # --- Раздел "Настройки" (шапка) — сводка последнего прогона netbox-sync ---
 # Тот же принцип и тот же NETBOX_SYNC_DIR, что и у ACL_CONFIG_BACKUPS_DIR
 # выше — только подпапка sync_logs вместо config_backups. См.

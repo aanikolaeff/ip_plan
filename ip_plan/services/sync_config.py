@@ -53,17 +53,112 @@ MASK = "•" * 8
 # подстроки: password, enable_password, bind_password, token.
 _SECRET_PARTS = ("password", "token", "secret")
 
-# Парсеры интерфейсов, реально реализованные в netbox_devices_sync.py
-# (жёсткий if/elif в sync_device). Любое другое значение = шаг "Interfaces"
-# молча пропускается, поэтому в UI это строго выпадающий список.
-INTERFACE_PARSERS = ["xfw", "eltex_status", "eltex_mes24", "cisco_ios", "maipu", "huawei_vrp", "continent_snmp"]
-# Парсеры, которые ходят на устройство не по SSH, а по SNMPv3: у АПКШ
-# «Континент» CLI — меню локального администратора, разбирать его нечем, и
-# netbox_continent_snmp.py снимает интерфейсы, адреса, ARP и состояние
-# кластера с агента. У таких устройств вместо логина/пароля — имя
-# безопасности и пароли аутентификации/шифрования, а проверка подключения
-# делает SNMP GET вместо TCP+SSH.
-SNMP_PARSERS = {"continent_snmp"}
+# Парсеры интерфейсов и их возможности ip_plan не перечисляет сам, а берёт из
+# реестра платформ netbox-sync (registry/platforms.json, KTD9 этапа 2): реестр
+# описывает существующие диспетчеры синка, контрактный тест netbox-sync
+# сверяет его с кодом. Имена INTERFACE_PARSERS, SNMP_PARSERS,
+# MAC_CAPABLE_PARSERS и LLDP_CAPABLE_PARSERS остаются атрибутами модуля, но
+# вычисляются при обращении (__getattr__ внизу раздела):
+#   INTERFACE_PARSERS — все платформы реестра в его порядке. Любое другое
+#     значение = шаг "Interfaces" молча пропускается (жёсткий if/elif в
+#     sync_device), поэтому в UI это строго выпадающий список.
+#   SNMP_PARSERS — transport=snmp. У АПКШ «Континент» CLI — меню локального
+#     администратора, разбирать его нечем, и netbox_continent_snmp.py снимает
+#     интерфейсы, адреса, ARP и состояние кластера с агента. У таких устройств
+#     вместо логина/пароля — имя безопасности и пароли аутентификации/
+#     шифрования, а проверка подключения делает SNMP GET вместо TCP+SSH.
+#   MAC_CAPABLE_PARSERS — mac.supported. У Eltex, Maipu и Huawei это таблица
+#     коммутации (kind=fdb), у ViPNet и Континента — ARP (kind=arp): у ViPNet
+#     команда «inet show mac-address-table» отдаёт вывод arp -n и снимается
+#     внутри обхода кластера (mac.requires_cluster), у Континента —
+#     ipNetToMediaTable тем же SNMP-опросом, что и интерфейсы.
+#   LLDP_CAPABLE_PARSERS — lldp. У xFW 5000 протокола нет вовсе, так что
+#     включённый на нём флаг означал бы шаг, который нечем выполнить.
+# Нет реестра или он битый — SyncConfigError (R5): тихого возврата к
+# зашитым спискам нет, иначе ip_plan и синк разъедутся незаметно.
+REGISTRY_FILE = "platforms.json"
+REGISTRY_VERSION = 1
+_TRANSPORTS = ("ssh", "snmp")
+_REGISTRY_ATTRS = {
+    "INTERFACE_PARSERS": lambda r: list(r["interface"]),
+    "SNMP_PARSERS": lambda r: set(r["snmp"]),
+    "MAC_CAPABLE_PARSERS": lambda r: set(r["mac"]),
+    "LLDP_CAPABLE_PARSERS": lambda r: set(r["lldp"]),
+}
+# Путь файла -> ((mtime_ns, size), разобранный вид). Каталог смонтирован, а
+# файл в нём меняют git checkout/rsync — по mtime/size новая версия видна без
+# перезапуска контейнера.
+_registry_cache = {}
+
+
+def registry_dir():
+    return Path(settings.NETBOX_SYNC_REGISTRY_DIR)
+
+
+def _registry_error(path, why):
+    return SyncConfigError(f"Реестр платформ netbox-sync {path}: {why}")
+
+
+def _parse_registry(path, raw):
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        raise _registry_error(path, f"не разбирается как JSON ({e})")
+    if not isinstance(data, dict) or data.get("registry_version") != REGISTRY_VERSION:
+        got = data.get("registry_version") if isinstance(data, dict) else None
+        raise _registry_error(path, f"registry_version={got!r}, ip_plan понимает {REGISTRY_VERSION}")
+    platforms = data.get("platforms")
+    if not isinstance(platforms, dict) or not platforms:
+        raise _registry_error(path, "platforms должен быть непустым объектом")
+    view = {"interface": [], "snmp": set(), "mac": set(), "lldp": set(), "mac_cluster": {}}
+    for name, spec in platforms.items():
+        if not isinstance(spec, dict) or spec.get("transport") not in _TRANSPORTS:
+            raise _registry_error(path, f"у платформы «{name}» transport не из {', '.join(_TRANSPORTS)}")
+        mac = spec.get("mac") or {}
+        if not isinstance(mac, dict):
+            raise _registry_error(path, f"у платформы «{name}» mac должен быть объектом")
+        view["interface"].append(name)
+        if spec["transport"] == "snmp":
+            view["snmp"].add(name)
+        if mac.get("supported") is True:
+            view["mac"].add(name)
+            if mac.get("requires_cluster"):
+                view["mac_cluster"][name] = (mac["requires_cluster"], mac.get("kind"))
+        if spec.get("lldp") is True:
+            view["lldp"].add(name)
+    return view
+
+
+def _registry():
+    """Разобранный реестр: {interface, snmp, mac, lldp, mac_cluster}."""
+    path = registry_dir() / REGISTRY_FILE
+    try:
+        st = path.stat()
+        stamp = (st.st_mtime_ns, st.st_size)
+        cached = _registry_cache.get(str(path))
+        if cached and cached[0] == stamp:
+            return cached[1]
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        raise _registry_error(
+            path, "файл не найден. Проверьте, что каталог registry/ репозитория netbox-sync "
+                  "смонтирован (NETBOX_SYNC_REGISTRY_DIR, docker-compose.yml).")
+    except OSError as e:
+        raise _registry_error(path, f"не читается ({e})")
+    view = _parse_registry(path, raw)
+    _registry_cache[str(path)] = (stamp, view)
+    return view
+
+
+def __getattr__(name):
+    """INTERFACE_PARSERS и прочие списки из реестра — как атрибуты модуля
+    (PEP 562): вью и тесты обращаются к sc.MAC_CAPABLE_PARSERS как раньше."""
+    build = _REGISTRY_ATTRS.get(name)
+    if build is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    return build(_registry())
+
+
 SNMP_AUTH_PROTOS = ["md5", "sha1"]
 SNMP_PRIV_PROTOS = ["des", "aes"]
 # Раздел «SNMP» есть у каждого устройства, независимо от транспорта: пустая
@@ -90,29 +185,19 @@ def snmp_version(cfg):
 
 def transport(parser):
     """«snmp» или «ssh» — чем синк ходит на устройства с этим парсером."""
-    return "snmp" if parser in SNMP_PARSERS else "ssh"
-# Снятие MAC-таблицы поддержано для этих парсеров. У Eltex, Maipu и Huawei
-# это таблица коммутации (кто за каким портом), у ViPNet — ARP-таблица:
-# команда там называется «inet show mac-address-table», но отдаёт вывод
-# arp -n, поэтому в NetBox такие записи помечаются отдельным маркером
-# (см. _ARP_DESCRIPTION в netbox_devices_sync.py). ViPNet снимается не
-# отдельным проходом, а вместе с интерфейсами кластера, одним логином.
-# У Континента, как и у ViPNet, это ARP (ipNetToMediaTable по SNMP), снимается
-# тем же опросом, что и интерфейсы.
-MAC_CAPABLE_PARSERS = {"eltex_status", "eltex_mes24", "maipu", "huawei_vrp", "xfw", "continent_snmp"}
-# LLDP умеют Cisco, Eltex, Maipu и Huawei — у xFW 5000 протокола нет вовсе,
-# так что включённый на нём флаг означал бы шаг, который нечем выполнить.
-LLDP_CAPABLE_PARSERS = {"eltex_status", "eltex_mes24", "cisco_ios", "maipu", "huawei_vrp"}
+    return "snmp" if parser in _registry()["snmp"] else "ssh"
+
 
 # Справочник парсеров для карточки модели: транспорт и что каждый умеет
-# снять. Возможности выводятся из MAC/LLDP-множеств выше, а не пишутся
-# второй раз — иначе карточки разъедутся с валидацией.
+# снять. Возможности выводятся из того же реестра, что и валидация, а не
+# пишутся второй раз — иначе карточки разъедутся с проверками.
 def parser_catalog():
-    return [{"key": p, "transport": transport(p),
+    reg = _registry()
+    return [{"key": p, "transport": "snmp" if p in reg["snmp"] else "ssh",
              "caps": ["интерфейсы"]
-                     + (["MAC"] if p in MAC_CAPABLE_PARSERS else [])
-                     + (["LLDP"] if p in LLDP_CAPABLE_PARSERS else [])}
-            for p in INTERFACE_PARSERS]
+                     + (["MAC"] if p in reg["mac"] else [])
+                     + (["LLDP"] if p in reg["lldp"] else [])}
+            for p in reg["interface"]]
 
 
 # Режимы кластера модели. Синк знает один — vipnet_failover
@@ -427,10 +512,10 @@ def validate_device(cfg, device_types):
     # sync_macs имеет смысл только для парсеров, у которых он вообще
     # реализован (_mac_dispatch в netbox_devices_sync.py) — иначе шаг
     # молча пропустится, а человек будет думать, что включил.
-    if eff.get("sync_macs") and parser not in MAC_CAPABLE_PARSERS:
+    if eff.get("sync_macs") and parser not in _registry()["mac"]:
         raise SyncConfigError(
             f"Сбор MAC-таблицы не поддержан для парсера «{parser}» "
-            f"(есть только для {', '.join(sorted(MAC_CAPABLE_PARSERS))}).")
+            f"(есть только для {', '.join(sorted(_registry()['mac']))}).")
     # MAC снимается хвостом шага интерфейсов (ранний return при выключенном
     # sync_interfaces стоит ДО блока MAC), так что одно без другого — молча
     # несобираемая таблица.
@@ -439,16 +524,19 @@ def validate_device(cfg, device_types):
             "Сбор MAC-таблицы включён, но выключены интерфейсы: MAC снимается "
             "внутри шага интерфейсов и без него собран не будет.")
     # У xfw MAC/ARP снимается не общим диспетчером, а внутри обхода кластера
-    # ViPNet, и только при cluster=vipnet_failover.
-    if eff.get("sync_macs") and parser == "xfw" and eff.get("cluster") != "vipnet_failover":
+    # ViPNet, и только при cluster=vipnet_failover (mac.requires_cluster в
+    # реестре).
+    need_cluster = _registry()["mac_cluster"].get(parser) if eff.get("sync_macs") else None
+    if need_cluster and eff.get("cluster") != need_cluster[0]:
+        table = "ARP-таблица" if need_cluster[1] == "arp" else "MAC-таблица"
         raise SyncConfigError(
-            "Для парсера «xfw» ARP-таблица снимается только в режиме кластера: "
-            "у модели должно быть задано cluster=vipnet_failover.")
+            f"Для парсера «{parser}» {table} снимается только в режиме кластера: "
+            f"у модели должно быть задано cluster={need_cluster[0]}.")
     if eff.get("sync_lldp"):
-        if parser not in LLDP_CAPABLE_PARSERS:
+        if parser not in _registry()["lldp"]:
             raise SyncConfigError(
                 f"Сбор LLDP-соседей не поддержан для парсера «{parser}» "
-                f"(есть только для {', '.join(sorted(LLDP_CAPABLE_PARSERS))}).")
+                f"(есть только для {', '.join(sorted(_registry()['lldp']))}).")
         if not type_cfg.get("lldp_command"):
             raise SyncConfigError(
                 f"Сбор LLDP-соседей включён, но у модели «{model}» не задана "
@@ -473,18 +561,19 @@ _POLICY_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 def validate_device_type(cfg):
     """Проверка конфига модели — общая для карточки модели и импорта."""
     parser = cfg.get("interfaces_parser", "")
-    if parser not in INTERFACE_PARSERS:
+    reg = _registry()
+    if parser not in reg["interface"]:
         raise SyncConfigError(
             f"Парсер интерфейсов «{parser}» не реализован в netbox_devices_sync.py. "
-            f"Допустимо: {', '.join(INTERFACE_PARSERS)}")
-    if cfg.get("sync_macs") and parser not in MAC_CAPABLE_PARSERS:
+            f"Допустимо: {', '.join(reg['interface'])}")
+    if cfg.get("sync_macs") and parser not in reg["mac"]:
         raise SyncConfigError(
             f"Сбор MAC-таблицы не реализован для парсера «{parser}» "
-            f"(есть только для {', '.join(sorted(MAC_CAPABLE_PARSERS))}).")
-    if cfg.get("sync_lldp") and parser not in LLDP_CAPABLE_PARSERS:
+            f"(есть только для {', '.join(sorted(reg['mac']))}).")
+    if cfg.get("sync_lldp") and parser not in reg["lldp"]:
         raise SyncConfigError(
             f"Сбор LLDP-соседей не реализован для парсера «{parser}» "
-            f"(есть только для {', '.join(sorted(LLDP_CAPABLE_PARSERS))}).")
+            f"(есть только для {', '.join(sorted(reg['lldp']))}).")
     if cfg.get("sync_lldp") and not cfg.get("lldp_command"):
         raise SyncConfigError("Сбор LLDP-соседей включён, но не задана команда LLDP-соседей")
     policy = cfg.get("policy_commands")

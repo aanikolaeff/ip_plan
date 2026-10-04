@@ -773,8 +773,23 @@ def device_flags(request):
                   {"flag_fields": _device_flag_fields(cfg, data.get("device_types") or {})})
 
 
+def _load_error_page(request, active, error):
+    """Карточка, которую нечем построить (нет devices.json, реестра платформ
+    и т. п.): та же плашка, что у вкладок, вместо 500."""
+    ctx = _page_ctx(request, active)
+    ctx["load_error"] = str(error)
+    return render(request, "ip_plan/settings.html", ctx)
+
+
 @staff_required
 def device_form(request, name=None):
+    try:
+        return _device_form(request, name)
+    except sc.SyncConfigError as e:
+        return _load_error_page(request, "devices", e)
+
+
+def _device_form(request, name):
     data, digest = sc.load("devices")
     devices = data.get("devices") or {}
     if name is not None and name not in devices:
@@ -1146,6 +1161,13 @@ def _with_counts(names, used):
 
 @staff_required
 def device_type_form(request, name=None):
+    try:
+        return _device_type_form(request, name)
+    except sc.SyncConfigError as e:
+        return _load_error_page(request, "models", e)
+
+
+def _device_type_form(request, name):
     data, digest = sc.load("devices")
     types = data.get("device_types") or {}
     if name is not None and name not in types:

@@ -180,8 +180,12 @@ class _ConfMixin:
                                           encoding="utf-8")
         logs = Path(self.tmp.name) / "logs"
         logs.mkdir()
+        # Реестр платформ — фикстура, копия netbox-sync/registry/platforms.json
+        # (сверку с настоящим держит test_platform_registry).
+        registry = Path(__file__).resolve().parent / "fixtures"
         patcher = override_settings(NETBOX_SYNC_CONF_DIR=str(conf), SYNC_LOGS_DIR=str(logs),
-                                    NETBOX_SYNC_LOCK_FILE=str(logs / ".lock"))
+                                    NETBOX_SYNC_LOCK_FILE=str(logs / ".lock"),
+                                    NETBOX_SYNC_REGISTRY_DIR=str(registry))
         patcher.enable()
         self.addCleanup(patcher.disable)
         for target in ("ip_plan.services.sync_config.site_options",

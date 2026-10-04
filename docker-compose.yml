@@ -61,6 +61,10 @@ services:
       - ${NETBOX_SYNC_DIR:-../netbox-sync}/firewall_blocklists:/app/firewall_blocklists:ro
       # Карта сети: сводка прогона топологии (topology.json, unconfirmed_cables.json).
       - ${NETBOX_SYNC_DIR:-../netbox-sync}/lldp_snapshots:/app/lldp_snapshots:ro
+      # Реестр платформ (registry/platforms.json): списки парсеров и их
+      # возможностей в «Настройках». Каталог, а не файл — см.
+      # NETBOX_SYNC_REGISTRY_DIR в config/settings.py.
+      - ${NETBOX_SYNC_DIR:-../netbox-sync}/registry:/app/netbox_sync_registry:ro
       # Единственный mount из netbox-sync, открытый НА ЗАПИСЬ: раздел
       # "Настройки" правит conf/devices.json, conf/config.json и оба
       # conf/sources_*.json (см. ip_plan/services/sync_config.py). Именно
