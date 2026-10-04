@@ -248,6 +248,9 @@
 :root[data-theme="dark"] .st-pill.is-run { color: #0b0b0d; }
 .st-pill.is-wait { background: var(--soft); color: var(--muted); }
 .st-pill.is-none, .st-pill.is-skip { background: var(--soft); color: var(--faint); }
+/* «Выполнено с ошибками» — итог задания сборщика (сводка «Синк»), как в jobs.css. */
+.st-pill.is-warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--text); }
+a.st-pill { text-decoration: none; }
 .st-spin { animation: st-spin .8s linear infinite; }
 @keyframes st-spin { to { transform: rotate(360deg); } }
 

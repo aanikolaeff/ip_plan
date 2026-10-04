@@ -38,9 +38,14 @@ _DUMP_EXCLUDES = ("contenttypes", "auth.permission", "sessions", "admin.logentry
                   "ip_plan.syncjob")
 
 # Что засевают миграции и что поэтому может лежать в «пустой» целевой базе
-# сразу после migrate: 0003 — имена объектов xFW, 0008 — синглтон LDAP.
+# сразу после migrate: 0003 — имена объектов xFW, 0008 — синглтон LDAP,
+# 0013 — расписания ночи «До nmap» / «После nmap». Засеянное расписание
+# узнаётся по пометке в updated_by: правка в интерфейсе пишет туда имя, а
+# сборщик меняет только next_run — такая строка всё ещё засеянная.
 SEEDED_FIREWALL_NAMES = {"ip": "BLOCK_BY_IP_2", "fqdn": "BBDNS_1"}
 SEEDED_LDAP_MARK = "migration 0008"
+SEEDED_SCHEDULE_MARK = "migration 0013"
+SEEDED_SCHEDULE_KINDS = frozenset({"night_before_nmap", "night_after_nmap"})
 
 # Таблицы, наполняемые самим migrate (post_migrate), — их строки в целевой
 # базе не делают её «непустой».
@@ -318,10 +323,10 @@ def source_problems(using="default"):
 
 def target_problems(using="default"):
     """Целевая база должна быть пуста, кроме того, что засеял migrate:
-    contenttypes/permissions, имена объектов xFW (0003) и синглтон LDAP (0008)
-    — причём ровно в засеянном виде. Таблиц может не быть вовсе (migrate ещё
+    contenttypes/permissions, имена объектов xFW (0003), синглтон LDAP (0008)
+    и расписания ночи (0013) — причём ровно в засеянном виде. Таблиц может не быть вовсе (migrate ещё
     не выполнялся) — это тоже пустая база."""
-    from ip_plan.models import FirewallObjectName, LdapConfig
+    from ip_plan.models import FirewallObjectName, LdapConfig, SyncSchedule
     tables = _tables(using)
     problems = []
     for model in apps.get_models(include_auto_created=True):
@@ -339,6 +344,12 @@ def target_problems(using="default"):
             seeded = len(rows) == 1 and rows[0][0] == 1 and (rows[0][1] or "").startswith(SEEDED_LDAP_MARK)
             if rows and not seeded:
                 problems.append(f"{opts.label}: настройки уже менялись после миграции 0008")
+            continue
+        if model is SyncSchedule:
+            rows = list(manager.values_list("kind", "updated_by"))
+            if any(kind not in SEEDED_SCHEDULE_KINDS or not (by or "").startswith(SEEDED_SCHEDULE_MARK)
+                   for kind, by in rows):
+                problems.append(f"{opts.label}: расписания отличаются от засеянных миграцией 0013")
             continue
         count = manager.count()
         if count:
@@ -368,8 +379,9 @@ def reset_sequences(using="default"):
 
 def load(fixture, using="default"):
     """Удаление засеянных строк и загрузка — одной транзакцией: при сбое
-    загрузки не останется базы без синглтона LDAP и имён объектов xFW."""
-    from ip_plan.models import FirewallObjectName, LdapConfig
+    загрузки не останется базы без синглтона LDAP, имён объектов xFW и
+    расписаний ночи."""
+    from ip_plan.models import FirewallObjectName, LdapConfig, SyncSchedule
     problems = migration_problems(using)
     if problems:
         raise TransferError("Целевая база не на версии миграций кода (сначала migrate):", problems)
@@ -379,6 +391,9 @@ def load(fixture, using="default"):
             raise TransferError("Целевая база не пуста — перенос в неё отменён:", problems)
         FirewallObjectName.objects.using(using).all().delete()
         LdapConfig.objects.using(using).all().delete()
+        # Задания на цели пусты (target_problems), так что ссылок на
+        # засеянные расписания нет; у источника свои — с теми же видами.
+        SyncSchedule.objects.using(using).all().delete()
         call_command("loaddata", fixture, database=using, verbosity=0)
         return reset_sequences(using)
 

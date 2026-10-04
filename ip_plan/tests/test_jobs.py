@@ -95,6 +95,10 @@ class _Enabled(TestCase):
             self.addCleanup(p.stop if hasattr(p, "stop") else p.disable)
         self.staff = User.objects.create_user("adm", password="x", is_staff=True)
         self.user = User.objects.create_user("viewer", password="x")
+        # Миграция 0013 засевает расписания ночи; эти тесты проверяют экран
+        # и формы с чистого листа. Сами расписания по умолчанию —
+        # test_sync_overview.DefaultScheduleTests.
+        SyncSchedule.objects.all().delete()
 
     def health(self, data):
         p = mock.patch.object(worker_health, "fetch", return_value=data)

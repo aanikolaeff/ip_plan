@@ -117,6 +117,8 @@ class ActiveJobUniquenessTests(TestCase):
 
 class ScheduleTickTests(TestCase):
     def setUp(self):
+        # Расписания по умолчанию (миграция 0013) здесь не нужны — тот же вид.
+        SyncSchedule.objects.all().delete()
         self.schedule = SyncSchedule.objects.create(
             kind="night_after_nmap", steps=["netbox_devices_sync", "topology"],
             trigger="after_nmap", fallback_at=time(6, 0))
@@ -157,6 +159,9 @@ class ScheduleTriggerConsistencyTests(TestCase):
     """Запуск по интервалу, по времени суток или «после nmap» с запасным
     временем (KTD15): у каждого вида — своё обязательное поле. Сборщик читает
     таблицу сам, и строка без нужного поля остановила бы его цикл."""
+
+    def setUp(self):
+        SyncSchedule.objects.all().delete()   # без засеянных миграцией 0013
 
     def _bad(self, **kwargs):
         with self.assertRaises(IntegrityError), transaction.atomic():

@@ -40,7 +40,7 @@ PostgreSQL (только при `IP_PLAN_DB_ENGINE=postgres`, до `DB_WAIT_SECO
 устроена так — своих моделей для неё нет, всё читается/пишется напрямую через
 NetBox API (`ip_plan/services/netbox_client.py`). Но за последнее время
 появилось несколько подсистем с **настоящими Django-моделями и БД**
-(`ip_plan/models.py`, `ip_plan/migrations/`, 10 миграций на момент написания):
+(`ip_plan/models.py`, `ip_plan/migrations/`, 13 миграций на 04.10.2026):
 
 - **Реестр блокировок регулятора** (`RegulatorDocument`, `RegulatorEntry`,
   `FirewallObjectName`) — письма регулятора и их IP/FQDN/URL/IOC-записи
@@ -90,12 +90,19 @@ NetBox API (`ip_plan/services/netbox_client.py`). Но за последнее �
     «ничего не собираем», хотя сбор идёт — `sync_macs` и `sync_lldp` почти
     везде заданы на уровне моделей.
 
-  Списки `MAC_CAPABLE_PARSERS` и `LLDP_CAPABLE_PARSERS` в
-  `services/sync_config.py` — это то, что реально реализовано в
-  `netbox_devices_sync.py`/`netbox_lldp_topology.py`. Включённый флаг на
-  неподдерживаемом парсере означал бы шаг, который нечем выполнить, поэтому
-  форма его не принимает. При добавлении парсера в netbox-sync эти списки
-  нужно расширить здесь же, иначе флаг не выставить из UI.
+  **Парсеры и их возможности — из реестра платформ netbox-sync**
+  (`registry/platforms.json`, с 04.10.2026). `INTERFACE_PARSERS`,
+  `SNMP_PARSERS`, `MAC_CAPABLE_PARSERS`, `LLDP_CAPABLE_PARSERS` в
+  `services/sync_config.py` остались именами модуля, но вычисляются из
+  реестра (кэш по mtime — новая версия файла видна без перезапуска). Каталог
+  `registry/` смонтирован в `web` только на чтение
+  (`/app/netbox_sync_registry`, `NETBOX_SYNC_REGISTRY_DIR`); каталог, а не
+  файл — смонтированный файл держит старый inode после `git checkout`.
+  Нет реестра или он битый — `SyncConfigError`, тихого возврата к зашитым
+  спискам нет (R5). Новый парсер в netbox-sync = правка реестра там же
+  (контрактный тест netbox-sync сверяет его с диспетчерами); здесь править
+  ничего не нужно. Включённый флаг на неподдерживаемом парсере форма
+  по-прежнему не принимает.
 
   - **Раздел «SNMP» есть у каждого устройства** (30.09.2026), независимо от
     транспорта: версия (`snmp_version`: пусто / `v2c` / `v3`), порт,
@@ -229,17 +236,13 @@ NetBox API (`ip_plan/services/netbox_client.py`). Но за последнее �
 его регуляркой `_HEADER_RE` (группа необязательная — логи, снятые до
 появления строки, парсятся по-прежнему).
 
-> [!warning] `STEP_NAMES` в `sync_log.py` — ручная копия списка шагов из
-> `full_sync.sh`, и они уже расходились: шаг «LLDP topology» добавили в
-> скрипт, а сюда забыли, и сводка молча показывала девять шагов вместо
-> десяти. Добавляя шаг в `full_sync.sh`, правьте оба списка. Сейчас шагов 12,
-> первый — «Netobs migrate» (03.10.2026, `netobs_migrate.py`). Тесты в
-> `test_settings.py` ищут шаги **по имени** (`STEP_NAMES.index("LLDP topology")`),
-> а не по номеру, так что вставка шага в начало списка их не ломает — но
-> новый шаг нужно вставлять в том же месте, где он стоит в `full_sync.sh`:
-> порядок строк в сводке и «осталось» считаются по порядку списка. Тот же
-> тест (`test_reachability_is_a_step_and_matches_full_sync`) сверяет имена и
-> скрипты шагов с `full_sync.sh`, если репозиторий netbox-sync лежит рядом.
+С этапа 2 `full_sync.sh` выполняет только nmap, и версия из его лога —
+версия ночного nmap. Задания сборщика несут свою (`SyncJob.code_version`);
+сводка «Синк» показывает версию последнего задания цепочки ночи, а без
+заданий — из лога nmap. Ручной копии списка шагов `full_sync.sh` в
+`sync_log.py` больше нет: там один `NMAP_STEP` (тест сверяет его с
+`full_sync.sh`, если netbox-sync лежит рядом), шаги заданий — из
+`sync_jobs.STEPS_LIST`.
 
 ## Оболочка: боковое меню, площадка, тема (этап 1 нового дизайна, 01.10.2026)
 
@@ -583,24 +586,18 @@ OOB вместе с ним); `/regulator/commands/` (`reg_commands.html`, мас
 умолчанию — `sync`. Общий контекст страниц — `_page_ctx` (рейка с точкой
 состояния синка у «Запуск и расписание»).
 
-- **Запуск и расписание** (`services/sync_overview.py`). Всё — из лога
-  `full_sync.sh` и lock-файла: строки шагов с русскими названиями
-  (`sync_log.STEPS` — копия `STEP_NAMES`/`STEP_SCRIPTS` скрипта с
-  подписями), карточки последнего прогона, прогресс идущего с оценкой
-  «осталось» по средним прошлых логов, раскрашенный хвост журнала (опрос
-  `settings/sync/state/` раз в 5 с, пока есть lock). Время шага ≈ старт +
-  сумма длительностей (в логе нет меток времени по шагам). Лог без SUMMARY
-  при отсутствии lock — «прогон оборван». Текущий шаг определяется по
-  строке начала `  [Имя] команда`, а не «первый без итога».
-  **Запуск/остановка из UI — заглушка** (`sync_run`: 204 + тост), решение
-  01.10: канала с контейнера на хост нет.
+- **Запуск и расписание** — сводка «Синк» (`services/sync_overview.py`,
+  с 04.10.2026 по заданиям, KTD19); см. «Сборщик заданий и раздел
+  „Задания“» ниже.
 - `SYNC_LOG_TZ` (Europe/Moscow) — зона времени в логах: Django в UTC, без
   неё «последний прогон» и сравнение с журналом съезжали на 3 часа.
-  `SYNC_SCHEDULE` (`0 3 * * *`) — cron хоста для «Следующий прогон»
-  (понимается только `M H * * *`).
+  `SYNC_SCHEDULE` (`0 3 * * *`) — cron nmap на хосте для карточки nmap
+  (понимается только `M H * * *`). Тот же пояс — у суточных расписаний
+  сборщика.
 - **Оборудование.** Фильтр по площадке оболочки (cookie `ip_plan_site`;
   «все»/«без площадки» = все). Баннер «Изменено N устройств» —
-  `SettingsAudit` по `devices` позже начала последнего шага Devices.
+  `SettingsAudit` по `devices` позже начала последнего шага
+  `netbox_devices_sync` (по заданиям, `sync_overview.devices_step_started`).
   Чипы: `both` / `model` / `dev` / **`off`** (у модели включено, на
   устройстве явный false — раньше такие шаги просто не показывались).
 - **Карточки устройства и модели — страницы** (`settings_device.html`,
@@ -625,9 +622,98 @@ OOB вместе с ним); `/regulator/commands/` (`reg_commands.html`, мас
   (группы, права) — `ldap_check.test_user(..., info=)`.
 - **Журнал:** категории (`?cat=sync|conf|access`), подписи разделов и
   действий — `_AUDIT_SCOPES` / `_audit_row`. Импорт/экспорт показываются
-  своими чипами по `scope`. Событий «запуск синка» пока нет (запуск —
-  заглушка).
+  своими чипами по `scope`. Запуски и правки расписаний пишутся со
+  `scope="sync"`.
 - Тесты — `tests/test_settings.py`.
+
+## Сборщик заданий и раздел «Задания» (этап 2, 04.10.2026)
+
+План — `docs/plans/2026-10-04-0248-feat-observations-stage2-worker-plan.md`
+(U8–U12). Все шаги синка, кроме nmap, выполняет сборщик netbox-sync
+(`netbox-sync/worker.py`) в контейнере `worker` этого compose; ip_plan
+задания только ставит и показывает. Устройство сборщика, белый список,
+блокировка и триггеры — `netbox-sync/CLAUDE.md`, «Сборщик заданий».
+
+- **Модели** `SyncSchedule` / `SyncJob` с явными `db_table`
+  (`sync_schedule`, `sync_job`) — контракт с netbox-sync: имена и колонки
+  закреплены тестом (`test_sync_jobs_models.ContractTests`), сборщик пишет
+  туда сырым SQL. Миграция `0012_sync_jobs` выдаёт роли `sync_worker` права
+  только на эти таблицы (при PostgreSQL и наличии роли); сборщику в
+  `sync_schedule` можно менять только `next_run`.
+- **Роль `sync_worker`** заводит `db/bootstrap.sh` (`CONNECT` к `ip_plan`,
+  пароль `SYNC_WORKER_DB_PASSWORD` из `.env.db`). На существующем томе
+  bootstrap нужно выполнить вручную (см. «PostgreSQL и перенос с SQLite»).
+  Тот же пароль одной строкой `SYNC_WORKER_DB_PASSWORD=…` лежит в
+  **`.env.worker`** — единственный файл секретов контейнера `worker`
+  (`.gitignore`, `.dockerignore`, права 0600); ни `.env`, ни `.env.db` туда
+  не подключаются. Пароль `netobs` сборщик берёт из
+  `netbox-sync/conf/netobs.json`.
+- **Включение** — профиль `worker` и PostgreSQL: `IP_PLAN_DB_ENGINE=postgres`,
+  `COMPOSE_PROFILES=worker` (через запятую с `gateway`) или
+  `docker compose --profile worker up -d worker`; в `.env` —
+  `NETBOX_SYNC_ENV` (`local`/`prod`, пусто — сборщик не стартует) и
+  `NETBOX_SYNC_NETBOX_URL` (адрес NetBox из контейнера, локально
+  `http://host.docker.internal:8000`). Образ — из
+  `netbox-sync/docker/worker.Dockerfile`, пересобирать только при смене
+  `netbox-sync/requirements.txt`. Без профиля или на SQLite нет ни баннера,
+  ни раздела «Задания» (404), кнопки запуска отвечают тостом
+  (`worker_health.enabled()`).
+- **Раздел «Задания»** (`/jobs/`, `views_jobs.py`, `jobs.html`,
+  `job_detail.html`, пункт бокового меню): расписания (цепочка или один шаг;
+  по интервалу, по времени суток, «после nmap» с запасным временем),
+  «Запустить сейчас» по любому шагу белого списка, история с выводом
+  (голова и хвост в строке задания, полный лог — `sync_logs/worker/<id>.log`).
+  Видят все вошедшие, запускать и править расписания — только staff
+  (netbox-admins). Повторный запуск того же вида открывает уже стоящее
+  задание. Белый список шагов — копия в `services/sync_jobs.py`, сверяется
+  с `netbox-sync/worker_steps.py` тестом `test_jobs.WorkerStepsContractTests`
+  (как и ключ общей блокировки).
+- **Расписания по умолчанию** — миграция `0013_default_night_chain`:
+  «До nmap» (`night_before_nmap`, ежедневно 02:30 — кастомные поля, VLAN и
+  префиксы) и «После nmap» (`night_after_nmap`, после nmap, запасное время
+  06:00 — остальные шаги в прежнем порядке, ротация `netobs` последней).
+  Время — в поясе `SYNC_LOG_TZ`, `next_run` ставит сборщик. Миграция
+  идемпотентна и вид, заведённый руками, не трогает. Засеянные строки
+  помечены `updated_by = "migration 0013 …"` — по пометке перенос
+  SQLite ↔ PostgreSQL (`db_transfer`, `SEEDED_SCHEDULE_MARK`) не считает их
+  данными цели и заменяет расписаниями источника; правка в интерфейсе
+  пишет в `updated_by` имя, и строка перестаёт быть засеянной.
+- **Баннер** под шапкой на всех страницах (`worker_health.banner`, опрос
+  `/worker/health.json` раз в 30 с; web ходит к `/health` сборщика сам,
+  таймаут 1,5 с, кэш 20 с): только при беде — сборщик молчит, нет базы,
+  плановое задание упало, ночной nmap не прошёл, миграции `netobs` не
+  применены, пакеты расходятся с `requirements.txt`. Норма — без баннера,
+  идущее задание — индикатор «выполняется …» в шапке.
+- **Блокировка правок `conf`** (KTD18, R15): декоратор `conf_write` —
+  пока есть задание `running` с живой арендой или занята общая блокировка
+  синка (nmap, `pg_locks` в `netobs` под `ip_plan_ro`), POST в формы,
+  пишущие в `netbox-sync/conf`, отвечает 409 с причиной. LDAP и
+  пользователи не блокируются. PID-файл nmap правки не держит.
+- **Сводка «Синк»** («Настройки → Запуск и расписание»,
+  `services/sync_overview.py`, KTD19): строки шагов в порядке ночи (nmap
+  между «VLAN и подсети» и «Устройства»); у шага — итог последнего задания,
+  где он выполнялся (`step_results`, `skipped` не считается), со ссылкой на
+  задание; у идущего задания — текущий шаг, очередь, прогресс и хвост
+  вывода; nmap — из лога `full_sync.sh` и его PID-файла (`sync_log.py`).
+  Карточки — «До nmap», nmap, «После nmap» и версия. Пустая история —
+  «ещё не запускалось». Тот же источник у «последнего сбора» RedVirt/vCenter
+  в «Гипервизорах» (`step_info`).
+
+**Тесты** — вместе с соседним netbox-sync, иначе контрактные тесты
+(белый список, ключ блокировки, `full_sync.sh` — только nmap) пропускаются,
+а тесты реестра не находят файл:
+
+```bash
+docker compose run --rm --no-deps -T -e IP_PLAN_DB_ENGINE=sqlite -v "$PWD":/app \
+  -v "$PWD/../netbox-sync":/netbox-sync:ro \
+  -v "$PWD/../netbox-sync/registry":/app/netbox_sync_registry:ro \
+  --entrypoint sh web -c "python manage.py collectstatic --noinput -v0 && python manage.py test ip_plan --noinput"
+rm -rf staticfiles/
+```
+
+То же с `IP_PLAN_DB_ENGINE=postgres` (нужен запущенный `postgres`; права
+`sync_worker` проверяются только там). Два прогона на PostgreSQL
+одновременно не запускать — у них общая тестовая база.
 
 ## ACL v2: «где встречается адрес» (этап 3 нового дизайна, 01.10.2026)
 
@@ -1101,7 +1187,12 @@ netbox-sync (MAC-таблицы коммутаторов и ARP), а не по �
 | `SESSION_COOKIE_NAME` / `CSRF_COOKIE_NAME` | Свои имена — на одном hostname с NetBox/другим стендом на другом порту дефолтные имена кук развидят один логин при входе в другой (браузер не различает куки по порту) |
 | `NETBOX_SYNC_DIR` | Хостовый (не внутриконтейнерный) путь до корня `netbox-sync` — только для `docker-compose.yml volumes`, Django не читает напрямую. Пусто = сиблинг-директория `../netbox-sync`. На проде — обязательно (раннер чекаутит проекты не рядом), см. `NETBOX_SYNC_DIR` в `netbox-sync/CLAUDE.md` про `DEPLOY_PATH=/opt/scan` |
 | `ACL_CONFIG_BACKUPS_DIR` / `SYNC_LOGS_DIR` / `FIREWALL_BLOCKLISTS_DIR` | Пути ВНУТРИ контейнера до примонтированных read-only данных netbox-sync (страница ACL, сводка в «Настройках», блокировки регулятора) — пусто = дефолт, совпадающий с точкой монтирования в `docker-compose.yml` |
-| `SYNC_LOG_TZ` / `SYNC_SCHEDULE` | Зона времени в логах full_sync.sh (по умолчанию Europe/Moscow) и cron хоста синка (`0 3 * * *`) — для «Настройки → Запуск и расписание» |
+| `SYNC_LOG_TZ` / `SYNC_SCHEDULE` | Зона времени в логах full_sync.sh и суточных расписаний сборщика (по умолчанию Europe/Moscow) и cron nmap на хосте (`0 3 * * *`) — для «Настройки → Запуск и расписание» |
+| `NETBOX_SYNC_REGISTRY_DIR` | Каталог реестра платформ netbox-sync внутри контейнера; пусто = `/app/netbox_sync_registry` (mount `registry/` в `docker-compose.yml`). Нет файла — ошибка в «Настройках» |
+| `COMPOSE_PROFILES` | `worker` — сборщик заданий (только с `IP_PLAN_DB_ENGINE=postgres`), `gateway` — Guacamole; через запятую |
+| `NETBOX_SYNC_ENV` / `NETBOX_SYNC_NETBOX_URL` | Для контейнера `worker`: `--env` шагов (`local`/`prod`, пусто — не стартует) и адрес NetBox изнутри контейнера (пусто — `netbox_url` из `conf/config.json`) |
+| `SYNC_WORKER_HEALTH_URL` / `_PORT` / `_TIMEOUT` / `_CACHE_SECONDS` | Где web спрашивает `/health` сборщика. Пусто = `http://worker:8090/health`, если в `COMPOSE_PROFILES` есть `worker`, иначе сборщик считается выключенным; таймаут 1,5 с, кэш 20 с |
+| `.env.worker`: `SYNC_WORKER_DB_PASSWORD` | Единственный секрет контейнера `worker` — пароль роли `sync_worker` (то же значение, что в `.env.db`). Не в `.env`: тот целиком уходит в `web` |
 | `IP_PLAN_DB_ENGINE` | `sqlite` (пусто = sqlite) или `postgres`. На `postgres` — только вместе с переносом `scripts/sqlite_to_postgres.sh`; на проде CI-переменная (`${IP_PLAN_DB_ENGINE:-sqlite}` пишется в `.env` при каждом деплое — правка `.env` на хосте не работает). Неизвестное значение — ошибка при старте |
 | `IP_PLAN_DB_HOST` / `_PORT` / `_NAME` / `_USER` / `_PASSWORD` | База Django при `postgres`: `postgres` / `5432` / `ip_plan` / `ip_plan` / пароль. Изнутри compose порт 5432, а не `POSTGRES_HOST_PORT`; с хоста (`manage.py` против той же базы) — `127.0.0.1` и порт хоста. Пароль = `IP_PLAN_DB_PASSWORD` из `.env.db` |
 | `NETOBS_RO_HOST` / `_PORT` / `_NAME` / `_USER` / `_PASSWORD` | Чтение базы `netobs` для «Поиска MAC/IP»: `postgres` / `5432` / `netobs` / `ip_plan_ro` / пароль (= `NETOBS_RO_PASSWORD` из `.env.db`). Алиас `netobs` объявляется только при заданных `_NAME` и `_USER`; без них страница пишет «не настроено» |

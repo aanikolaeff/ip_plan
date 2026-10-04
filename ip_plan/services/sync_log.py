@@ -2,59 +2,37 @@
 (см. settings.SYNC_LOGS_DIR — по умолчанию путь внутри контейнера, куда
 docker-compose.yml монтирует ${NETBOX_SYNC_DIR}/sync_logs, read-only).
 
+С этапа 2 (04.10.2026) full_sync.sh выполняет только nmap (scan_all.py) по
+cron хоста; остальные шаги ночи — задания сборщика, их итог экран
+«Синк» берёт из sync_job (sync_overview, KTD19). Отсюда — только nmap.
+
 Ничего не пишет и не имеет своих Django-моделей — только читает файлы вида
 full_sync_YYYY-MM-DD_HHMM.log, которые full_sync.sh кладёт в эту папку при
 каждом прогоне (хранит 30 дней, чистит сам). Формат — обычный текстовый лог
 (см. netbox-sync/full_sync.sh, функция log()): заголовок с временем
-старта/env/параметрами скана, затем по каждому шагу (см. STEPS) — сырой
-stdout/stderr скрипта, заканчивающийся строкой "  [Имя шага] СТАТУС (Nс)",
-и в конце (только если прогон полностью завершился) блок "SUMMARY" с той же
-таблицей статусов ещё раз.
+старта/env/параметрами скана, затем по шагу — сырой stdout/stderr скрипта,
+заканчивающийся строкой "  [Имя шага] СТАТУС (Nс)", и в конце (только если
+прогон полностью завершился) блок "SUMMARY" и строка "Full sync finished".
 
-Никакого IPC/lock-файла не читаем: "выполняется ли прогон прямо сейчас"
-выводим из самого текста лога — если в нём нет строки SUMMARY, но встретился
-хотя бы один шаг без строки статуса, значит скрипт до него ещё не дошёл (шаги
-всегда идут строго по порядку, см. STEP_NAMES ниже — тот же порядок, что и в
-full_sync.sh)."""
+"Выполняется ли прогон прямо сейчас" выводим из самого текста лога: нет
+строки SUMMARY, а шаг начат и без строки статуса. Лок-файл смотрит
+sync_overview."""
 
 import re
 from pathlib import Path
 
 from django.conf import settings
 
-# Шаги full_sync.sh: имя (дословно STEP_NAMES оттуда — по нему строки лога
-# связываются с шагом), скрипт (STEP_SCRIPTS) и подписи для «Настроек».
-# Это ручная копия: 02.10.2026 обнаружилось, что здесь не хватает
-# «Reachability», и пока он шёл, сводка показывала текущим шагом
-# «DNS enrich». Меняя full_sync.sh, правьте и этот список — тест
-# test_sync_log сверяет его с самим скриптом, если тот рядом.
-STEPS = [
-    {"name": "Netobs migrate", "script": "netobs_migrate.py",
-     "title": "Хранилище наблюдений", "desc": "Схема базы MAC- и ARP-таблиц (netobs); без настройки шаг пропускается"},
-    {"name": "Custom fields", "script": "netbox_ensure_custom_fields.py",
-     "title": "Служебные поля", "desc": "Проверяет и создаёт пользовательские поля NetBox"},
-    {"name": "VLAN+prefixes", "script": "netbox_network_setup.py",
-     "title": "VLAN и подсети", "desc": "Подсети и VLAN с ядра сети"},
-    {"name": "Devices", "script": "netbox_devices_sync.py",
-     "title": "Устройства", "desc": "Интерфейсы, адреса, MAC- и ARP-таблицы, серийные номера"},
-    {"name": "Config backup", "script": "netbox_config_backup.py",
-     "title": "Снимки конфигураций", "desc": "Конфигурации и политика доступа — из них строится раздел ACL"},
-    {"name": "Firewall blocklist", "script": "netbox_firewall_blocklist_sync.py",
-     "title": "Списки блокировок xFW", "desc": "Текущие списки на firewall — для сверки в «Блокировках»"},
-    {"name": "Nmap scan", "script": "scan_all.py",
-     "title": "Сканирование сетей", "desc": "Открытые порты и ОС по всем подсетям",
-     "schedule_only": True},
-    {"name": "RedVirt", "script": "netbox_redvirt_sync.py",
-     "title": "Виртуальные машины RedVirt", "desc": "Кластеры, хосты, ВМ, их адреса и гостевые ОС"},
-    {"name": "vCenter", "script": "netbox_vcenter_sync.py",
-     "title": "Виртуальные машины vCenter", "desc": "Кластеры, хосты ESXi, ВМ, их адреса и гостевые ОС"},
-    {"name": "LLDP topology", "script": "netbox_lldp_topology.py",
-     "title": "Связи между устройствами", "desc": "Кабели по LLDP, LACP, гипервизорам, MAC- и ARP-таблицам"},
-    {"name": "Reachability", "script": "netbox_reachability.py",
-     "title": "Доступность", "desc": "Какие адреса отвечают — для статусов в таблице адресов"},
-    {"name": "DNS enrich", "script": "netbox_dns_enrich.py",
-     "title": "DNS-имена", "desc": "Прямые и обратные DNS-записи для адресов"},
-]
+# Шаги лога full_sync.sh: имя (дословно STEP_NAMES оттуда — по нему строки
+# лога связываются с шагом), скрипт (STEP_SCRIPTS) и подписи для «Настроек».
+# С этапа 2 там один nmap; шаги, ушедшие в задания, описаны белым списком
+# сборщика (sync_jobs.STEPS_LIST), и копии здесь нет. В старых логах (до
+# этапа 2) строки других шагов просто не учитываются. Тест сверяет список с
+# самим full_sync.sh, если netbox-sync лежит рядом.
+NMAP_STEP = {"name": "Nmap scan", "script": "scan_all.py",
+             "title": "Сканирование сетей", "desc": "Открытые порты и ОС по всем подсетям",
+             "schedule_only": True}
+STEPS = [NMAP_STEP]
 STEP_NAMES = [s["name"] for s in STEPS]
 
 _HEADER_RE = re.compile(

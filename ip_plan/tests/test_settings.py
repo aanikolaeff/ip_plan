@@ -1,5 +1,4 @@
-"""Раздел «Настройки» (этап 6 редизайна, 02.10.2026): разбор лога синка и
-экран «Запуск и расписание», происхождение флагов, сохранение устройства и
+"""Раздел «Настройки» (этап 6 редизайна, 02.10.2026): происхождение флагов, сохранение устройства и
 модели (явный false, массовый выключатель, cluster), импорт (права и те же
 проверки, что у формы), журнал по категориям."""
 import json
@@ -11,10 +10,11 @@ from unittest import mock
 
 from django.contrib.auth.models import User
 from django.test import SimpleTestCase, TestCase, override_settings
+from django.utils import timezone
 
 from ip_plan import views_settings as vs
 from ip_plan.models import SettingsAudit
-from ip_plan.services import settings_bundle, sync_log, sync_overview
+from ip_plan.services import settings_bundle
 from ip_plan.services import sync_config as sc
 
 DEVICES = {
@@ -36,116 +36,8 @@ DEVICES = {
 }
 
 
-def _log(steps, running=None, summary=True, started="2026-10-02 03:00:00"):
-    lines = ["=" * 64, f"  Full sync started: {started}  [env=prod]  [version=0.4]",
-             "  Scan: mode=ping  resolve-dns=off  timeout=7200s", "=" * 64]
-    for name, status, sec in steps:
-        lines += ["", "-" * 64, f"  [{name}] python3 x.py --env prod", "-" * 64, "вывод",
-                  f"  [{name}] {status}  ({sec}s)"]
-    if running:
-        lines += ["", "-" * 64, f"  [{running}] python3 y.py --env prod", "-" * 64, "  идёт…"]
-    if summary:
-        lines += ["", "=" * 64, "  SUMMARY", "=" * 64, "=" * 64,
-                  "  Full sync finished: 2026-10-02 03:40:00", "=" * 64]
-    return "\n".join(lines) + "\n"
-
-
-class SyncLogTests(SimpleTestCase):
-    def test_reachability_is_a_step_and_matches_full_sync(self):
-        self.assertIn("Reachability", sync_log.STEP_NAMES)
-        self.assertEqual(sync_log.STEP_NAMES.index("Reachability") + 1,
-                         sync_log.STEP_NAMES.index("DNS enrich"))
-        script = Path(__file__).resolve().parents[3] / "netbox-sync" / "full_sync.sh"
-        if not script.exists():
-            self.skipTest("netbox-sync рядом не лежит (контейнер)")
-        text = script.read_text()
-        for step in sync_log.STEPS:
-            self.assertIn(f'"{step["name"]}"', text)
-            self.assertIn(f'"{step["script"]}"', text)
-
-    def test_running_step_is_the_started_one(self):
-        # LLDP завершён, Reachability начался: раньше текущим показывался
-        # «DNS enrich» (Reachability не было в списке).
-        # Срез — по имени шага, а не по числу: шаги добавляются в начало
-        # (Netobs migrate, 03.10.2026), и позиционный срез молча съезжал.
-        upto = sync_log.STEP_NAMES.index("LLDP topology") + 1
-        done = [(n, "OK", 1) for n in sync_log.STEP_NAMES[:upto]]
-        parsed = sync_log.parse(_log(done, running="Reachability", summary=False))
-        self.assertEqual(parsed["overall"], "RUNNING")
-        self.assertEqual(parsed["running_step"], "Reachability")
-
-    def test_finished_and_failed(self):
-        steps = [(n, "OK", 2) for n in sync_log.STEP_NAMES]
-        steps[sync_log.STEP_NAMES.index("Config backup")] = ("Config backup", "FAILED", 1)
-        parsed = sync_log.parse(_log(steps))
-        self.assertEqual(parsed["overall"], "FAILED")
-        self.assertEqual(parsed["finished_at"], "2026-10-02 03:40:00")
-
-
-class SyncOverviewTests(SimpleTestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.dir = Path(self.tmp.name)
-        self.lock = self.dir / ".full_sync.lock"
-        patcher = override_settings(SYNC_LOGS_DIR=str(self.dir), NETBOX_SYNC_LOCK_FILE=str(self.lock),
-                                    SYNC_LOG_TZ="Europe/Moscow", SYNC_SCHEDULE="0 3 * * *")
-        patcher.enable()
-        self.addCleanup(patcher.disable)
-
-    def _write(self, name, text):
-        (self.dir / name).write_text(text, encoding="utf-8")
-
-    def test_no_logs(self):
-        overview = sync_overview.overview()
-        self.assertFalse(overview["available"])
-        self.assertEqual(overview["state"], "none")
-        self.assertEqual(len(overview["steps"]), len(sync_log.STEPS))
-
-    def test_failed_run_rows_and_cards(self):
-        steps = [(n, "OK", 60) for n in sync_log.STEP_NAMES]
-        idx = sync_log.STEP_NAMES.index
-        steps[idx("vCenter")] = ("vCenter", "TIMEOUT", 120)
-        self._write("full_sync_2026-10-02_0300.log", _log(steps))
-        overview = sync_overview.overview()
-        self.assertEqual(overview["state"], "failed")
-        self.assertEqual((overview["ok_count"], overview["total_count"]),
-                         (len(steps) - 1, len(steps)))
-        self.assertEqual(overview["failed"][0]["label"], "Таймаут")
-        row = overview["steps"][idx("Devices")]
-        self.assertEqual((row["title"], row["duration"], row["status"]), ("Устройства", "1 мин 00 с", "ok"))
-        self.assertTrue(overview["steps"][idx("Nmap scan")]["schedule_only"])
-
-    def test_running_with_lock_has_progress_and_journal(self):
-        prev = [(n, "OK", 100) for n in sync_log.STEP_NAMES]
-        cb = sync_log.STEP_NAMES.index("Config backup")
-        self._write("full_sync_2026-10-01_0300.log", _log(prev, started="2026-10-01 03:00:00"))
-        started = sync_overview.now() - timedelta(minutes=5)
-        self._write("full_sync_2026-10-02_0300.log",
-                    _log([(n, "OK", 100) for n in sync_log.STEP_NAMES[:cb]], running="Config backup",
-                         summary=False, started=started.strftime("%Y-%m-%d %H:%M:%S")))
-        self.lock.write_text("123")
-        overview = sync_overview.overview()
-        self.assertEqual(overview["state"], "running")
-        self.assertEqual(overview["progress"]["position"], cb + 1)
-        self.assertEqual(overview["progress"]["step_name"], "Config backup")
-        self.assertTrue(overview["progress"]["remaining"].startswith("~"))
-        self.assertEqual([r["status"] for r in overview["steps"][cb:cb + 2]], ["run", "wait"])
-        self.assertTrue(any(line["kind"] == "start" for line in overview["journal"]))
-
-    def test_unfinished_log_without_lock_is_aborted(self):
-        self._write("full_sync_2026-10-02_0300.log",
-                    _log([("Custom fields", "OK", 1)], running="VLAN+prefixes", summary=False))
-        self.assertEqual(sync_overview.overview()["state"], "aborted")
-
-    def test_formatting(self):
-        self.assertEqual(sync_overview.duration(48), "48 с")
-        self.assertEqual(sync_overview.duration(190), "3 мин 10 с")
-        self.assertEqual(sync_overview.duration(3900), "1 ч 05 мин")
-        self.assertIsNone(sync_overview.next_run("*/5 * * * *"))
-        nxt = sync_overview.next_run("30 4 * * *")
-        self.assertEqual((nxt.hour, nxt.minute), (4, 30))
-        self.assertTrue(sync_overview.human_when(sync_overview.now()).startswith("сегодня"))
+# Разбор лога nmap и сводка «Синк» по заданиям — tests/test_sync_overview.py
+# (с этапа 2 full_sync.sh выполняет только nmap, остальные шаги — задания).
 
 
 class ChipsTests(SimpleTestCase):
@@ -311,20 +203,22 @@ class AuditAndSyncTests(_ConfMixin, TestCase):
 
     @override_settings(SYNC_WORKER_HEALTH_URL="")
     def test_sync_run_is_a_stub_without_worker(self):
-        # Сборщик не включён (без профиля worker или на SQLite) — запуск
-        # по-прежнему только на хосте. С ним кнопки ставят задания —
+        # Сборщик не включён (без профиля worker или на SQLite) — запуска
+        # из интерфейса нет. С ним кнопки ставят задания —
         # test_jobs.SettingsSyncButtonsTests.
         r = self.client.post("/settings/sync/run/")
         self.assertEqual(r.status_code, 204)
-        self.assertIn("пока не подключён", json.loads(r["HX-Trigger"])["show-toast"]["message"])
+        self.assertIn("сборщик заданий не включён", json.loads(r["HX-Trigger"])["show-toast"]["message"])
         from ip_plan.models import SyncJob
         self.assertFalse(SyncJob.objects.exists())
 
     def test_changed_devices_banner(self):
-        started = sync_overview.now() - timedelta(hours=1)
-        (Path(self.tmp.name) / "logs" / "full_sync_2026-10-02_0300.log").write_text(
-            _log([(n, "OK", 10) for n in sync_log.STEP_NAMES],
-                 started=started.strftime("%Y-%m-%d %H:%M:%S")), encoding="utf-8")
+        # Граница — начало последнего шага устройств по заданиям сборщика.
+        from ip_plan.models import SyncJob
+        started = timezone.now() - timedelta(hours=1)
+        SyncJob.objects.create(kind="night_after_nmap", steps=["netbox_devices_sync"], status="done",
+                               step_results=[{"step": "netbox_devices_sync", "status": "done",
+                                              "started_at": started.isoformat(), "duration": 60}])
         SettingsAudit.objects.create(username="a", scope="devices", target="sw-2", action="update")
         SettingsAudit.objects.create(username="a", scope="devices", target="gone", action="update")
         self.assertEqual(vs._changed_devices({"sw-1", "sw-2"}), ["sw-2"])

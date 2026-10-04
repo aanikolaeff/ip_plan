@@ -37,8 +37,10 @@ GROUP_NETOBS = "netobs"
 _MIN = 60
 
 # name, script, group, timeout, title — ровно как в worker_steps.STEPS_LIST
-# (порядок тоже: по нему строится упорядоченный выбор шагов цепочки); label и
-# desc — подписи для людей в ip_plan (те же, что у сводки sync_log.STEPS).
+# (порядок тоже: по нему строится упорядоченный выбор шагов цепочки и строки
+# сводки «Синк»); label и desc — подписи для людей в ip_plan. Других копий
+# списка шагов в ip_plan нет: сводка (sync_overview) берёт его отсюда, из
+# лога full_sync.sh читается только nmap (sync_log.NMAP_STEP).
 Step = namedtuple("Step", "name script group timeout title label desc")
 
 STEPS_LIST = (
